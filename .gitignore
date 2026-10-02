@@ -1,0 +1,16 @@
+# Engine binaries and runtime downloads
+/tools/engine/
+/tools/runtime/
+*.7z
+*.sd7
+*.sdz
+infolog*.txt
+/tools/runtime-*/
+/tools/engine-commands.txt
+/tools/launch/*output*.txt
+/listconfigvars.txt
+/listsyncedcommands.txt
+/listunsyncedcommands.txt
+__pycache__/
+.pytest_cache/
+.benchmarks/

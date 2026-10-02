@@ -1,0 +1,53 @@
+[GAME]
+{
+	MapName=Quicksilver Remake 1.24;
+	GameType=Medieval BAR Total Conversion 0.1.0-phase1;
+	StartPosType=1;
+	GameStartDelay=0;
+	IsHost=1;
+	AutohostPort=8452;
+	MyPlayerName=HeadlessChecker;
+	RecordDemo=0;
+	[ALLYTEAM0]
+	{
+		NumAllies=0;
+	}
+	[ALLYTEAM1]
+	{
+		NumAllies=0;
+	}
+	[TEAM0]
+	{
+		TeamLeader=0;
+		AllyTeam=0;
+		StartPosX=1800;
+		StartPosZ=2400;
+	}
+	[TEAM1]
+	{
+		TeamLeader=0;
+		AllyTeam=1;
+		StartPosX=4200;
+		StartPosZ=2400;
+	}
+	[PLAYER0]
+	{
+		Name=HeadlessChecker;
+		Team=0;
+		Spectator=0;
+	}
+	[AI0]
+	{
+		Name=BotOpponent;
+		ShortName=NullAI;
+		Team=1;
+		Host=0;
+	}
+	[MODOPTIONS]
+	{
+		deathmode=neverend;
+		medievaltest=1;
+		medievaltestcount=200;
+		debugcommands=1:forcestart|1200:quitforce;
+	}
+}

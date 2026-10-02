@@ -1,0 +1,53 @@
+return {
+  medieval_cavalry = {
+    name = "Knight",
+    description = "Mounted heavy cavalry built for fast charges (Phase 1 prototype placeholder)",
+    category = "LAND",
+    buildCostEnergy = 0,
+    buildCostMetal = 220,
+    builder = false,
+    buildTime = 60,
+    canMove = true,
+    movementclass = "TANK3",
+    footprintX = 3,
+    footprintZ = 3,
+    maxDamage = 2200,
+    maxVelocity = 3.6,
+    acceleration = 0.8,
+    brakeRate = 0.6,
+    steeringRate = 1200,
+    sightDistance = 400,
+    speed = 54,
+    mass = 450,
+    upright = false,
+    objectName = "0ad/medieval_cavalry.obj",
+    script = "medieval_cavalry.lua",
+    side = "MEDIEVAL",
+    customparams = {
+      model_author = "Medieval-BAR-TC",
+      unitgroup = "weapon",
+    },
+    weapons = {
+      {
+        def = "LANCE",
+        onlyTargetCategory = "LAND",
+      },
+    },
+    weaponDefs = {
+      LANCE = {
+        name = "Heavy Lance",
+        areaOfEffect = 16,
+        craterBoost = 0,
+        craterMult = 0,
+        damage = {
+          default = 240,
+        },
+        range = 55,
+        reloadtime = 1.5,
+        turret = false,
+        weaponType = "Melee",
+        waterWeapon = true,
+      },
+    },
+  },
+}

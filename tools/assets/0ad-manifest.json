@@ -1,0 +1,103 @@
+{
+  "archive": "C:\\Users\\LGSM228\\AppData\\Local\\0 A.D. Empires Ascendant\\binaries\\data\\mods\\public\\public.zip",
+  "archive_sha256": "ccb24dedee399e6d2810ccb62b0b1b77a937999d9f1dedffbc189b3e359f2429",
+  "entries": {
+    "art/LICENSE.txt": {
+      "bytes": 1426,
+      "sha256": "ef98babd771c206032e005f3d440a1e610df409d9a9191f03e64deaa4abefbd9"
+    },
+    "art/actors/units/athenians/cavalry_swordsman_a_m.xml": {
+      "bytes": 1743,
+      "sha256": "ba76d079a783530c706b6ab0379b568c8e324463e89600a321b32eccbe2d56a6"
+    },
+    "art/actors/units/athenians/infantry_archer_a.xml": {
+      "bytes": 2912,
+      "sha256": "443195a3a8c84d7abb28e8f362893b82e2cc1fc6c4f3ed289681b7207e6f34bc"
+    },
+    "art/actors/units/athenians/infantry_spearman_a.xml": {
+      "bytes": 7383,
+      "sha256": "e0a98b7a51337a66ee64cb7db98825d48d6fc5cc99017340fcd86021d4444786"
+    },
+    "art/meshes/skeletal/horse_tessalian.dae.cached.pmd": {
+      "bytes": 64594,
+      "sha256": "3f37ec88960c0f876e34f594094c7e06bdb343f185d20e737c19040cef5829dd"
+    },
+    "art/meshes/skeletal/new/m_armor_tunic_short.dae.cached.pmd": {
+      "bytes": 43857,
+      "sha256": "4726621842ae159aae50a91672237ee30687bd38d32ff8eb2230fe7e108c037a"
+    },
+    "art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd": {
+      "bytes": 43857,
+      "sha256": "7171a8eb818083c5ac66e9a33e8f82edf27c81cc6f1e311331282b6526d37b59"
+    },
+    "art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds": {
+      "bytes": 87536,
+      "sha256": "754a933ecb3315241dd76750b7cc8563d14388bdf8f7e294ce5030bf47c8a796"
+    },
+    "art/textures/skins/skeletal/hele/tunic_03_psiloi_01.png.cached.dds": {
+      "bytes": 87536,
+      "sha256": "33dd23e6feae2b61459ac4c9ff4d03615a3dc56729902b6c997f4a55d97829b7"
+    },
+    "art/textures/skins/skeletal/horse_brown.png.cached.dds": {
+      "bytes": 174928,
+      "sha256": "f9befbdc9fb1a79d61c0c66656505bff631e278dbdd625477776351d6e4fd1cb"
+    },
+    "art/variants/quadraped/horse/brown.xml": {
+      "bytes": 396,
+      "sha256": "b93316bd1e0ba6bff2778895982cf2db3909273729b28101959c9e3130655fd8"
+    }
+  },
+  "format_sources": [
+    "https://github.com/0ad/0ad/blob/61a3b9507d974084e6badb88a0826bd89a6d5b8b/source/collada/PMDConvert.cpp",
+    "https://github.com/0ad/0ad/blob/61a3b9507d974084e6badb88a0826bd89a6d5b8b/source/graphics/ModelDef.cpp",
+    "https://github.com/0ad/0ad/blob/61a3b9507d974084e6badb88a0826bd89a6d5b8b/source/ps/FileIo.cpp"
+  ],
+  "license": "CC-BY-SA-3.0, Wildfire Games; see licenses/0ad-art.txt",
+  "source": "0 A.D. alpha 28 public.zip",
+  "transform": {
+    "axes": "Y-up unchanged",
+    "pose": "PMD v4 bind-pose positions; no skinning",
+    "scale": 8.0,
+    "translation": [
+      0,
+      0,
+      0
+    ],
+    "uv": "v -> 1-v for OBJ"
+  },
+  "units": {
+    "medieval_archer": {
+      "actor": "art/actors/units/athenians/infantry_archer_a.xml",
+      "bones_ignored": 46,
+      "faces": 932,
+      "mesh": "art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_archer.obj",
+      "props_ignored": 53,
+      "tex1": "0ad/medieval_archer.dds",
+      "texture": "art/textures/skins/skeletal/hele/tunic_03_psiloi_01.png.cached.dds",
+      "vertices": 668
+    },
+    "medieval_cavalry": {
+      "actor": "art/actors/units/athenians/cavalry_swordsman_a_m.xml",
+      "bones_ignored": 49,
+      "faces": 1682,
+      "mesh": "art/meshes/skeletal/horse_tessalian.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_cavalry.obj",
+      "props_ignored": 11,
+      "tex1": "0ad/medieval_cavalry.dds",
+      "texture": "art/textures/skins/skeletal/horse_brown.png.cached.dds",
+      "vertices": 1013
+    },
+    "medieval_infantry": {
+      "actor": "art/actors/units/athenians/infantry_spearman_a.xml",
+      "bones_ignored": 46,
+      "faces": 932,
+      "mesh": "art/meshes/skeletal/new/m_armor_tunic_short.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_infantry.obj",
+      "props_ignored": 53,
+      "tex1": "0ad/medieval_infantry.dds",
+      "texture": "art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds",
+      "vertices": 668
+    }
+  }
+}

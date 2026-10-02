@@ -1,14 +1,53 @@
 # Medieval-BAR-TC
 
-A Medieval Total Conversion mod for Beyond All Reason (BAR) engine.
+A medieval total conversion prototype for the Recoil RTS engine, using BAR GPL code without BAR's restricted art assets.
 
-## Overview
-Medieval-BAR-TC transforms Beyond All Reason mechanics into a medieval strategy setting, replacing sci-fi units and factories with medieval factions, castles, siege weaponry, and ground troops.
+## Current status
 
-## Structure
-- `gamedata/`: Core engine tables and configuration
-- `units/`: Medieval unit definitions, weapons, and models
-- `luaui/`: Custom medieval interface widgets
-- `luarules/`: Gameplay rules and logic (chivalry, food/upkeep mechanics)
-- `sounds/`: Ambient, combat, and unit audio
-- `scripts/`: Animation and behavior scripts
+Phase 1 is **not complete**. Infantry, archers, cavalry, deterministic test-force spawning, and line-formation commands are implemented. BAR GPL gadget infrastructure and movement definitions are included, with CC-BY-SA 3.0 static models and textures converted from 0 A.D.
+
+Headless launches recognize the game and map, but tested runs remain at pregame frame `-1`. Frame-30 spawning, live melee/ballistic combat, the GUI formation preview, and a 200-unit performance run remain unverified. Read [Phase 1 status](docs/phase-1.md) for evidence and failed readiness experiments.
+
+## Project structure
+
+- `units/`: Infantry, archer, and cavalry definitions.
+- `scripts/`: Unit scripts and line-formation math.
+- `luarules/`: BAR GPL gadget handler and opt-in test forces gadget.
+- `luaui/widgets/`: Formation preview and experimental test readiness widget.
+- `gamedata/`: Movement, weapon, and explosion definitions.
+- `objects3d/0ad/`, `unittextures/0ad/`: Converted static art.
+- `tools/assets/`: Asset conversion tooling and provenance manifest.
+- `tools/launch/`: Headless launcher, startscript, and diagnostic probes.
+- `tests/`: Formation mocks, asset parser tests, and unit/license validation.
+- `docs/city-building-design.md`: Future city-building design.
+
+## Licensing
+
+Code is GPL-v2; see `LICENSE.md`. Art attribution and license references are in `CREDITS.md` and `licenses/0ad-art.txt`.
+
+BAR's CC-BY-NC-ND models, textures, and animations are not bundled or referenced by unit definitions. Reused BAR GPL code is pinned to upstream commit `c7eaa46992959435c6d3332e28e1169e1ddd43a6`. This repository does not declare a BAR content dependency.
+
+## Local verification
+
+Install Python dependencies `lupa` and `pytest`, then run:
+
+```pwsh
+python tests/test_phase1.py
+python -m pytest tests -q
+```
+
+These checks do not establish in-engine combat acceptance.
+
+## Headless diagnostics
+
+The local setup uses official Recoil `2026.07.04` and map `Quicksilver Remake 1.24`. Engine binaries and map downloads are excluded from Git.
+
+Place the engine in `tools/engine/recoil_2026.07.04/` and `quicksilver_remake_1.24.sd7` in `tools/runtime/maps/`, then run from the repository root:
+
+```pwsh
+./tools/launch/run-headless.ps1
+# Alternate isolated diagnostic probe:
+python tools/launch/run_gameprobe.py 15
+```
+
+Readiness probes are experiments, not a working unattended match launcher. Generated runtime directories and logs are excluded from Git.

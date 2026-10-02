@@ -1,0 +1,53 @@
+return {
+  medieval_infantry = {
+    name = "Man-at-Arms",
+    description = "Heavy melee infantry equipped with sword and shield (Phase 1 prototype placeholder)",
+    category = "LAND",
+    buildCostEnergy = 0,
+    buildCostMetal = 100,
+    builder = false,
+    buildTime = 45,
+    canMove = true,
+    movementclass = "BOT2",
+    footprintX = 2,
+    footprintZ = 2,
+    maxDamage = 1200,
+    maxVelocity = 2.1,
+    acceleration = 0.5,
+    brakeRate = 0.5,
+    steeringRate = 1000,
+    sightDistance = 350,
+    speed = 32,
+    mass = 200,
+    upright = true,
+    objectName = "0ad/medieval_infantry.obj",
+    script = "medieval_infantry.lua",
+    side = "MEDIEVAL",
+    customparams = {
+      model_author = "Medieval-BAR-TC",
+      unitgroup = "weapon",
+    },
+    weapons = {
+      {
+        def = "SWORD",
+        onlyTargetCategory = "LAND",
+      },
+    },
+    weaponDefs = {
+      SWORD = {
+        name = "Broadsword",
+        areaOfEffect = 8,
+        craterBoost = 0,
+        craterMult = 0,
+        damage = {
+          default = 150,
+        },
+        range = 45,
+        reloadtime = 1.2,
+        turret = false,
+        weaponType = "Melee",
+        waterWeapon = true,
+      },
+    },
+  },
+}

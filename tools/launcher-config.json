@@ -1,0 +1,19 @@
+{
+  "source": "https://launcher-config.beyondallreason.dev/config.json",
+  "retrieved": "2026-10-02",
+  "verifiedSetup": {
+    "id": "manual-win",
+    "platform": "win32",
+    "engineVersion": "recoil_2026.07.04",
+    "engineArchive": "recoil_2026.07.04_amd64-windows.7z",
+    "engineUrl": "https://github.com/beyond-all-reason/RecoilEngine/releases/download/2026.07.04/recoil_2026.07.04_amd64-windows.7z",
+    "archiveBytes": 24166271,
+    "archiveSha256": "2E0A43744115E6B3CBD7DB4A36AECC3D28AFDEF4FB615D07AB01703E4B5525E1"
+  },
+  "testEngineSetupAlsoPresent": {
+    "id": "manual-win-test-engine",
+    "engineVersion": "recoil_2026.09.01",
+    "engineArchive": "recoil_2026.09.01_amd64-windows.7z"
+  },
+  "note": "The Windows stable package was downloaded and executed locally. Verify this public manifest before future downloads; launcher versions can change."
+}
