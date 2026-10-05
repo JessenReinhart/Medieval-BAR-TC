@@ -1,0 +1,23 @@
+-- Draft replacement for: gamedata/weapondefs.lua
+-- Change: remove the invalid WeaponDef tag `explodeAs = "default"`.
+--
+-- Root cause: `explodeAs` (engine-normalized to `explodeas`) is a UnitDef-level
+-- tag that selects a death-explosion class. It is NOT a valid WeaponDef tag.
+-- Spring's WeaponDef parser warns and discards it, producing:
+--   Warning: WeaponDefs: Unknown tag "explodeas" in "noweapon"
+--
+-- The NOWEAPON placeholder is range=0 / reloadtime=0 / damage=0, so no
+-- explosion association is needed. Dropping the tag is the minimal fix.
+-- If a weapon impact visual is ever wanted, the correct WeaponDef tag is
+-- `explosionGenerator = "<CEG name>"` (not `explodeAs`).
+
+return {
+  NOWEAPON = {
+    name = "Placeholder Weapon",
+    weaponType = "Cannon",
+    range = 0,
+    reloadtime = 0,
+    turret = false,
+    damage = {default = 0},
+  },
+}

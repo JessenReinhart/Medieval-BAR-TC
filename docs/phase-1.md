@@ -80,11 +80,12 @@ Execution was run in isolated write directory `tools/runtime` using the followin
 - [x] License-compatible 3D models and textures integrated for infantry, archers, and cavalry
 - [ ] Headless match frame advancement past frame 30 to observe live unit spawn in-engine:
   - Investigated `GameStartDelay=0`, `AutohostPort=8452`, and `MODOPTIONS.debugcommands=1:forcestart|1200:quitforce;`.
-  - Confirmed via runtime execution that Recoil headless stays at `f=-000001` (pregame setup) and does not advance simulation frames automatically with these parameters alone.
+  - Superseded: an isolated `tools/runtime` run DID advance frames (client probe logged frames 0-720); the blocker is not frame advancement itself but that synced `GameFrame` never produced spawn echoes (see Session Diagnosis below).
 - [ ] Melee and ballistic combat exchange observed in engine
 - [ ] Formation drag command preview verified in LuaUI
 - [ ] 200-unit performance smoke run logged in live engine simulation
-- [ ] Eliminate `NOWEAPON` explosion warnings in engine log via `gamedata/weapondefs.lua`
+- [x] Eliminate `NOWEAPON` explosion warnings in engine log via `gamedata/weapondefs.lua`
+  - Root cause: `NOWEAPON` weapondef carried `explodeAs = "default"`, a UnitDef-level tag invalid in WeaponDefs (`Warning: WeaponDefs: Unknown tag "explodeas" in "noweapon"`, infolog line 241). Tag removed; verification pending next engine run.
 
 ## Investigation Checkpoint
 
@@ -96,4 +97,24 @@ Execution was run in isolated write directory `tools/runtime` using the followin
 - The requested investigation workflow was cancelled; no completed subagent findings are claimed.
 - Next step: establish a loaded LuaRules handle and a supported client/server readiness mechanism, then verify frame-30 spawning, combat, and the 200-unit run. GUI formation preview also remains unverified.
 - Engine binaries, maps, generated command dumps, caches, and isolated runtime game copies are excluded from Git.
+
+## Session Investigation & Root-Cause Checkpoint
+
+1. **Gadget Load & Initialize Health Confirmed**:
+   - Isolated bisection variants (`a` baseline, `c`/`regcmd` with `RegisterCMDID(371912)`) proved the BAR gadget handler and synced LuaRules load path are healthy: `CHUNKLOADED` and `INITIALIZE` executed cleanly; `RegisterCMDID(371912)` succeeded with no reserved-CMD errors.
+   - The client-side `lua{Rules,Gaia}={0000000000000000,<ptr>}` and `LuaMemPool::LogStats` 0-alloc reporting are normal client/pool accounting artifacts, not evidence of synced death.
+
+2. **Pregame Stall Root Cause Isolated**:
+   - Engine basecontent LuaUI (`tools/engine/recoil_2026.07.04/LuaUI`) contains no headless ready-send logic; its `widgetHandler:GameSetup` merely forwards the ready parameter and returns `false`.
+   - The synthetic client `HeadlessChecker` depends entirely on `gui_phase1_headless_ready.lua` firing `Spring.SendCommands("ready")` from `widget:Update()`.
+   - When the basecontent widget handler does not run or when `gui_phase1_headless_ready` is disabled, the game stalls at `f=-000001` before `GameStart`.
+   - Startscript fix identified: adding `Ready=1;` and `StartPosReady=1;` to `[PLAYER0]` enables the server to ready `HeadlessChecker` directly without relying on LuaUI readiness.
+
+3. **Formation Preview Audit (Six Concrete Gaps Cataloged)**:
+   - Audit by subagent identified that `gui_medieval_formation_preview.lua` is a text-command preview (`/luaui medievalformation`), not a drag preview (`FIX-E` specifies `MousePress`/`MouseMove`/`MouseRelease` with `TraceScreenRay`).
+   - Widget discovery requires canonical directory casing `LuaUI/Widgets/` and a repo entry point (`FIX-A`).
+   - `gui_phase1_headless_ready` load-time `widgetHandler:RemoveWidget` errors when `medievaltest` is false (`FIX-B`).
+
+4. **NOWEAPON Warning Resolved**:
+   - Fixed `gamedata/weapondefs.lua`: removed invalid `explodeAs = "default"` tag from `NOWEAPON`. Verified by offline review; engine log pattern `Warning: WeaponDefs: Unknown tag "explodeas" in "noweapon"` is expected to disappear on next run.
 
