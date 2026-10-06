@@ -36,6 +36,7 @@ function M.destinations(count, x, z, spacing, facing, sizeX, sizeZ, autoFit)
     if not M.bounds(px, pz, sizeX, sizeZ, 32) then return nil end
     result[i] = { x = px, z = pz }
   end
+  result.spacing = spacing
   return result
 end
 

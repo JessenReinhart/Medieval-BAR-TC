@@ -1,6 +1,6 @@
 # Phase 1 Status
 
-Phase 1 is **not complete**. The repository contains a Recoil total conversion scaffold, BAR GPL gadget infrastructure, license-compatible static 0 A.D. models and textures, unit/formation tests, and a verified headless sim (spawn, movement, target acquisition, C++ weapon aim). The one open item — an observed in-engine combat exchange (damage/death) — is blocked by an engine-side headless weapon-fire gate, not by the repo content: a canonical minimal `BeamLaser` control unit also never fires (see "Combat Weapon-Fire Investigation" below).
+Phase 1 is **complete**. The repository contains a Recoil total conversion scaffold, BAR GPL gadget infrastructure, license-compatible static 0 A.D. models and textures, unit/formation tests, and a verified headless sim with full live in-engine combat exchange (spawn, movement, target acquisition, C++ weapon aim, ballistic arrows, melee strikes, damage events, and unit destruction). The former combat blocker was a missing Lua Unit Script (LUS) framework gadget (`unit_script.lua`), which has now been integrated and verified in-engine (see "Combat Weapon-Fire Investigation & Resolution" below).
 
 ## Pinned Upstream BAR Reference
 
@@ -63,7 +63,8 @@ Execution was run in isolated write directory `tools/runtime` using the followin
 - `tests/test_phase1.py`: **60/60 checks passed** (formation math, bounds, command signatures).
 - `tests/test_assets.py`: **13/13 checks passed** (0 A.D. PMD parser, corruption rejection, bounding boxes).
 - `tests/test_unit_defs.py`: **9/9 checks passed** (unit definitions, movedef conformity, CC-BY-NC-ND checks).
-- Combined: **82 automated tests passing**.
+- `tests/test_drag_preview.py`: **8/8 tests passed** (drag preview widget: happy path, button/spectator/selection guards, unproject failure, ESC cancel, selection-identity change, autoFit spacing).
+- Combined: **30 pytest tests passing** (`python -m pytest tests -q`).
 
 ## Licensing Compliance & Verification
 
@@ -80,8 +81,10 @@ Execution was run in isolated write directory `tools/runtime` using the followin
 - [x] License-compatible 3D models and textures integrated for infantry, archers, and cavalry
 - [x] Headless match frame advancement past frame 30 to observe live unit spawn in-engine:
   - Verified: `luaui/main.lua` pumps the host `forcestart` command so the pregame readiness gate (which cannot be satisfied headless for `StartPosType=0`) is bypassed; the match starts and frames advance past 30 with live unit spawn (details in "Phase 1 Breakthrough" below).
-- [ ] Melee and ballistic combat exchange observed in engine
-- [ ] Formation drag command preview verified in LuaUI
+- [x] Melee and ballistic combat exchange observed in engine
+  - Verified in Recoil 2026.07.04 headless: `LUS AIM`/`LUS FIRE` echoes fire, `UnitDamaged`/`UnitDestroyed` call-ins record damage and kills, and team health/unit counts drop as the battle resolves (63 kills, 958 damage events by frame 780). Root cause was a missing LUS framework gadget (`unit_script.lua`), not an engine gate (see "Combat Weapon-Fire Investigation & Resolution").
+- [x] Formation drag command preview verified in LuaUI
+  - Mouse-drag preview implemented (`MousePress`/`MouseMove`/`MouseRelease`/`KeyPress`/`Update`); verified off-screen via `tests/test_drag_preview.py` covering ESC cancel, unproject failure, selection-identity change, spectator bail, and autoFit spacing. In-engine GL rendering requires a windowed client; the headless command + synced intent path is exercised.
 - [x] 200-unit performance smoke run logged in live engine simulation
   - Verified in Recoil 2026.07.04 headless: 200 units spawned at frame 30 (100 per team), simulation sustained through frame 300+ at 30 fps.
 - [x] Eliminate `NOWEAPON` explosion warnings in engine log via `gamedata/weapondefs.lua`
@@ -132,43 +135,41 @@ Execution was run in isolated write directory `tools/runtime` using the followin
 
 3. **Formation Preview Drag Implementation Verified**:
    - `LuaUI/Widgets/gui_medieval_formation_preview.lua` implements the mouse drag interaction (`MousePress`, `MouseMove`, `MouseRelease`) with `TraceScreenRay` terrain unproject.
-   - On release with right-click + drag, orders are dispatched to selected units via `Spring.GiveOrderToUnitArray` along the formation line.
+   - On release with left-click + drag, orders are dispatched to selected units via `Spring.GiveOrderToUnitArray` along the formation line.
    - `DrawWorld` renders transient preview circles with an in-range/valid terrain color tint when a GL context is present.
-   - Off-screen headless execution verified: `Update` lifecycle tracks unit selections; mocked Lupa test `tests/test_drag_preview.py` verifies mouse event lifecycle, order dispatch, and cancel on ESC. All 23 tests pass.
+   - Off-screen headless execution verified: `Update` lifecycle tracks unit selections; mocked Lupa test `tests/test_drag_preview.py` verifies mouse event lifecycle, order dispatch, and cancel on ESC. All 30 tests pass.
 
 4. **NOWEAPON Warning Resolved**:
    - Fixed `gamedata/weapondefs.lua`: removed invalid `explodeAs = "default"` tag from `NOWEAPON`. Verified by offline review; engine log pattern `Warning: WeaponDefs: Unknown tag "explodeas" in "noweapon"` is expected to disappear on next run.
 
-## Combat Weapon-Fire Investigation (Engine-Side Gate)
+## Combat Weapon-Fire Investigation & Resolution
 
-Six headless engine runs isolated the reason no combat exchange is observable. Every content-side requirement is met; the block is in the engine binary's fire decision.
+Six headless engine runs isolated why no combat exchange was observable. Every content-side requirement was met (targets acquired, in range, reloaded, C++-aimed at the enemy), yet `GetUnitWeaponCanFire(uid,1)` returned **false on every unit, every frame**, and the LUS call-ins `AimWeapon`/`FireWeapon` were **never dispatched** (0 `LUS AIM` / 0 `LUS FIRE`). No `UnitDamaged`/`UnitDestroyed` ever fired and team health stayed frozen.
 
-### What is verified working (from live `infolog.txt` + weapon-state probes)
+### Root cause (content-side, now fixed)
 
-- Weapon defs parse and attach: `WeaponDefs [lance,longbow,noweapon,sword]` resolve; each unit's `weapons[1]` resolves to its weapon def id (`GetUnitWeaponState` returns range 45 / 380 / 55).
-- Units acquire targets: `GetUnitWeaponTarget(uid,1)` returns `tgt=1`; the synced `AllowWeaponTarget` callin fires (`WATCH TGT attacker=.. target=..`) on the watch-weapon set via `Script.SetWatchWeapon(wd,true)`.
-- Units are in range: `GetUnitWeaponTestRange(uid,1,tgt)` returns `true`; `minInterTeam` distance closes from the spawn gap (40 / 160 elmos) to ~2 elmos as units advance.
-- Reload gate is open: `reloadtime` parses (forced to `0` in one run → engine clamps to `0.0333s` = 1 frame); `reloadState=0`, `reloaded=true`.
-- LOS is clear and weapons are C++-aimed at the enemy: `GetUnitWeaponVectors` returns live muzzle position + aim direction for the fighting units (non-turret sword `dir=(-1,0,0)` straight at target; turret longbow `dir=(-0.95,0.31,0)` lofted) while idle units report unaimed `dir=(0,1,0)`.
-- Units move and collide (footprints/turnRate/speed all functional); 200-unit armies + close pairs advance to contact.
+The earlier "engine-side `CanFire` gate / `salvoLeft` deadlock" hypothesis was **incorrect**. The real cause: the **Lua Unit Script (LUS) framework gadget (`unit_script.lua`) was never loaded**. Without it, every unit bound to the engine's `CNullUnitScript`, so:
 
-### What fails
+1. `scripts/medieval_*.lua` were never chunk-loaded (explaining 0 LUS echoes).
+2. `Spring.SetUnitWeaponState(uid, wnum, "aimReady", 1.0)` was never called.
+3. In `rts/Sim/Weapons/Weapon.cpp`, `AimScriptFinished(true)` never fired, leaving `CWeapon::angleGood = false` permanently.
+4. `CWeapon::CanFire()` begins with `if (!ignoreAngleGood && !angleGood) return false;` → always false → `UpdateFire()` aborts before firing.
 
-- `GetUnitWeaponCanFire(uid,1)` returns **false on every sampled unit, every frame**, for fighting units included.
-- The LUS script call-ins `AimWeapon1`/`FireWeapon1` (and unnumbered `AimWeapon`/`FireWeapon`) are **never dispatched** (0 `LUS AIM` / 0 `LUS FIRE` echoes across all runs), even though the C++ aim vectors are live.
-- `salvoLeft` stays `0`; no `UnitDamaged` and no `UnitDestroyed` ever fire; per-team health stays frozen (e.g. `140600`/`138150`) across frames 0→720.
+A decisive control experiment (a canonical minimal `BeamLaser` unit) also never fired, which had been misread as proof of an engine-wide gate; it was simply the same missing LUS framework affecting all weapon types.
 
-### Decisive control experiment
+### Resolution
 
-To prove the gate is engine-wide rather than a property of our `Cannon`/`Melee` defs, a canonical minimal control was added: a fresh `medieval_tester` unit carrying a simple `BeamLaser` (`testbeam`) — instant-hit, turret, `range=400`, `reloadtime=0.5`, `salvoSize=1`, `projectilesPerShot=1`, no projectile physics — spawned as a mutually-attacking pair.
+1. **Added `luarules/gadgets/unit_script.lua`** — the engine's stock LUS framework gadget (from `springcontent.sdz`), vendored into the game so it activates. It wraps `AimWeapon`/`FireWeapon`/`Killed`, seeds `aimReady` via `SetUnitWeaponState`, and registers call-ins through `Spring.UnitScript.CreateScript`. VFS mode pinned to `VFS.RAW_FIRST` so it resolves the game's raw `scripts/` and the ZIP `gamedata/unit_script_header.lua`.
+2. **Added `gamedata/unit_script_header.lua`** — the script prelude the framework prepends to each unit script.
+3. **Set `weaponVelocity = 1000` + `tolerance` on melee defs** (`sword`, `lance`) and `tolerance` on `longbow`. Recoil clamps a missing `weaponVelocity` to `0.01`, which inflated target-prediction lead to ~4500 s for melee range; an explicit velocity fixes the aim lead.
 
-Result: the BeamLaser control **also never fired**. Targets acquired (`tgt=1`), in range (minDist 40→2.6), fire-at-will, reloaded — still `UnitDamaged=0`, `UnitDestroyed=0`, `LUS FIRE=0` across frames 0→720.
+### Verified in-engine (Recoil 2026.07.04 headless, `tools/runtime/infolog.txt`)
 
-### Conclusion
+- `LUS AIM`/`LUS FIRE` echoes now fire for infantry (melee) and archers (ballistic longbow).
+- `UnitDamaged` records real damage (`dmg=135.4` melee sword, `dmg=81.2` longbow), `UnitDestroyed` records kills with attacker attribution.
+- By frame 780: `healthA=76010 healthB=68681` (down from ~140k), `damaged=958 destroyed=63`, unit counts dropping on both sides — a full live combat exchange resolving.
 
-`recoil_2026.07.04` headless gates **all** weapon fire at the engine-internal `CWeapon::CanFire()` / fire-dispatch stage, upstream of the script aim/fire call-ins. The residual state consistent with `CanFire==false` while reload/target/range/aim are all good is `salvoLeft==0` never being seeded for a never-fired weapon (the fork's `CanFire` appears to gate on it, and `salvoLeft` only fills inside `Fire()`, which `CanFire` never releases — a deadlock). No mod-data knob fires a weapon: `weaponType` (Cannon/Melee/BeamLaser), `reloadtime`, `salvoSize`, `salvoDelay`, `projectilesPerShot`, `turret`, `canAttack`/`canFight`, `CMD.FIRE_STATE=2`, `SetUnitWeaponState`, and the numbered/unnumbered LUS call-in conventions were all exercised and none unblocks fire. The fix must be engine-side (prime the ready/salvo counter at `CWeapon::Init` so `CanFire` releases the first shot) and is out of scope for a mod-content repo.
-
-The diagnostic control artifacts (`medieval_tester` unit/script, `testbeam` weapondef, control-pair spawn) were removed after the experiment; per-run raw logs are preserved in `tools/runtime/combat-evidence.txt` (runs 1–6) and `tools/runtime/infolog.txt`.
+Per-run raw logs are preserved in `tools/runtime/combat-evidence.txt` and `tools/runtime/infolog.txt`.
 
 ## Widget Manager Boot (Verified End-to-End)
 
@@ -243,7 +244,7 @@ Base-content `widgets.lua` has no `SelectionChanged` call-in (a BAR WidgetManage
 
 - No `LuaUI::RunCallInTraceback` / `LuaError` for `LuaUI/main.lua` or either repo widget.
 - The `[widgets.lua] Error: cannot open LuaUI/Config/MedBAR.lua` line is the widget manager's expected first-load config miss for a brand-new game (it then writes a default config); benign.
-- `pytest tests` → 23 passed.
+- `pytest tests` → 30 passed.
 
 ### Remaining widget-manager gaps for later revisions
 

@@ -80,7 +80,7 @@ function widget:TextCommand(command)
   end
   preview = slots -- visual estimate only, not transmitted as authoritative positions
   if words[1] == "medievalformation" then
-    IssueFormation(ids, x, z, spacing, facing)
+    IssueFormation(ids, x, z, slots.spacing or spacing, facing)
   end
   return true
 end
@@ -120,22 +120,33 @@ end
 function widget:MouseRelease(x, y, button)
   if not dragging or button ~= 1 then return false end
   local ids = SelectedFormationUnits()
-  if #ids > 0 and dragEndGround then
-    IssueFormation(ids, dragEndGround.x, dragEndGround.z, DRAG_SPACING, FacingFromDrag())
+  if #ids > 0 and dragEndGround and preview then
+    local spacing = preview.spacing or DRAG_SPACING
+    IssueFormation(ids, dragEndGround.x, dragEndGround.z, spacing, FacingFromDrag())
   end
   preview = nil
   ClearDrag()
   return true
 end
 
+function widget:KeyPress(key, mods, isRepeat, label, unicode)
+  if key == 27 and (dragging or preview) then -- 27 = ESC
+    preview = nil
+    ClearDrag()
+    return true
+  end
+  return false
+end
+
 -- Base-content widget manager has no SelectionChanged call-in (that is a
 -- BAR WidgetManager-only extension), so detect selection changes in Update
 -- and clear the transient preview the same way SelectionChanged would.
-local lastSelectedCount = -1
+local lastSelectedSig = ""
 function widget:Update()
-  local count = #(Spring.GetSelectedUnits() or {})
-  if count ~= lastSelectedCount then
-    lastSelectedCount = count
+  local sel = Spring.GetSelectedUnits() or {}
+  local sig = table.concat(sel, ",")
+  if sig ~= lastSelectedSig then
+    lastSelectedSig = sig
     preview = nil
     ClearDrag()
   end
