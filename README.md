@@ -4,7 +4,7 @@ A medieval total conversion prototype for the Recoil RTS engine, using BAR GPL c
 
 ## Current status
 
-Phase 1 is **complete**. The repository contains a Recoil total conversion scaffold, BAR GPL gadget infrastructure, license-compatible static 0 A.D. models and textures, unit/formation tests, and a verified in-engine headless simulation with live combat exchange (spawn, movement, target acquisition, C++ weapon aim, ballistic arrow flight, melee strikes, damage events, and unit destruction). See [Phase 1 status](docs/phase-1.md) for evidence and details.
+Phase 1 is **complete**. Phase 2 Slice 1 is **complete**: synced Food/Wood/Stone/Iron economy, settlement buildings, villager gathering/delivery state machine, resource nodes, and housing/population management are implemented and verified in Recoil headless. See [Phase 1 status](docs/phase-1.md) and [Phase 2 status](docs/phase-2.md) for evidence and details.
 
 ## Project structure
 

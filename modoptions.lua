@@ -26,4 +26,11 @@ return {
     max = 1000,
     step = 1,
   },
+  {
+    key = "phase2test",
+    name = "Phase 2 Settlement Test",
+    desc = "Enable synced economy, villagers, buildings, resource nodes, and housing probe",
+    type = "bool",
+    def = false,
+  },
 }

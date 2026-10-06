@@ -49,8 +49,8 @@
 	[MODOPTIONS]
 	{
 		deathmode=neverend;
-		medievaltest=1;
-		medievaltestcount=200;
-		debugcommands=1:forcestart|1200:quitforce;
+		medievaltest=0;
+		phase2test=1;
+		debugcommands=1:forcestart|600:quitforce;
 	}
 }
