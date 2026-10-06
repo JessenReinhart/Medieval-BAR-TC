@@ -44,7 +44,18 @@ function widget:TextCommand(command)
   return true
 end
 
-function widget:SelectionChanged() preview = nil end
+-- Base-content widget manager has no SelectionChanged call-in (that is a
+-- BAR WidgetManager-only extension), so detect selection changes in Update
+-- and clear the transient preview the same way SelectionChanged would.
+local lastSelectedCount = -1
+function widget:Update()
+  local count = #(Spring.GetSelectedUnits() or {})
+  if count ~= lastSelectedCount then
+    lastSelectedCount = count
+    preview = nil
+  end
+end
+
 function widget:DrawWorld()
   if not preview then return end
   gl.Color(0.2, 0.9, 0.3, 0.7)

@@ -138,3 +138,83 @@ Execution was run in isolated write directory `tools/runtime` using the followin
 4. **NOWEAPON Warning Resolved**:
    - Fixed `gamedata/weapondefs.lua`: removed invalid `explodeAs = "default"` tag from `NOWEAPON`. Verified by offline review; engine log pattern `Warning: WeaponDefs: Unknown tag "explodeas" in "noweapon"` is expected to disappear on next run.
 
+## Widget Manager Boot (Verified End-to-End)
+
+The base-content widget manager now boots from the game-owned LuaUI entry point, discovers both repo widgets, and the full Phase 1 gate (GameStart + frame-30 spawn + frame advance) runs through it.
+
+### Mechanism (why the naive basecontent port failed)
+
+The engine executes `LuaUI/main.lua` directly from the `LuaUI.cpp` C++ loader (`LuaUI Entry Point: "LuaUI/main.lua"`). It does **not** run the Recoil `luaui.lua` bootstrap wrapper (`tools/engine/recoil_2026.07.04/luaui.lua`), which is the file that defines `LUAUI_DIRNAME = 'LuaUI/'`, `LUAUI_VERSION`, and `VFS.DEF_MODE = VFS.RAW_FIRST` before chunk-loading `main.lua` via `VFS.LoadFile(..., VFS.RAW_ONLY)` + `loadstring`.
+
+Consequence: `LuaUI/main.lua` must initialize that prelude itself. Without it every `LUAUI_DIRNAME` reference fails at load:
+
+```text
+error=2 (LUA_ERRRUN) callin=LoadCode
+  [string "LuaUI/main.lua"]:19: attempt to concatenate global 'LUAUI_DIRNAME' (a nil value)
+```
+
+### Fix
+
+`LuaUI/main.lua` starts with:
+
+```lua
+LUAUI_DIRNAME = LUAUI_DIRNAME or 'LuaUI/'
+LUAUI_VERSION = LUAUI_VERSION or 'LuaUI v0.3'
+VFS.DEF_MODE = VFS.RAW_FIRST
+```
+
+The engine ships the base-content LuaUI boot files (`rml_setup.lua`, `utils.lua`, `widgets.lua`, `setupdefs.lua`, `savetable.lua`, `debug.lua`, `fonts.lua`, `layout.lua`, `callins.lua`, `system.lua`, `ctrlpanel.txt`) **RAW** next to the binary (`tools/engine/recoil_2026.07.04/LuaUI/`), not inside `springcontent.sdz`. The reference `main.lua` hardcodes `VFS.Include(..., VFS.ZIP)` for `rml_setup.lua`/`utils.lua`, which cannot see RAW files here:
+
+```text
+[LuaVFS::Include(synced=false)][loadvfs] file=LuaUI/rml_setup.lua status=-1
+  File not seen by VFS (missing or in different VFS mode)
+```
+
+so the game entry point includes them with the default `RAW_FIRST` mode instead.
+
+### Where the headless readiness lever lives
+
+`widgetHandler:UpdateCallIn("GameSetup")` (LuaUI/widgets.lua:802) **owns** the `_G.GameSetup`, `_G.GameStart`, and `_G.GameFrame` relays once any widget registers those callins, and would overwrite any GameSetup/GameStart defined in `main.lua` at boot. So the forcestart pump lives in `LuaUI/Widgets/gui_phase1_headless_ready.lua`:
+
+- `widget:GameSetup(...)` → answers `(true, true)` and pumps `Spring.SendCommands("forcestart")` every pregame draw.
+- `widget:GameStart()` → stops the pump.
+- `widget:Update()` → server-side `Spring.SendCommands("ready")` counterpart.
+
+`LuaUI/main.lua` additionally keeps a belt-and-braces `GameSetup`/`GameStart` override (defined after `include("widgets.lua")`, so it wins over the boot-time relay binding) that pumps `forcestart` and then forwards to `widgetHandler:GameSetup/GameStart`, guaranteeing the pump runs even if no widget handles GameSetup. `widgetHandler:GameSetup` (widgets.lua:1809) propagates `(true, newReady)` from the first widget that answers success, so the ready widget's `(true, true)` reaches the engine.
+
+### Canonical casing (FIX-A)
+
+Repo directories renamed to canonical casing with two-step `git mv` (case-insensitive NTFS): `luaui/` → `LuaUI/`, `luaui/widgets/` → `LuaUI/Widgets/`.
+
+### FIX-B: load-time RemoveWidget removed
+
+`gui_phase1_headless_ready.lua`'s module-level `widgetHandler:RemoveWidget(widget)` was removed. It terminated the chunk during `widgetHandler:LoadWidget()`, before the widget is attached to the handler. The correct barrier for the "medievaltest absent" case is a file-level `return false`, which keeps the widget unregistered and silent.
+
+### FIX-C: SelectionChanged not dispatched by basecontent
+
+Base-content `widgets.lua` has no `SelectionChanged` call-in (a BAR WidgetManager-only extension). `gui_medieval_formation_preview.lua` now detects selection changes in `widget:Update` via a `Spring.GetSelectedUnits()` count diff and clears the transient preview there.
+
+### Evidence (14 s headless run, this revision)
+
+```text
+[t=00:00:03.145275][f=-000001] LuaUI: bound F11 to the widget selector
+[t=00:00:03.146123][f=-000001] [widgets.lua] Error: cannot open LuaUI/Config/MedBAR.lua: No such file or directory
+[t=00:00:03.153117][f=-000001] LuaUI v0.3
+[t=00:00:03.344036][f=-000001] Phase 1: headless client ready (LuaUI widget GameSetup/Update opt-in)
+[t=00:00:03.348541][f=-000001] Phase 1: GameSetup call #1 (state=Choose start pos, ready=true)
+[t=00:00:03.645212][f=-000001] Phase 1: GameSetup call #110 (state=Choose start pos, ready=true)
+[t=00:00:03.649185][f=-000001] Phase 1: GameStart callin reached! Sim has started.
+[t=00:00:04.669254][f=0000030] Phase 1: requested 200; created 200 (team 0: 100, team 1: 100)
+[t=00:00:04.716390][f=0000030] Phase 1: LuaUI sim frame 30
+[t=00:00:13.218972][f=0000300] Phase 1: LuaUI sim frame 300
+```
+
+- No `LuaUI::RunCallInTraceback` / `LuaError` for `LuaUI/main.lua` or either repo widget.
+- The `[widgets.lua] Error: cannot open LuaUI/Config/MedBAR.lua` line is the widget manager's expected first-load config miss for a brand-new game (it then writes a default config); benign.
+- `pytest tests` → 22 passed.
+
+### Remaining widget-manager gaps for later revisions
+
+- Widget discovery echoes (`Found new widget ...`) are emitted for `LuaIntro/Widgets/` but basecontent `widgets.lua` loads `LuaUI/Widgets/` silently; widget execution (ready widget `Update`/`GameSetup` firing) is the discovery proof.
+- `gui_medieval_formation_preview.lua` `DrawWorld` preview circles only render for a spectating/playing client with a GL context; headless exercises the command + synced intent path only.
+
