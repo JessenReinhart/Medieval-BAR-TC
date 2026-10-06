@@ -1,8 +1,9 @@
 [GAME]
 {
+	HostIP=127.0.0.1;
 	MapName=Quicksilver Remake 1.24;
 	GameType=Medieval BAR Total Conversion 0.1.0-phase1;
-	StartPosType=1;
+	StartPosType=0;
 	GameStartDelay=0;
 	IsHost=1;
 	AutohostPort=8452;
@@ -35,6 +36,8 @@
 		Name=HeadlessChecker;
 		Team=0;
 		Spectator=0;
+		Ready=1;
+		StartPosReady=1;
 	}
 	[AI0]
 	{
