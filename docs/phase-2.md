@@ -72,3 +72,24 @@ Phase 2 implementation slice 1 is **complete and verified in-engine**.
 - `tests/test_phase2.py`: 22 tests passing (economy arithmetic, capacities, housing limits, gather ranges, unit definitions).
 - `tests/test_lua_syntax.py`: 1 test passing (compiles all 33 Lua files across repo).
 - Full suite: **53 passing pytest tests**.
+
+
+## Slice 2 Roadmap: Production Chains & Military Recruitment
+
+Phase 2 Slice 1 established discrete stockpiles, housing caps, settlement buildings, and the villager harvest/delivery loop. Slice 2 connects this economy to the military units built in Phase 1:
+
+1. **Equipment & Production Buildings**:
+   - `medieval_blacksmith.lua`: Converts Iron + Wood into weapons/armor over time.
+   - `medieval_barracks.lua`: Military training structure producing `medieval_infantry` and `medieval_archer`.
+   - `medieval_stables.lua`: Military training structure producing `medieval_cavalry`.
+
+2. **Economic Build Costs Validation (`AllowUnitCreation` / `AllowUnitBuildStep`)**:
+   - Intercept military training and structure placement to debit discrete resources (Food/Wood/Stone/Iron) via `GG.MedievalEconomy.Transact()`.
+   - Block training if the team cannot afford discrete costs, replacing Recoil's energy/metal requirement.
+
+3. **Population Upkeep & Military Idle Checks**:
+   - Military units consume food upkeep over time (e.g. 1 Food per 10s per soldier).
+   - Starvation penalties or training stalls when Food reaches 0.
+
+4. **Engine Headless Verification**:
+   - Test scenario verifying: villager constructs Barracks -> Wood/Stone debited -> Barracks trains Man-at-Arms -> Food/Iron debited -> Pop increases from 5 to 6.
