@@ -17,6 +17,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 OBJECTS_DIR = REPO_ROOT / "objects3d"
 CREDITS_FILE = REPO_ROOT / "CREDITS.md"
 LICENSE_FILE = REPO_ROOT / "LICENSE.md"
+WEAPONDEFS_FILE = REPO_ROOT / "gamedata" / "weapondefs.lua"
 
 VALID_MOVEDEFS = {
     "BOT2", "BOT3", "HBOT4", "HABOT5", "HTBOT6", "VBOT6", "HBOT7", "TBOT3",
@@ -100,6 +101,7 @@ class TestUnitDefinitions(unittest.TestCase):
             if unit_id not in table:
                 raise AssertionError(f"Unit key {unit_id} not returned in {path}")
             cls.unit_defs[unit_id] = table[unit_id]
+        cls.weapon_defs = load_lua_unit(WEAPONDEFS_FILE) if WEAPONDEFS_FILE.exists() else {}
 
     def test_movement_classes_valid_in_recoil(self):
         for unit_id, defn in self.unit_defs.items():
@@ -136,18 +138,20 @@ class TestUnitDefinitions(unittest.TestCase):
 
     def test_melee_infantry_weapon_definition(self):
         inf = self.unit_defs["medieval_infantry"]
-        wdefs = inf.get("weaponDefs", {})
-        self.assertIn("SWORD", wdefs)
-        sword = wdefs["SWORD"]
+        weapons = inf.get("weapons", {})
+        weapon_names = [w.get("name") or w.get("def") for w in weapons.values()] if isinstance(weapons, dict) else [w.get("name") or w.get("def") for w in weapons]
+        self.assertTrue(any(n and n.lower() == "sword" for n in weapon_names), f"medieval_infantry missing sword weapon reference: {weapon_names}")
+        sword = self.weapon_defs.get("sword") or self.weapon_defs.get("SWORD") or {}
         self.assertEqual(sword.get("weaponType"), "Melee")
         self.assertFalse(sword.get("turret", True), "Melee sword must not be a turret")
         self.assertLessEqual(sword.get("range", 999), 60, "Melee weapon range should be close combat")
 
     def test_archer_ballistic_weapon_definition(self):
         arc = self.unit_defs["medieval_archer"]
-        wdefs = arc.get("weaponDefs", {})
-        self.assertIn("LONGBOW", wdefs)
-        bow = wdefs["LONGBOW"]
+        weapons = arc.get("weapons", {})
+        weapon_names = [w.get("name") or w.get("def") for w in weapons.values()] if isinstance(weapons, dict) else [w.get("name") or w.get("def") for w in weapons]
+        self.assertTrue(any(n and n.lower() == "longbow" for n in weapon_names), f"medieval_archer missing longbow weapon reference: {weapon_names}")
+        bow = self.weapon_defs.get("longbow") or self.weapon_defs.get("LONGBOW") or {}
         self.assertEqual(bow.get("weaponType"), "Cannon")
         self.assertTrue(bow.get("turret", False), "Archer weapon requires turret aiming")
         self.assertGreater(bow.get("weaponVelocity", 0), 100, "Ballistic projectile requires velocity")
@@ -157,9 +161,10 @@ class TestUnitDefinitions(unittest.TestCase):
 
     def test_cavalry_lance_weapon_definition(self):
         cav = self.unit_defs["medieval_cavalry"]
-        wdefs = cav.get("weaponDefs", {})
-        self.assertIn("LANCE", wdefs)
-        lance = wdefs["LANCE"]
+        weapons = cav.get("weapons", {})
+        weapon_names = [w.get("name") or w.get("def") for w in weapons.values()] if isinstance(weapons, dict) else [w.get("name") or w.get("def") for w in weapons]
+        self.assertTrue(any(n and n.lower() == "lance" for n in weapon_names), f"medieval_cavalry missing lance weapon reference: {weapon_names}")
+        lance = self.weapon_defs.get("lance") or self.weapon_defs.get("LANCE") or {}
         self.assertEqual(lance.get("weaponType"), "Melee")
         self.assertFalse(lance.get("turret", True))
         self.assertLessEqual(lance.get("range", 999), 70)

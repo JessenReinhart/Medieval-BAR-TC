@@ -53,8 +53,14 @@ local function spawnForces()
   -- Scan is bounded; unsuitable maps legitimately produce fewer than requested units.
   for side = 1, 2 do
     local want = side == 1 and math.floor(count / 2) or math.ceil(count / 2)
-    local x0, x1 = Game.mapSizeX * (side == 1 and 0.10 or 0.60), Game.mapSizeX * (side == 1 and 0.40 or 0.90)
-    for x = x0, x1, 64 do
+    local x0 = Game.mapSizeX * (side == 1 and 0.30 or 0.55)
+    local x1 = Game.mapSizeX * (side == 1 and 0.45 or 0.70)
+    -- Fill from the shared inner edge outward so the two fronts start as close as
+    -- the ranges allow, rather than parking the bulk on the far outer columns.
+    local xstart = side == 1 and x1 or x0
+    local xstep = side == 1 and -64 or 64
+    local xend = side == 1 and x0 or x1
+    for x = xstart, xend, xstep do
       if #forces[side] >= want then break end
       for z = Game.mapSizeZ * 0.10, Game.mapSizeZ * 0.90, 64 do
         if #forces[side] >= want then break end

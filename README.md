@@ -4,9 +4,7 @@ A medieval total conversion prototype for the Recoil RTS engine, using BAR GPL c
 
 ## Current status
 
-Phase 1 is **not complete**. Infantry, archers, cavalry, deterministic test-force spawning, and line-formation commands are implemented. BAR GPL gadget infrastructure and movement definitions are included, with CC-BY-SA 3.0 static models and textures converted from 0 A.D.
-
-Headless launches recognize the game and map, but tested runs remain at pregame frame `-1`. Frame-30 spawning, live melee/ballistic combat, the GUI formation preview, and a 200-unit performance run remain unverified. Read [Phase 1 status](docs/phase-1.md) for evidence and failed readiness experiments.
+Phase 1 is **not complete**. The repository contains a Recoil total conversion scaffold, BAR GPL gadget infrastructure, license-compatible static 0 A.D. models and textures, unit/formation tests, and a verified headless sim (spawn, movement, target acquisition, C++ weapon aim). The one open item — an observed in-engine combat exchange (damage/death) — is blocked by an engine-side headless weapon-fire gate, not by the repo content. See [Phase 1 status](docs/phase-1.md) for evidence and the combat weapon-fire investigation.
 
 ## Project structure
 
