@@ -28,6 +28,10 @@ return {
     script = "medieval_infantry.lua",
     side = "MEDIEVAL",
     customparams = {
+      resource_cost_food = 30,
+      resource_cost_wood = 20,
+      resource_cost_stone = 10,
+      resource_cost_iron = 5,
       model_author = "Medieval-BAR-TC",
       unitgroup = "weapon",
     },

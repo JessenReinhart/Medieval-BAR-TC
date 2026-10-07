@@ -28,6 +28,10 @@ return {
     script = "medieval_archer.lua",
     side = "MEDIEVAL",
     customparams = {
+      resource_cost_food = 25,
+      resource_cost_wood = 30,
+      resource_cost_stone = 5,
+      resource_cost_iron = 2,
       model_author = "Medieval-BAR-TC",
       unitgroup = "weapon",
     },

@@ -1,0 +1,33 @@
+return {
+  medieval_stables = {
+    name = "Stables",
+    description = "Trains mounted cavalry for raiding and scouting.",
+    category = "LAND",
+    buildCostEnergy = 0,
+    buildCostMetal = 200,
+    builder = false,
+    buildTime = 75,
+    canMove = false,
+    canAttack = false,
+    canFight = false,
+    canPatrol = false,
+    canGuard = false,
+    isFactory = true,
+    footprintX = 6,
+    footprintZ = 6,
+    maxDamage = 2200,
+    sightDistance = 400,
+    mass = 800,
+    upright = true,
+    objectName = "0ad/medieval_infantry.obj",
+    side = "MEDIEVAL",
+    buildoptions = {
+      "medieval_cavalry",
+    },
+    customparams = {
+      model_author = "Medieval-BAR-TC",
+      resource_cost_wood = 200,
+      resource_cost_stone = 120,
+    },
+  },
+}

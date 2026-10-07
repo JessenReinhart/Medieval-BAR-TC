@@ -28,6 +28,10 @@ return {
     script = "medieval_cavalry.lua",
     side = "MEDIEVAL",
     customparams = {
+      resource_cost_food = 50,
+      resource_cost_wood = 20,
+      resource_cost_stone = 20,
+      resource_cost_iron = 25,
       model_author = "Medieval-BAR-TC",
       unitgroup = "weapon",
     },

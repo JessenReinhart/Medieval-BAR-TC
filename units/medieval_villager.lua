@@ -34,6 +34,9 @@ return {
       "medieval_house",
       "medieval_granary",
       "medieval_lumber_camp",
+      "medieval_barracks",
+      "medieval_stables",
+      "medieval_blacksmith",
     },
     customparams = {
       model_author = "Medieval-BAR-TC",

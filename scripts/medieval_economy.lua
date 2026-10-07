@@ -61,6 +61,15 @@ function M.canAfford(stock, resource, amount)
     and type(stock) == "table" and M.finite(stock[resource]) and stock[resource] >= amount
 end
 
+-- Can a stock table afford an entire costs table? costs maps resource -> amount.
+function M.canAffordCosts(stock, costs)
+  if type(stock) ~= "table" or type(costs) ~= "table" then return false end
+  for r, a in pairs(costs) do
+    if not M.canAfford(stock, r, a) then return false end
+  end
+  return true
+end
+
 -- Apply a costs table atomically. costs maps resource -> amount and MUST be fully
 -- affordable; otherwise no stockpile is mutated. Returns true or nil.
 function M.transact(stock, costs)

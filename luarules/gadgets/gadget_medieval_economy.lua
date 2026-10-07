@@ -74,6 +74,9 @@ GG.MedievalEconomy = {
   CanAfford = function(teamID, resource, amount)
     initTeam(teamID)
     local s = teamStockpiles[teamID]
+    if type(resource) == "table" then
+      return econ.canAffordCosts(s, resource)
+    end
     return econ.canAfford(s, resource, amount)
   end,
 

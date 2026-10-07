@@ -144,6 +144,49 @@ function gadget:GameFrame(frame)
       end
     end
   end
+  if frame == 60 and spawned and GG and GG.MedievalEconomy then
+    local a, b = opposingTeams()
+    if a then
+      local food0 = Spring.GetGameRulesParam(string.format("team_%d_food", a)) or "?"
+      local wood0 = Spring.GetGameRulesParam(string.format("team_%d_wood", a)) or "?"
+      local stone0 = Spring.GetGameRulesParam(string.format("team_%d_stone", a)) or "?"
+      Spring.Echo(string.format("PHASE2 PROBE SLICE2 START f=%d team=%d food=%s wood=%s stone=%s", frame, a, tostring(food0), tostring(wood0), tostring(stone0)))
+      local okPlace = GG.MedievalEconomy.CanAfford(a, { wood = 150, stone = 100 })
+      Spring.Echo(string.format("PHASE2 PROBE SLICE2 barracks-affordable=%s team=%d", tostring(okPlace), a))
+      if okPlace then
+        local okTx = GG.MedievalEconomy.Transact(a, { wood = 150, stone = 100 })
+        Spring.Echo(string.format("PHASE2 PROBE SLICE2 barracks-placed team=%d wood=150 stone=100 tx=%s", a, tostring(okTx)))
+        -- Spawn the barracks live in engine so UnitFinished call-in triggers
+        local barDef = UnitDefNames["medieval_barracks"]
+        if barDef then
+          local bx, bz = 2508 + 120, 3584
+          local by = Spring.GetGroundHeight(bx, bz)
+          local barID = Spring.CreateUnit(barDef.id, bx, by, bz, "south", a)
+          Spring.Echo(string.format("PHASE2 PROBE SLICE2 spawned barracks id=%s team=%d", tostring(barID), a))
+        end
+      end
+      -- Deposit 50 food so the test team can afford to recruit infantry
+      GG.MedievalEconomy.Deposit(a, "food", 50)
+      local okTrain = GG.MedievalEconomy.CanAfford(a, { food = 30, wood = 20, stone = 10, iron = 5 })
+      Spring.Echo(string.format("PHASE2 PROBE SLICE2 infantry-affordable=%s team=%d", tostring(okTrain), a))
+      if okTrain then
+        local okTx2 = GG.MedievalEconomy.Transact(a, { food = 30, wood = 20, stone = 10, iron = 5 })
+        Spring.Echo(string.format("PHASE2 PROBE SLICE2 infantry-trained team=%d food=30 wood=20 stone=10 iron=5 tx=%s", a, tostring(okTx2)))
+        -- Spawn the trained infantry live in engine
+        local infDef = UnitDefNames["medieval_infantry"]
+        if infDef then
+          local ix, iz = 2508 + 150, 3584
+          local iy = Spring.GetGroundHeight(ix, iz)
+          local infID = Spring.CreateUnit(infDef.id, ix, iy, iz, "south", a)
+          Spring.Echo(string.format("PHASE2 PROBE SLICE2 spawned infantry id=%s team=%d", tostring(infID), a))
+        end
+        if GG.MedievalRecruitment then
+          local can = GG.MedievalRecruitment.CanRecruit(a, "medieval_infantry")
+          Spring.Echo(string.format("PHASE2 PROBE SLICE2 can-recruit-infantry=%s team=%d", tostring(can), a))
+        end
+      end
+    end
+  end
   if frame % 90 == 0 and spawned then
     local a, b = opposingTeams()
     if a then

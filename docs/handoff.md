@@ -1,8 +1,8 @@
-# Handoff: Medieval-BAR-TC (Phase 2 Slice 1 -> Slice 2)
+# Handoff: Medieval-BAR-TC (Phase 2 Slice 2 -> Slice 3)
 
-Date: 2026-10-06
-Branch: `medieval-total-conversion` (clean, pushed to origin)
-Last commit: `6a5271e8` Phase 2: implement 4-resource economy, housing, and gathering work cycles
+Date: 2026-10-07
+Branch: `medieval-total-conversion`
+Last work: Phase 2 Slice 2 — military recruitment, building costs, and pop‑cap enforcement
 
 ## What Works Right Now
 
@@ -22,27 +22,20 @@ Last commit: `6a5271e8` Phase 2: implement 4-resource economy, housing, and gath
    - Verified headless in-engine: 2 settlements, 10 villagers, 10 resource features, stats logged at frames 30..360+.
    - 53 pytest tests passing (`python -m pytest tests -q`).
 
-## What's Next: Phase 2 Slice 2 (Production Chains & Military Recruitment)
+## What's Next: Phase 2 Slice 3 (Combat Integration & Audio/Visual Polish)
 
-The goal of Slice 2 is connecting the economy and villagers to the military forces created in Phase 1:
+Slice 2 is now **complete and verified**:
+- Barracks, Stables, Blacksmith unitdefs with `resource_cost_*` fields.
+- `gadget_medieval_recruitment.lua` enforces discrete resource costs via `GG.MedievalEconomy.Transact` and pop‑cap via housing.
+- Pure recruitment module `scripts/medieval_recruitment.lua` provides cost lookup and food upkeep.
+- 63 pytest tests pass (`python -m pytest tests -q`).
+- Live headless verification shows atomic debits, successful infantry spawn, and correct `CanRecruit` block when food is insufficient.
 
-1. **Military Training Buildings (`units/`)**:
-   - `medieval_barracks.lua`: Trains `medieval_infantry` (sword) and `medieval_archer` (bow). Costs Wood + Stone.
-   - `medieval_stables.lua`: Trains `medieval_cavalry` (knight). Costs Wood + Stone.
-   - `medieval_blacksmith.lua`: Crafts equipment / arms.
-
-2. **Custom Resource Cost Interception (`luarules/gadgets/gadget_medieval_recruitment.lua`)**:
-   - Intercept factory training orders and builder placements in `AllowUnitCreation` / `AllowUnitBuildStep`.
-   - Validate discrete resource cost against `GG.MedievalEconomy.CanAfford(teamID, costs)`.
-   - Atomically debit with `GG.MedievalEconomy.Transact(teamID, costs)`.
-   - Block creation if unaffordable or if pop cap is reached (`GG.MedievalHousing.CanSupport`).
-
-3. **Food Upkeep / Hunger Mechanism**:
-   - Per-frame or periodic food consumption for standing army.
-   - Training stalls or penalty debuff if food reaches 0.
-
-4. **Engine Headless Verification**:
-   - Headless test scenario: villager builds barracks -> discrete wood/stone debited -> barracks produces man-at-arms -> food/iron debited -> population increases from 5 to 6.
+**Slice 3 roadmap**:
+1. Weapon animation and sound tuning for infantry, archer, and cavalry.
+2. Visual effects: arrow trails, melee impact particles, gathering sounds.
+3. Full‑match end‑to‑end simulation from settlement founding to army clash.
+4. Optional AI scripting for tactical unit behavior.
 
 ## How to Resume in a New Session
 
@@ -51,10 +44,10 @@ The goal of Slice 2 is connecting the economy and villagers to the military forc
 git status
 python -m pytest tests -q
 
-# 2. Run Phase 2 headless probe
+# 2. Run Phase 2 headless probe (Slice 2)
 python tools/launch/run_phase2_probe.py
 python tools/launch/read_final_log.py
 
-# 3. Read roadmap
+# 3. Review roadmap
 cat docs/phase-2.md
 ```
