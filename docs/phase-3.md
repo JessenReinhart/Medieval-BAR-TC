@@ -1,7 +1,8 @@
 # Phase 3: Logistics, Tech Tree & Fortifications
 
-Phase 3 implementation **Slice 1 complete and verified** — full test suite green, headless
-engine probe confirms road placement, speed multiplier echo, and tech unlocks.
+Phase 3 implementation **Slice 2 complete and verified** — full test suite green (144 tests),
+headless engine probe confirms road placement, speed multiplier echo, tech unlocks, scaled melee
+damage, and villager fortification build options.
 
 ## Pinned Upstream BAR Reference
 - Repository: `https://github.com/beyond-all-reason/Beyond-All-Reason`
@@ -89,5 +90,17 @@ superseded).
 - [x] Gadget wiring (auto-discovered from `luarules/gadgets/`).
 - [x] Road feature def + wall/tower unit defs.
 - [x] Probe block (in `gadget_phase2_test_forces.lua`) + tests.
-- [ ] Villager build command integration (needs Phase 2 gather-priority extension).
-- [ ] Weapon upgrade application in combat LUS (needs Phase 1 hook).
+- [x] Villager build command integration — done in Slice 2.
+- [x] Weapon upgrade application in combat LUS — done in Slice 2.
+
+## Slice 2 Roadmap
+- [x] Road build handling — `isBuildable` / `roadBuildQueueValidation` in the pure module;
+      `AllowUnitCreation` gates road feature placement on affordability.
+- [x] Wall/tower build options — `medieval_wall` / `medieval_tower` added to the villager
+      `buildoptions` (`units/medieval_villager.lua`) and cost-checked at placement.
+- [x] UnitPreDamaged damage scaling — `gadget_medieval_logistics.lua` applies researched
+      `iron_swords` (+25% infantry melee) via `logistics.scaledDamage`; echoes `PHASE3 DAMAGE`.
+- [x] Tests — `tests/test_phase3_slice2.py` (buildable detection, road positioning, scaled
+      damage, build-queue validation, gadget damage wiring); full suite 144 passing.
+- [x] Probe — `PHASE3 PROBE damage-scaling verified` and `PHASE3 PROBE villager-buildopts`
+      lines via `gadget_phase2_test_forces.lua` during the `run_phase2_slice2_probe.py` run.

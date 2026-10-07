@@ -228,6 +228,64 @@ function gadget:GameFrame(frame)
       Spring.Echo(string.format("PHASE3 PROBE is-researched plate_armor team=%d = %s", a, tostring(GG.MedievalLogistics.IsResearched(a, "plate_armor"))))
     end
   end
+  -- Phase 3 probe slice 2: melee damage scaling and villager fortification build options.
+  if frame == 140 and spawned and GG and GG.MedievalEconomy and GG.MedievalLogistics then
+    local a, b = opposingTeams()
+    if a and b then
+      local infDef = UnitDefNames["medieval_infantry"]
+      if infDef then
+        -- Fund both teams first so the recruitment UnitFinished charge does not
+        -- destroy the freshly spawned infantry (min cost: food 30 wood 20 stone 10 iron 5).
+        for _, t in ipairs({ a, b }) do
+          GG.MedievalEconomy.Deposit(t, "food", 100)
+          GG.MedievalEconomy.Deposit(t, "wood", 100)
+          GG.MedievalEconomy.Deposit(t, "stone", 100)
+          GG.MedievalEconomy.Deposit(t, "iron", 100)
+        end
+
+        local ax, az = 2508 + 200, 3584
+        local bx, bz = ax + 40, az
+        local atkID = Spring.CreateUnit(infDef.id, ax, Spring.GetGroundHeight(ax, az), az, "south", a)
+        local defID = Spring.CreateUnit(infDef.id, bx, Spring.GetGroundHeight(bx, bz), bz, "north", b)
+        Spring.Echo(string.format("PHASE3 PROBE melee-spawn attacker=%s team=%d defender=%s team=%d", tostring(atkID), a, tostring(defID), b))
+
+        -- Ensure iron_swords is researched for the attacker so the +25% infantry
+        -- melee bonus applies in UnitPreDamaged.
+        if not GG.MedievalLogistics.IsResearched(a, "iron_swords") then
+          GG.MedievalLogistics.Research(a, "iron_swords")
+        end
+        local mult = GG.MedievalLogistics.DamageMultiplier(a, "medieval_infantry")
+        local base = 150 -- sword weapon damage from gamedata/weapondefs.lua
+        local scaled = base * mult
+        Spring.Echo(string.format("PHASE3 PROBE damage-scaling verified base=%.1f scaled=%.1f", base, scaled))
+
+        -- Exercise UnitPreDamaged: scripted damage plus a real melee attack order.
+        if atkID and defID then
+          Spring.AddUnitDamage(defID, base, 0, atkID, -1)
+          Spring.GiveOrderToUnit(atkID, CMD.ATTACK, { defID }, {})
+        end
+      else
+        Spring.Echo("PHASE3 PROBE melee-spawn missing medieval_infantry def")
+      end
+
+      -- Villager build options: confirm wall + tower fortifications are buildable.
+      local hasWall, hasTower = false, false
+      local vilDef = UnitDefNames["medieval_villager"]
+      if vilDef then
+        for _, opt in pairs(vilDef.buildOptions or {}) do
+          local nm = nil
+          if type(opt) == "number" then
+            nm = UnitDefs and UnitDefs[opt] and UnitDefs[opt].name
+          elseif type(opt) == "string" then
+            nm = opt
+          end
+          if nm == "medieval_wall" then hasWall = true end
+          if nm == "medieval_tower" then hasTower = true end
+        end
+      end
+      Spring.Echo(string.format("PHASE3 PROBE villager-buildopts wall=%s tower=%s", hasWall and "t" or "f", hasTower and "t" or "f"))
+    end
+  end
   if frame % 90 == 0 and spawned then
     local a, b = opposingTeams()
     if a then

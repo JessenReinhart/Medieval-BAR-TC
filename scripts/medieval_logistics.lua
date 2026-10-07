@@ -120,4 +120,24 @@ function M.healthMultiplier(unlocked, unitName)
   return mult
 end
 
+function M.isBuildable(defName)
+  return M.COSTS[defName] ~= nil
+end
+
+function M.scaledDamage(baseDamage, multiplier)
+  local d = baseDamage * multiplier
+  if d < 0 then d = 0 end
+  return d
+end
+
+function M.roadBuildQueueValidation(canAfford, costs)
+  if type(costs) ~= "table" then
+    return "bad_costs"
+  end
+  if canAfford then
+    return "ok"
+  end
+  return "insufficient_resources"
+end
+
 return M

@@ -1,8 +1,8 @@
-# Handoff: Medieval-BAR-TC (Phase 3 Slice 1 Complete)
+# Handoff: Medieval-BAR-TC (Phase 3 Slice 2 Complete)
 
 Date: 2026-10-07
 Branch: `medieval-total-conversion`
-Last work: Phase 3 Slice 1 — road features, speed multiplier, tech tree, fortifications (verified)
+Last work: Phase 3 Slice 2 — road build handling, wall/tower build options, UnitPreDamaged damage scaling (verified)
 
 ## What Works Right Now
 
@@ -41,6 +41,12 @@ Last work: Phase 3 Slice 1 — road features, speed multiplier, tech tree, forti
    - Gadget `gadget_medieval_logistics.lua` (layer 3 synced) exposing `GG.MedievalLogistics`.
    - 131 pytest tests passing at Slice 1 completion.
 
+6. **Phase 3 Slice 2 (Build Handling, Damage Scaling)** — just landed and verified:
+   - Road build handling: `isBuildable` / `roadBuildQueueValidation` in `scripts/medieval_logistics.lua`; `AllowUnitCreation` gates road feature placement on affordability.
+   - Wall/tower build options: `medieval_wall` / `medieval_tower` added to villager `buildoptions` (`units/medieval_villager.lua`) and cost-checked at placement.
+   - `UnitPreDamaged` damage scaling: researched `iron_swords` (+25% infantry melee) applied via `logistics.scaledDamage`; echoes `PHASE3 DAMAGE`.
+   - 144 pytest tests passing at Slice 2 completion.
+
 ## How to Run the Slice 3 Tests and Probe
 
 ```pwsh
@@ -60,26 +66,27 @@ the probe's `PHASE2` filter. There is no dedicated Slice 3 upkeep probe: upkeep 
 through the pure-module tests plus the in-game `GG.MedievalRecruitment` API, and `GameFrame`
 drives the 90-frame tick automatically.
 
-## How to Run the Phase 3 Slice 1 Tests and Probe
+## How to Run the Phase 3 Slice 2 Tests and Probe
 
 ```pwsh
-# Phase 3 focused tests
-python -m pytest tests/test_phase3_logistics.py -q
+# Phase 3 Slice 2 focused tests
+python -m pytest tests/test_phase3_slice2.py -q
 
-# Full suite
+# Full suite (144 passing)
 python -m pytest tests -q
 
 # Headless engine run (syncs source -> SDD, emits PHASE3 probe lines to infolog.txt)
 python tools/launch/run_phase2_slice2_probe.py
 
-# Inspect Phase 3 probe output
+# Inspect Phase 3 probe output (Slice 1 road/tech + Slice 2 damage/build options)
 Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE3"
 ```
 
 The `PHASE3` probe is driven by `gadget_phase2_test_forces.lua` at `GameFrame == 120` (there is
 no separate `run_phase3_probe.py`). Expected lines: `PHASE3 ROAD placed ...`, `PHASE3 PROBE
-is-on-road ... speed_mult=1.50`, `PHASE3 TECH researched ... tech=iron_swords|plate_armor`, and
-`PHASE3 PROBE research <tech> ... ok=true`.
+is-on-road ... speed_mult=1.50`, `PHASE3 TECH researched ... tech=iron_swords|plate_armor`,
+`PHASE3 PROBE research <tech> ... ok=true`, plus Slice 2 lines `PHASE3 PROBE damage-scaling
+verified ...` and `PHASE3 PROBE villager-buildopts wall=t tower=t`.
 
 ## Slice 3 Known Limitations
 
@@ -98,10 +105,8 @@ is-on-road ... speed_mult=1.50`, `PHASE3 TECH researched ... tech=iron_swords|pl
 - **Tick cadence is frame-based**: one tick = `UPKEEP_TICK_FRAMES = 90` engine frames; no
   wall-clock conversion or catch-up logic. Upkeep runs only on `GameFrame` multiples of 90.
 
-## What's Next: Phase 3 Slice 2
+## What's Next: Phase 3 Slice 3
 
-- Villager build-command integration for roads/walls/towers (extends Phase 2 gather-priority).
-- Apply researched weapon damage to infantry/cavalry in the combat LUS (needs Phase 1 hook).
 - Road adjacency graph + connectivity validation.
 
 ## How to Resume in a New Session

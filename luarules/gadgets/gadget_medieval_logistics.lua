@@ -140,6 +140,23 @@ function gadget:UnitDestroyed(unitID, unitDefID, teamID, attackerID, attackerDef
   -- no persistent state keyed on destroyed buildings for now
 end
 
+function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
+  if not attackerID or not attackerDefID then
+    return damage, 1.0
+  end
+  local attackerDef = UnitDefs and UnitDefs[attackerDefID]
+  if not attackerDef or not attackerDef.name or not string.find(attackerDef.name, "^medieval_") then
+    return damage, 1.0
+  end
+  local u = unlocked[attackerTeam]
+  if u and u.iron_swords and attackerDef.name == "medieval_infantry" then
+    local newDamage = logistics.scaledDamage(damage, 1.25)
+    echo("PHASE3 DAMAGE attacker=%d defender=%d base=%.1f scaled=%.1f", attackerID, unitID, damage, newDamage)
+    return newDamage, 1.0
+  end
+  return damage, 1.0
+end
+
 -- ---------------------------------------------------------------------------
 -- GG public API
 -- ---------------------------------------------------------------------------
