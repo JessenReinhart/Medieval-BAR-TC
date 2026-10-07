@@ -41,6 +41,10 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
+        -- FX placeholder (no audio/CEG assets exist in this repo yet):
+        --   soundstart = "<arrow release sfx>", soundhit = "<arrow impact sfx>",
+        --   explosionGenerator = "<arrow hit CEG>"
+        -- Keep as comment until a sounds/ dir and CEG generator names exist.
       },
     },
   },

@@ -41,6 +41,10 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
+        -- FX placeholder (no audio/CEG assets exist in this repo yet):
+        --   soundstart = "<cavalry charge sfx>", soundhit = "<lance impact sfx>",
+        --   explosionGenerator = "<charge impact CEG>"
+        -- Keep as comment until a sounds/ dir and CEG generator names exist.
       },
     },
   },

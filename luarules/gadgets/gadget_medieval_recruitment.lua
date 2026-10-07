@@ -12,8 +12,11 @@ end
 if not gadgetHandler:IsSyncedCode() then return end
 
 local housing = VFS.Include("scripts/medieval_housing.lua")
+local recruit = VFS.Include("scripts/medieval_recruitment.lua")
 
 local COST_PREFIX = "resource_cost_"
+-- Observability flag: echoes one upkeep line per team per tick into the game log.
+local UPKEEP_DEBUG = true
 
 -- Spring engine exposes custom parameters under either def.customParams or def.customparams.
 -- Check both so neither loader variant slips through.
@@ -42,7 +45,8 @@ end
 
 -- Resolve internal unit definition name reliably: try name, then id lookup.
 local function internalName(unitDefID)
-  local def = UnitDefs[unitDefID]
+  if not unitDefID then return nil end
+  local def = UnitDefs and UnitDefs[unitDefID]
   if not def then return nil end
   -- Recoil engine populates UnitDefs[id].name as internal or short name
   return def.name
@@ -58,9 +62,12 @@ local function popBlocked(teamID, defName)
 end
 
 local chargedUnits = {}
+-- Last team_<id>_starving marker published per team; nil until the first tick.
+local starvingState = {}
 
 function gadget:Initialize()
   chargedUnits = {}
+  starvingState = {}
 end
 
 -- Block building placement that cannot be paid for or supported by housing.
@@ -100,6 +107,8 @@ end
 -- UnitFromFactory fires when a factory produces a unit (infantry, archer, cavalry, villager).
 -- Enforces pop cap and debits recruitment resources at birth.
 function gadget:UnitFromFactory(unitID, unitDefID, unitTeam, factID, factDefID, userOrders)
+  -- Guard against double charging when UnitFinished also fires for this unit.
+  if chargedUnits[unitID] then return end
   local name = internalName(unitDefID)
   if popBlocked(unitTeam, name) then
     Spring.DestroyUnit(unitID, true, true)
@@ -121,9 +130,153 @@ function gadget:UnitDestroyed(unitID, unitDefID, teamID)
   chargedUnits[unitID] = nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Phase-3: standing-army food upkeep and starvation
+-- ---------------------------------------------------------------------------
+
+local UPKEEP_TICK_FRAMES = tonumber(recruit and recruit.UPKEEP_TICK_FRAMES) or 90
+if not (UPKEEP_TICK_FRAMES > 0) then UPKEEP_TICK_FRAMES = 90 end
+
+local function economyAPI()
+  if not GG or not GG.MedievalEconomy then return nil end
+  return GG.MedievalEconomy
+end
+
+-- Publish team_<id>_starving, writing the gamerule param only on change.
+local function setStarving(teamID, starving)
+  local marker = starving and 1 or 0
+  if starvingState[teamID] ~= marker then
+    starvingState[teamID] = marker
+    if Spring and Spring.SetGameRulesParam then
+      Spring.SetGameRulesParam(string.format("team_%d_starving", teamID), marker)
+    end
+  end
+  return marker
+end
+
+-- Standing-army member: military names carry the medieval_ prefix and an
+-- upkeep rate, which excludes villagers plus every building and town.
+local function isArmyUnit(name)
+  if type(name) ~= "string" then return false end
+  if not string.find(name, "^medieval_") then return false end
+  if not recruit or not recruit.isMilitary then return false end
+  return recruit.isMilitary(name)
+end
+
+-- Live army of a team as parallel lists: def names and unit IDs.
+local function armyOf(teamID)
+  local names, ids = {}, {}
+  if not Spring or not Spring.GetTeamUnits then return names, ids end
+  for _, uid in ipairs(Spring.GetTeamUnits(teamID) or {}) do
+    local name = nil
+    if Spring.GetUnitDefID then name = internalName(Spring.GetUnitDefID(uid)) end
+    if isArmyUnit(name) then
+      local hp = Spring.GetUnitHealth and Spring.GetUnitHealth(uid)
+      if hp and hp > 0 then
+        names[#names + 1] = name
+        ids[#ids + 1] = uid
+      end
+    end
+  end
+  return names, ids
+end
+
+-- Food owed by a team for one tick, plus the folded unit counts behind it.
+local function teamUpkeep(teamID)
+  local names = armyOf(teamID)
+  local counts = (recruit and recruit.armyCounts) and recruit.armyCounts(names) or {}
+  local total = (recruit and recruit.armyUpkeep) and recruit.armyUpkeep(counts) or 0
+  return total, counts
+end
+
+-- Mild attrition while starving: up to 5% of current HP, never lethal, so the
+-- standing army shrinks in strength instead of vanishing.
+local function starveUnits(ids)
+  if not Spring or not Spring.SetUnitHealth then return end
+  for _, uid in ipairs(ids or {}) do
+    local hp = Spring.GetUnitHealth and Spring.GetUnitHealth(uid)
+    if hp and hp > 0 and recruit and recruit.starvedHealth then
+      local newHp = recruit.starvedHealth(hp)
+      if newHp and newHp > 0 and newHp < hp then
+        Spring.SetUnitHealth(uid, newHp)
+      end
+    end
+  end
+end
+
+-- One upkeep tick per team: charge food, publish the starving marker, and
+-- apply attrition when the team cannot pay.
+local function upkeepTick()
+  if not Spring or not Spring.GetTeamList then return end
+  local economy = economyAPI()
+  for _, teamID in ipairs(Spring.GetTeamList() or {}) do
+    local names, ids = armyOf(teamID)
+    local counts = (recruit and recruit.armyCounts) and recruit.armyCounts(names) or {}
+    local total = (recruit and recruit.armyUpkeep) and recruit.armyUpkeep(counts) or 0
+
+    local starving = false
+    if total > 0 then
+      local costs = { food = total }
+      if economy and economy.CanAfford and economy.CanAfford(teamID, costs) then
+        if economy.Transact then
+          -- Transact re-checks the balance, so a concurrent spend cannot overdraw.
+          starving = not economy.Transact(teamID, costs)
+        else
+          starving = true
+        end
+      else
+        starving = true
+      end
+    end
+
+    setStarving(teamID, starving)
+    if starving then starveUnits(ids) end
+
+    -- Headless/probe observability: upkeep is otherwise invisible because the
+    -- starving marker is a game-rules param, not a log line.
+    if UPKEEP_DEBUG and Spring.Echo then
+      local food = "?"
+      if economy and economy.GetResource then
+        food = tostring(economy.GetResource(teamID, "food") or "?")
+      end
+      Spring.Echo(string.format(
+        "PHASE2 UPKEEP team=%d army=%d cost=%d paid=%s food_left=%s starving=%s",
+        teamID, #ids, total, tostring(not starving), food, tostring(starving)))
+    end
+  end
+end
+
+-- Seed the marker at game start so team_<id>_starving is readable before the
+-- first upkeep tick instead of being absent.
+function gadget:GameStart()
+  if not Spring or not Spring.GetTeamList then return end
+  for _, teamID in ipairs(Spring.GetTeamList() or {}) do
+    setStarving(teamID, false)
+  end
+end
+
+function gadget:GameFrame(frame)
+  if type(frame) ~= "number" or frame <= 0 then return end
+  if (frame % UPKEEP_TICK_FRAMES) ~= 0 then return end
+  upkeepTick()
+end
+
 GG = GG or {}
 GG.MedievalRecruitment = {
   UnitCosts = unitCosts,
+
+  -- Food owed by a team for the next upkeep tick.
+  Upkeep = function(teamID)
+    local total = teamUpkeep(teamID)
+    return total or 0
+  end,
+
+  IsStarving = function(teamID)
+    return starvingState[teamID] == 1
+  end,
+
+  -- Force an upkeep pass (used by probes; GameFrame drives it in-game).
+  RunUpkeepTick = upkeepTick,
 
   CanRecruit = function(teamID, defName)
     local def = UnitDefNames and UnitDefNames[defName]

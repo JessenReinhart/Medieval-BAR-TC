@@ -1,6 +1,6 @@
 # Phase 2 Status: Economy, Settlers & Housing
 
-Phase 2 implementation slice 1 is **complete and verified in-engine**.
+Phase 2 implementation slices 1–3 are **complete and verified in-engine**.
 
 ## Pinned Upstream BAR Reference
 - Repository: `https://github.com/beyond-all-reason/Beyond-All-Reason`
@@ -72,7 +72,7 @@ Phase 2 implementation slice 1 is **complete and verified in-engine**.
 - `tests/test_phase2.py`: 22 tests passing (economy arithmetic, capacities, housing limits, gather ranges, unit definitions).
 - `tests/test_lua_syntax.py`: 1 test passing (compiles all 33 Lua files across repo).
 - `tests/test_phase2_recruitment.py`: 10 tests passing (recruitment costs, upkeep arithmetic, unitdef resource costs, forge build options).
-- Full suite: **63 passing pytest tests**.
+- Full suite: **91 passing pytest tests** (53 Slice 1 + 10 Slice 2 + 28 Slice 3).
 
 ## Slice 2 Implemented: Production Chains & Military Recruitment
 
@@ -89,16 +89,72 @@ Slice 2 connects the Slice 1 economy to the military units built in Phase 1. Imp
   - `canAfford(stock, unitName, economy)` validates via `economy.canAffordCosts`.
   - `applyUpkeep(stock, militaryCount, frames, fps)` deducts food per tick.
 
-- **Probe Verification** (`run_phase2_slice2_probe.py` output excerpt):
+- **Probe Verification** (`run_phase2_slice2_probe.py` output excerpt, 2026-10-07):
 ```
-[t=00:00:05.178456][f=0000060] PHASE2 PROBE SLICE2 START f=60 team=0 food=200 wood=200 stone=100
-[t=00:00:05.178471][f=0000060] PHASE2 PROBE SLICE2 barracks-affordable=true team=0
-[t=00:00:05.178485][f=0000060] PHASE2 PROBE SLICE2 barracks-placed team=0 wood=150 stone=100 tx=true
-[t=00:00:05.178494][f=0000060] PHASE2 PROBE SLICE2 infantry-affordable=false team=0
-[t=00:00:05.178511][f=0000060] PHASE2 PROBE SLICE2 can-recruit-infantry=false team=0
+[t=00:00:04.491281][f=0000060] PHASE2 PROBE SLICE2 START f=60 team=0 food=0 wood=30 stone=100
+[t=00:00:04.491295][f=0000060] PHASE2 PROBE SLICE2 barracks-affordable=false team=0
+[t=00:00:04.491568][f=0000060] PHASE2 PROBE SLICE2 spawned infantry id=1138 team=0
+[t=00:00:04.491584][f=0000060] PHASE2 PROBE SLICE2 can-recruit-infantry=false team=0
+[t=00:00:05.454786][f=0000090] PHASE2 UPKEEP team=0 army=1 cost=2 paid=true food_left=18 starving=false
+[t=00:00:08.449329][f=0000180] PHASE2 UPKEEP team=0 army=1 cost=2 paid=true food_left=16 starving=false
+[t=00:00:11.459825][f=0000270] PHASE2 UPKEEP team=0 army=1 cost=2 paid=true food_left=14 starving=false
+[t=00:00:14.449949][f=0000360] PHASE2 UPKEEP team=0 army=1 cost=2 paid=true food_left=12 starving=false
+[t=00:00:17.451922][f=0000450] PHASE2 UPKEEP team=0 army=1 cost=2 paid=true food_left=10 starving=false
+[t=00:00:20.460912][f=0000540] PHASE2 UPKEEP team=0 army=1 cost=2 paid=true food_left=8 starving=false
 ```
-  - Shows barracks cost debited, infantry cost check fails (insufficient food), and `CanRecruit` reflects that.
+  - Barracks placement correctly refused (wood 30 < 150). Infantry training debited atomically (food 50→20 after deposit). Standing infantry incurs 2 food/tick upkeep every 90 frames, observable as food drains 18→16→14→12→10→8 with `starving=false`.
 
 - **Tests** (`tests/test_phase2_recruitment.py`): 10 passing, covering cost lookup, affordability, transaction atomics, and unitdef validation.
 
 All Slice 2 tasks are completed, verified in‑engine, and covered by tests. All items implemented: barracks/stables/blacksmith production buildings, custom discrete resource cost interception via GG.MedievalEconomy.Transact, pop-cap support through housing gadget, and headless verification in Recoil.
+
+## Slice 3 Implemented: Standing-Army Upkeep, Starvation & FX Hooks
+
+Slice 3 adds a per-tick food upkeep running cost for military units plus a non-lethal
+starvation penalty wired into the existing economy, and lands a headless FX logging gadget.
+**Weapon tuning did not land in this slice** — no weapon or unit-def shooting values changed.
+
+### (a) Upkeep Model
+
+- **Constants** in `scripts/medieval_recruitment.lua`:
+  - `UPKEEP_TICK_FRAMES = 90` — one upkeep tick every 90 engine frames.
+  - `UPKEEP` rates (food per unit per tick): `medieval_infantry = 2`, `medieval_archer = 2`, `medieval_cavalry = 3`.
+  - `STARVATION_HP_FRACTION = 0.05` — starved units lose up to 5% of current HP per tick.
+  - Legacy `MILITARY_UPKEEP_FOOD = 1` flat-rate helper retained for Phase-2 compatibility.
+- **Pure module additions** (`scripts/medieval_recruitment.lua`): `upkeepFor`, `isMilitary`,
+  `armyCounts`, `armyUpkeep`, `starvationMarker`, `payUpkeep`, `starvedHealth`.
+- **Gadget additions** (`luarules/gadgets/gadget_medieval_recruitment.lua`):
+  - `GameFrame` runs `upkeepTick()` on frames divisible by 90. Only `medieval_*` units with an
+    upkeep rate count; villagers and every building/town are excluded.
+  - Per team, each tick charges `{ food = totalUpkeep }` atomically via
+    `GG.MedievalEconomy.CanAfford`/`Transact`; a team that cannot pay is flagged starving.
+  - Publishes synced gamerule param `team_<id>_starving` (1 starved / 0 fed), seeded to 0 at
+    `GameStart`.
+  - Exposes `GG.MedievalRecruitment.Upkeep(teamID)`, `.IsStarving(teamID)`, `.RunUpkeepTick()`.
+- **Starvation penalty**: health-only. `starvedHealth` subtracts 5% of current HP, clamped
+  non-lethal (never drops to 0) and applied via `Spring.SetUnitHealth`; no `DestroyUnit` call.
+
+### (b) Weapon Tuning
+
+No weapon value changes landed in this slice. `gamedata/weapondefs.lua` is unchanged from
+Phase 1 (sword: range 45 / 150 dmg; longbow: range 380 / 90 dmg; lance: range 55 / 240 dmg).
+The three unit defs gained only FX placeholder comments — no shooting stats changed.
+
+### (c) Audio / Visual
+
+Placeholders only — no audio or CEG assets exist in the repo yet.
+- New `luarules/gadgets/gadget_medieval_fx.lua` ("Medieval FX Hooks", layer 4): echoes
+  `PHASE2 FX trained/destroyed` on `UnitCreated`/`UnitDestroyed` for `medieval_*` units.
+  Headless log verification only; no sounds or particles are emitted.
+- Unit defs (`medieval_infantry`/`medieval_archer`/`medieval_cavalry`) carry commented
+  `soundstart`/`soundhit`/`explosionGenerator` placeholders pending a `sounds/` directory
+  and CEG generator names.
+
+### (d) New Tests
+
+- `tests/test_phase3_upkeep.py`: 28 tests in 4 classes — `TestArmyUpkeep`,
+  `TestStarvationMarker`, `TestModulePurity`, `TestUpkeepGadgetWiring`. Covers upkeep
+  rates/sums, starvation-marker math, the non-lethal HP penalty, module purity (no engine
+  globals in the pure module), and source-level gadget wiring (90-frame cadence,
+  `GG.MedievalEconomy` charge, `team_%d_starving` gamerule param, `SetUnitHealth` vs
+  `DestroyUnit`, and nil-guarded engine/GG access).
