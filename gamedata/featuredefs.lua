@@ -32,6 +32,17 @@ return {
     object = "0ad/medieval_infantry.obj",
     customparams = { resource = "iron", capacity = 300 },
   },
+  medieval_road = {
+    name = "Medieval Dirt Road",
+    description = "Medieval Dirt Road",
+    blocking = false,
+    crushable = false,
+    destructable = false,
+    footprintX = 2,
+    footprintZ = 2,
+    object = "0ad/medieval_infantry.obj",
+    customparams = { resource_cost_wood = 5, resource_cost_stone = 2 },
+  },
   medieval_deer = {
     description = "Huntable deer herd",
     blocking = false,

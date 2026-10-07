@@ -1,0 +1,28 @@
+return {
+  medieval_wall = {
+    name = "Stone Wall",
+    description = "Defensive stone wall that blocks enemy movement and protects the settlement.",
+    category = "LAND",
+    buildCostEnergy = 0,
+    buildCostMetal = 50,
+    builder = false,
+    buildTime = 45,
+    canMove = false,
+    canAttack = false,
+    canFight = false,
+    canPatrol = false,
+    canGuard = false,
+    footprintX = 2,
+    footprintZ = 2,
+    maxDamage = 2500,
+    mass = 400,
+    upright = true,
+    objectName = "0ad/medieval_infantry.obj",
+    side = "MEDIEVAL",
+    customparams = {
+      model_author = "Medieval-BAR-TC",
+      resource_cost_wood = 10,
+      resource_cost_stone = 40,
+    },
+  },
+}

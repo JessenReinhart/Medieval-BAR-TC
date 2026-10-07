@@ -165,26 +165,67 @@ function gadget:GameFrame(frame)
           Spring.Echo(string.format("PHASE2 PROBE SLICE2 spawned barracks id=%s team=%d", tostring(barID), a))
         end
       end
-      -- Deposit 50 food so the test team can afford to recruit infantry
+      -- Deposit 50 food so the test team can afford to recruit infantry.
       GG.MedievalEconomy.Deposit(a, "food", 50)
-      local okTrain = GG.MedievalEconomy.CanAfford(a, { food = 30, wood = 20, stone = 10, iron = 5 })
-      Spring.Echo(string.format("PHASE2 PROBE SLICE2 infantry-affordable=%s team=%d", tostring(okTrain), a))
-      if okTrain then
-        local okTx2 = GG.MedievalEconomy.Transact(a, { food = 30, wood = 20, stone = 10, iron = 5 })
-        Spring.Echo(string.format("PHASE2 PROBE SLICE2 infantry-trained team=%d food=30 wood=20 stone=10 iron=5 tx=%s", a, tostring(okTx2)))
-        -- Spawn the trained infantry live in engine
-        local infDef = UnitDefNames["medieval_infantry"]
-        if infDef then
-          local ix, iz = 2508 + 150, 3584
-          local iy = Spring.GetGroundHeight(ix, iz)
-          local infID = Spring.CreateUnit(infDef.id, ix, iy, iz, "south", a)
-          Spring.Echo(string.format("PHASE2 PROBE SLICE2 spawned infantry id=%s team=%d", tostring(infID), a))
-        end
-        if GG.MedievalRecruitment then
-          local can = GG.MedievalRecruitment.CanRecruit(a, "medieval_infantry")
-          Spring.Echo(string.format("PHASE2 PROBE SLICE2 can-recruit-infantry=%s team=%d", tostring(can), a))
-        end
+      -- Spawn infantry live; gadget_medieval_recruitment charges the discrete
+      -- cost at UnitFinished (the real production path). Do NOT pre-transact
+      -- here or the spawn double-charges and gets destroyed.
+      local infDef = UnitDefNames["medieval_infantry"]
+      if infDef then
+        local ix, iz = 2508 + 150, 3584
+        local iy = Spring.GetGroundHeight(ix, iz)
+        local infID = Spring.CreateUnit(infDef.id, ix, iy, iz, "south", a)
+        Spring.Echo(string.format("PHASE2 PROBE SLICE2 spawned infantry id=%s team=%d", tostring(infID), a))
       end
+      if GG.MedievalRecruitment then
+        local can = GG.MedievalRecruitment.CanRecruit(a, "medieval_infantry")
+        Spring.Echo(string.format("PHASE2 PROBE SLICE2 can-recruit-infantry=%s team=%d", tostring(can), a))
+      end
+    end
+  end
+  if frame == 120 and spawned and GG and GG.MedievalEconomy and GG.MedievalLogistics then
+    local a, b = opposingTeams()
+    if a then
+      -- Deposit construction + research resources for the Phase 3 verification steps.
+      GG.MedievalEconomy.Deposit(a, "wood", 300)
+      GG.MedievalEconomy.Deposit(a, "stone", 300)
+      GG.MedievalEconomy.Deposit(a, "iron", 300)
+      Spring.Echo(string.format("PHASE3 PROBE deposit team=%d wood=300 stone=300 iron=300", a))
+
+      -- Road creation.
+      local roadDef = FeatureDefNames and FeatureDefNames["medieval_road"]
+      if roadDef then
+        local rx, rz = 2508 + 100, 3584
+        local ry = Spring.GetGroundHeight(rx, rz)
+        local fid = Spring.CreateFeature(roadDef.id, rx, ry, rz, 0, a)
+        Spring.Echo(string.format("PHASE3 PROBE road-create ftr=%s team=%d at=(%d, %d)", tostring(fid), a, rx, rz))
+        Spring.Echo(string.format("PHASE3 PROBE road-count team=%d count=%d", a, GG.MedievalLogistics.RoadCount(a)))
+
+        -- is-on-road check: spawn a probe villager on the road and query the speed multiplier API.
+        local vilDef = UnitDefNames["medieval_villager"]
+        if vilDef then
+          local pid = Spring.CreateUnit(vilDef.id, rx, ry, rz, "south", a)
+          if pid then
+            local onRoad = GG.MedievalLogistics.IsOnRoad(a, pid)
+            local mult = GG.MedievalLogistics.GetSpeedMultiplier(a, pid)
+            Spring.Echo(string.format("PHASE3 PROBE is-on-road team=%d unit=%d on_road=%s speed_mult=%.2f", a, pid, tostring(onRoad), mult))
+          end
+        end
+      else
+        Spring.Echo("PHASE3 PROBE road-create missing medieval_road FeatureDef")
+      end
+
+      -- Tech research: iron_swords (no prereq; cost wood 50 + iron 100).
+      local okSwords, reasonSwords = GG.MedievalLogistics.Research(a, "iron_swords")
+      Spring.Echo(string.format("PHASE3 PROBE research iron_swords team=%d ok=%s reason=%s", a, tostring(okSwords), tostring(reasonSwords)))
+      Spring.Echo(string.format("PHASE3 PROBE param team_%d_tech_iron_swords = %s", a, tostring(Spring.GetGameRulesParam(string.format("team_%d_tech_iron_swords", a)))))
+      Spring.Echo(string.format("PHASE3 PROBE is-researched iron_swords team=%d = %s", a, tostring(GG.MedievalLogistics.IsResearched(a, "iron_swords"))))
+
+      -- Tech prereq unlock: plate_armor requires iron_swords (cost iron 150).
+      local okArmor, reasonArmor = GG.MedievalLogistics.Research(a, "plate_armor")
+      Spring.Echo(string.format("PHASE3 PROBE research plate_armor team=%d ok=%s reason=%s", a, tostring(okArmor), tostring(reasonArmor)))
+      Spring.Echo(string.format("PHASE3 PROBE param team_%d_tech_plate_armor = %s", a, tostring(Spring.GetGameRulesParam(string.format("team_%d_tech_plate_armor", a)))))
+      Spring.Echo(string.format("PHASE3 PROBE is-researched plate_armor team=%d = %s", a, tostring(GG.MedievalLogistics.IsResearched(a, "plate_armor"))))
     end
   end
   if frame % 90 == 0 and spawned then
