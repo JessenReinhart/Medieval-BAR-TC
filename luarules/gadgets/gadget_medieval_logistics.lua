@@ -20,9 +20,11 @@ local DEBUG_LOG = true
 -- roads[teamID] = { [featureID] = { x = number, z = number } }
 -- buildings[teamID] = { [unitID] = { x = number, z = number, name = string } }
 -- unlocked[teamID][techID] = true
+-- speedMovers[teamID][unitID] = { base, onRoad, applied, source }
 local roads = {}
 local buildings = {}
 local unlocked = {}
+local speedMovers = {}
 
 -- Supply endpoints are only town center, granary and lumber camp, identified
 -- by the `dropoff` customparam (engine lowercases keys; source defs may not).
@@ -30,6 +32,10 @@ local function isSupplyEndpointDef(def)
   return logistics.isSupplyEndpointDef(def)
 end
 local removeTrackedBuilding, trackSupplyEndpoint
+-- Forward declarations: the speed scan and its interval are referenced by
+-- gadget:GameFrame and the lifecycle callins above their definitions.
+local trackSpeedMover, removeSpeedMover, scanSpeedMovers, isUnitBuilt
+local SPEED_SCAN_INTERVAL = 15 -- frames; 15 frames = 0.5s at 30 game-fps
 
 -- Road-build command intent: AllowCommand records it here; the next
 -- GameFrame pass performs the economy transaction and feature creation.
@@ -176,6 +182,7 @@ function gadget:Initialize()
   buildings = {}
   unlocked = {}
   pendingRoadBuilds = {}
+  speedMovers = {}
   for _, teamID in ipairs(Spring.GetTeamList() or {}) do
     initTeam(teamID)
   end
@@ -189,6 +196,10 @@ function gadget:Initialize()
     attachRoadCommand(unitID, unitDefID)
     -- Re-track supply endpoints that already exist at initialization.
     trackSupplyEndpoint(unitID, unitDefID, Spring.GetUnitTeam and Spring.GetUnitTeam(unitID))
+    -- Re-track speed movers that already exist at initialization (must be finished).
+    if isUnitBuilt(unitID) then
+      trackSpeedMover(unitID, unitDefID, Spring.GetUnitTeam and Spring.GetUnitTeam(unitID))
+    end
   end
 end
 
@@ -200,6 +211,8 @@ function gadget:UnitTaken(unitID, unitDefID, oldTeam, newTeam)
   cancelRoadOrders(unitID)
   -- Supply-endpoint buildings move with the unit: drop the old-team entry.
   removeTrackedBuilding(unitID)
+  -- Speed tracking is per-team; the receiving team re-tracks in UnitGiven.
+  removeSpeedMover(unitID)
 end
 
 function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
@@ -208,6 +221,9 @@ function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
   -- Re-track under the receiving team, if this is a supply endpoint.
   if newTeam == nil and Spring and Spring.GetUnitTeam then newTeam = Spring.GetUnitTeam(unitID) end
   trackSupplyEndpoint(unitID, unitDefID, newTeam)
+  -- Re-track the speed mover under the receiving team.
+  removeSpeedMover(unitID)
+  trackSpeedMover(unitID, unitDefID, newTeam)
 end
 
 -- ---------------------------------------------------------------------------
@@ -227,7 +243,7 @@ end
 
 -- Finished means build progress is 1 (or unknown). Mid-construction units
 -- (progress in (0,1)) are not tracked as endpoints.
-local function isUnitBuilt(unitID)
+isUnitBuilt = function(unitID)
   if not (Spring and Spring.GetUnitHealth) then return true end
   local _, _, _, _, buildProgress = Spring.GetUnitHealth(unitID)
   if buildProgress == nil then return true end
@@ -312,6 +328,8 @@ function gadget:UnitFinished(unitID, unitDefID, unitTeam)
   if not def then return end
   -- Track finished supply endpoints for the owning team.
   trackSupplyEndpoint(unitID, unitDefID, unitTeam)
+  -- Track finished speed-eligible movers (base speed from the unit def).
+  trackSpeedMover(unitID, unitDefID, unitTeam)
   local u = unlocked[unitTeam]
   if not u then return end
   local healthMult = logistics.healthMultiplier(u, def.name)
@@ -366,6 +384,8 @@ function gadget:UnitDestroyed(unitID, unitDefID, teamID, attackerID, attackerDef
   cancelRoadOrders(unitID)
   -- A destroyed endpoint building leaves the tracking table.
   removeTrackedBuilding(unitID)
+  -- A destroyed mover leaves the speed table.
+  removeSpeedMover(unitID)
 end
 
 function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
@@ -401,14 +421,128 @@ function gadget:AllowCommand(unitID, unitDefID, teamID, cmdID, params, opts)
 end
 
 function gadget:GameFrame(frame)
-  if #pendingRoadBuilds == 0 then return end
-  local pending = pendingRoadBuilds
-  pendingRoadBuilds = {}
-  for _, order in ipairs(pending) do
-    executeRoadOrder(order.teamID, order.unitID, order.x, order.z)
+  if #pendingRoadBuilds > 0 then
+    local pending = pendingRoadBuilds
+    pendingRoadBuilds = {}
+    for _, order in ipairs(pending) do
+      executeRoadOrder(order.teamID, order.unitID, order.x, order.z)
+    end
+  end
+  -- Throttled movement-speed scan (every 15 frames = 0.5s).
+  if frame % SPEED_SCAN_INTERVAL == 0 then
+    scanSpeedMovers()
   end
 end
 
+
+-- ---------------------------------------------------------------------------
+-- Road movement-speed enforcement (Slice 6).
+--
+-- onRoad reuses the EXACT helper the pre-existing GG.MedievalLogistics.
+-- GetSpeedMultiplier uses: logistics.isPositionOnRoad(x, z, coords, radius),
+-- which defaults to logistics.ROAD_PROXIMITY_RADIUS (48). This is deliberately
+-- NOT roadGraph's LINK_RADIUS (64), which is the road-to-road adjacency /
+-- building-link distance and would over-report units as being on a road.
+--
+-- Application order per mover:
+--   1. Spring.MoveCtrl.SetGroundMoveTypeData -> source = "mutator" (enforcing)
+--   2. Spring.SetUnitRulesParam(..., "medieval_speed_target") -> source =
+--      "rules-param" (OBSERVATIONAL ONLY; the engine does not read this param,
+--      so no speed change happens - it exists so UI/other gadgets can observe
+--      the intended target when the mutator is unavailable)
+--   3. neither available -> source = "none"; never an error.
+--
+-- Out of scope by design: air/hover and transported units, builder-assist
+-- interactions, and per-slope effects. Only finished ground units whose def
+-- reports a positive numeric `speed` are tracked at all.
+-- ---------------------------------------------------------------------------
+
+local function findSpeedMover(unitID)
+  for teamID, list in pairs(speedMovers) do
+    local state = list[unitID]
+    if state then return teamID, state end
+  end
+  return nil, nil
+end
+
+removeSpeedMover = function(unitID)
+  local teamID, state = findSpeedMover(unitID)
+  if not teamID then return nil end
+  speedMovers[teamID][unitID] = nil
+  return teamID, state
+end
+
+local function isUnitOnRoad(teamID, unitID)
+  local list = roads[teamID]
+  if not list then return false end
+  if not (Spring and Spring.GetUnitPosition) then return false end
+  local x, _, z = Spring.GetUnitPosition(unitID)
+  if type(x) ~= "number" or type(z) ~= "number" then return false end
+  return logistics.isPositionOnRoad(x, z, list)
+end
+
+local function applySpeed(unitID, target)
+  local moveCtrl = Spring and Spring.MoveCtrl
+  if moveCtrl and moveCtrl.SetGroundMoveTypeData then
+    -- The engine returns the number of assigned values (0 = nothing applied).
+    -- pcall success alone does not prove the assignment landed.
+    local ok, assigned = pcall(moveCtrl.SetGroundMoveTypeData, unitID, {
+      maxSpeed = target,
+      maxWantedSpeed = target,
+    })
+    if ok and type(assigned) == "number" and assigned > 0 then
+      return true, "mutator"
+    end
+  end
+  if Spring and Spring.SetUnitRulesParam then
+    local ok = pcall(Spring.SetUnitRulesParam, unitID, "medieval_speed_target", target)
+    if ok then return true, "rules-param" end
+  end
+  return false, "none"
+end
+
+trackSpeedMover = function(unitID, unitDefID, teamID)
+  local def = UnitDefs and UnitDefs[unitDefID]
+  if not logistics.isEligibleSpeedUnitDef(def) then return false, "ineligible" end
+  local base = def.speed
+  if type(base) ~= "number" or base <= 0 then
+    echo("PHASE3 SPEED skip unit=%d def=%s reason=no_base", unitID, tostring(def.name))
+    return false, "no_base"
+  end
+  if teamID == nil then return false, "no_team" end
+  initTeam(teamID)
+  speedMovers[teamID] = speedMovers[teamID] or {}
+  speedMovers[teamID][unitID] = {
+    base = base,
+    onRoad = false,
+    applied = base,
+    source = "none",
+  }
+  echo("PHASE3 SPEED tracked unit=%d team=%d base=%.2f", unitID, teamID, base)
+  return true
+end
+
+-- Throttled scan: recompute onRoad, then apply only on target change.
+scanSpeedMovers = function()
+  for teamID, list in pairs(speedMovers) do
+    for unitID, state in pairs(list) do
+      local onRoad = isUnitOnRoad(teamID, unitID)
+      local target = logistics.targetSpeed(state.base, onRoad)
+      state.onRoad = onRoad
+      if target ~= state.applied and target ~= state.triedTarget then
+        local ok, source = applySpeed(unitID, target)
+        state.source = source
+        -- Record the attempt either way: a permanently failing application
+        -- (e.g. no mutator, no rules param) must not retry every scan and
+        -- spam the log; the next target change re-arms the attempt.
+        state.triedTarget = target
+        if ok then state.applied = target end
+        echo("PHASE3 SPEED applied unit=%d team=%d base=%.2f target=%.2f source=%s",
+          unitID, teamID, state.base, target, source)
+      end
+    end
+  end
+end
 
 GG = GG or {}
 GG.MedievalLogistics = {
@@ -431,6 +565,15 @@ GG.MedievalLogistics = {
 
   IsOnRoad = function(teamID, unitID)
     return GG.MedievalLogistics.GetSpeedMultiplier(teamID, unitID) > 1.0
+  end,
+
+  -- Slice 6: current enforced speed state for a tracked mover, or nil when the
+  -- unit is unknown/ineligible. The returned table is the live synced entry
+  -- { base, onRoad, applied, source } (source: "mutator" | "rules-param" |
+  -- "none").
+  GetSpeedState = function(unitID)
+    local _, state = findSpeedMover(unitID)
+    return state
   end,
 
   CanPlaceRoad = function(teamID, x, z)

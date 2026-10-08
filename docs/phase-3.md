@@ -1,12 +1,15 @@
 # Phase 3: Logistics, Tech Tree & Fortifications
 
-Phase 3 Slice 5 (road-network connectivity gameplay enforcement) is implemented and verified.
-The focused Slice 5 suite passes 17 tests; the full suite passes 214 tests. Slice 5 adds
-`BUILD_LINK_RADIUS = 64.0` supply-endpoint placement gating plus per-team building
-connectivity tracking and query APIs. Movement-speed enforcement remains DEFERRED, but the
-prior "no engine speed API" claim is corrected: the pinned engine does expose
-`Spring.MoveCtrl.SetGroundMoveTypeData` (see `docs/engine-speed-api-evidence.md`); Slice 5
-does not use it.
+Phase 3 Slice 6 (road movement-speed enforcement) is implemented and verified.
+The focused Slice 6 suite passes 26 tests; the full suite passes 240 tests, and
+`python tests/check_lua_syntax.py` checks 44 Lua files with 0 errors. Slice 6 turns the
+pre-existing road speed query into an actual movement modifier: eligible finished ground units
+within `ROAD_PROXIMITY_RADIUS = 48.0` of a same-team road are set to
+`base * ROAD_SPEED_MULT (1.5)` through `Spring.MoveCtrl.SetGroundMoveTypeData`, with a
+documented observational (non-enforcing) rules-param fallback when the mutator is unavailable.
+The engine speed API is real and now used: see `docs/engine-speed-api-evidence.md`. Slice 5
+(road-network connectivity gameplay enforcement) added `BUILD_LINK_RADIUS = 64.0`
+supply-endpoint placement gating plus per-team building connectivity tracking and query APIs.
 
 ## Pinned Upstream BAR Reference
 
@@ -17,8 +20,8 @@ does not use it.
 
 1. **Road feature and speed query** — `medieval_road` is a feature, not a unit. It is non-blocking,
    costs `{ wood = 5, stone = 2 }`. `scripts/medieval_logistics.lua` exposes a query-only speed
-   multiplier (`ROAD_SPEED_MULT = 1.5`, 48-elmo proximity radius). The query API does **not** change
-   unit movement; no engine speed mutator is applied.
+   multiplier (`ROAD_SPEED_MULT = 1.5`, 48-elmo proximity radius). The query API itself does not
+   change movement; Slice 6 (item 6) enforces the same policy through the engine speed mutator.
 2. **Road graph (Slice 3)** — `scripts/medieval_road_graph.lua` is a pure module. It uses
    `LINK_RADIUS = 64.0` planar elmos: road nodes at or below that distance share an edge. The
    gadget tracks `{x, z}` road positions by team and recomputes graph state after road creation
@@ -34,8 +37,13 @@ does not use it.
    settlement). Finished endpoints are tracked per team and re-tracked on transfer; the query
    APIs compute connectivity live from the current road graph, so road destruction immediately
    disconnects buildings.
+6. **Road movement-speed enforcement (Slice 6)** — finished eligible ground units within
+   `ROAD_PROXIMITY_RADIUS = 48.0` of a same-team road are set to `base * ROAD_SPEED_MULT = 1.5`
+   and restored to their baseline `UnitDefs[id].speed` when off-road. Air/hover/transported units,
+   builder-assist interactions, and per-slope effects are out of scope.
 
-This is a query API, not enforced logistics gameplay. `AllowUnitCreation` gates unit creation and
+Speed and connectivity are now enforced in part, but this is not full logistics gameplay.
+`AllowUnitCreation` gates unit creation and
 unit costs; it does not provide a road-feature placement command. The villager currently has only
 wall and tower fortification build options for this feature work. Roads are placed only by the
 custom command (`CMD_BUILD_ROAD = 371922`), not by buildoptions.
@@ -50,17 +58,35 @@ custom command (`CMD_BUILD_ROAD = 371922`), not by buildoptions.
   `isSupplyEndpointDef(def)` which reads the `dropoff` customparam with engine-uppercase
   (`customParams`) and lowercase source (`customparams`) fallback and normalizes bool/number/
   string truth. `BUILD_LINK_RADIUS = 64.0`.
+- **Pure speed policy (Slice 6)**: `scripts/medieval_logistics.lua` also exports
+  `speedMultiplier(isOnRoad)` (`ROAD_SPEED_MULT = 1.5` when truthy, else `1.0`),
+  `targetSpeed(baseSpeed, onRoad)` (returns `baseSpeed` untouched when it is not a number or is
+  `<= 0`; otherwise `baseSpeed * speedMultiplier(onRoad == true)`), and
+  `isEligibleSpeedUnitDef(def)` (`def ~= nil and def.canMove == true and def.isBuilding ~= true`;
+  villagers are builders but stay eligible).
 - **Logistics gadget**: `luarules/gadgets/gadget_medieval_logistics.lua` tracks road feature
   lifecycle per team and exposes these graph queries through `GG.MedievalLogistics`:
   - `RoadNetworkSummary(teamID)` -> `{ nodes, edges, components, isolated, largest }`.
   - `RoadConnected(teamID, keyA, keyB)` -> whether two tracked road feature IDs share a component.
   - `PointOnRoadNetwork(teamID, x, z)` -> whether a point is within `LINK_RADIUS` of a road node.
   - Existing speed, research, damage, health, and road-count APIs remain available.
+  - Slice 6 speed tracking: `speedMovers[teamID][unitID] = { base, onRoad, applied, source }`,
+    where `base` is `UnitDefs[unitDefID].speed` (elmos/sec). A throttled scan runs every
+    `SPEED_SCAN_INTERVAL = 15` frames (0.5 s at 30 fps) and recomputes `onRoad` with the existing
+    point-on-road helper (48-elmo `ROAD_PROXIMITY_RADIUS`, not the 64-elmo road-graph
+    `LINK_RADIUS`). Application order per mover:
+    `Spring.MoveCtrl.SetGroundMoveTypeData(unitID, { maxSpeed = target, maxWantedSpeed = target })`
+    via `pcall` -> `source = "mutator"` (enforcing); else
+    `Spring.SetUnitRulesParam(unitID, "medieval_speed_target", target)` via `pcall` ->
+    `source = "rules-param"` (**observational only**: the engine does not read this param, so no
+    speed change happens); else `source = "none"`. No path ever errors.
+  - `GetSpeedState(unitID)` -> the live `{ base, onRoad, applied, source }` table for a tracked
+    mover, or `nil` when the unit is unknown/ineligible.
 - **Probe**: `luarules/gadgets/gadget_phase2_test_forces.lua` creates a three-node chain and an
   isolated node at frame 160, then logs summary and connectivity queries. It is a diagnostic probe,
   not a player command implementation.
 
-## Historical Slice 1 and Slice 2 counts
+## Historical Slice 1-6 counts
 
 These are historical completion counts, not the current total:
 
@@ -68,7 +94,9 @@ These are historical completion counts, not the current total:
 - Slice 2: 144 tests passing.
 - Slice 3: 172 tests passing (28 focused).
 - Slice 4 focused tests: 25 passing.
-- Current full suite: 197 passing.
+- Slice 5 focused tests: 17 passing; full suite 214 passing.
+- Slice 6 focused tests: 26 passing (`tests/test_phase3_slice6.py`).
+- Current full suite: 240 passing.
 
 ## Verification
 
@@ -78,8 +106,14 @@ These are historical completion counts, not the current total:
 python -m pytest tests/test_phase3_slice4.py -q
 # 25 passed
 
+python -m pytest tests/test_phase3_slice6.py -q
+# 26 passed
+
 python -m pytest tests -q
-# 197 passed
+# 240 passed
+
+python tests/check_lua_syntax.py
+# Checked 44 lua files; 0 errors found.
 ```
 
 ### Headless engine probe
@@ -144,6 +178,39 @@ The same run retried a second order at the same spot and the engine refused it w
 road count stayed at 6 and the road was attributed to team 0 throughout (`ftr=23800 team=0`). This
 matches the spacing-refusal path already covered by the focused Lua harness.
 
+Observed Slice 6 road movement-speed enforcement end-to-end in `tools/runtime/infolog.txt` (probe
+steps at frames 238-302; max simulated frame this run was 450). Unit A (`14749`) is spawned on the
+road chain, unit B (`8772`) off-road. These are the verbatim `road-speed` lines (the run emitted 17
+`road-speed` lines in total; the set below is the printed head):
+
+```text
+[t=00:00:11.533448][f=0000238] PHASE3 PROBE road-speed road-extend#1 ftr=25186 team=0 at=(2788, 3884)
+[t=00:00:11.533507][f=0000238] PHASE3 PROBE road-speed road-extend#2 ftr=962 team=0 at=(2848, 3884)
+[t=00:00:11.533570][f=0000238] PHASE3 PROBE road-speed road-extend#3 ftr=4290 team=0 at=(2908, 3884)
+[t=00:00:10.519422][f=0000238] PHASE3 PROBE road-speed spawned A=43 B=28360 team=0 A_at=(2788, 3884) B_at=(4300, 4200)
+[t=00:00:10.643868][f=0000242] PHASE3 PROBE road-speed state-a f=242 unit=43 onRoad=true base=28.00 applied=42.00 source=mutator
+[t=00:00:10.643934][f=0000242] PHASE3 PROBE road-speed state-b f=242 unit=28360 onRoad=false base=28.00 applied=28.00 source=none
+[t=00:00:10.643980][f=0000242] PHASE3 PROBE road-speed onroad-verdict f=242 PASS (A onRoad=true expect=true, B onRoad=false expect=false)
+[t=00:00:10.643992][f=0000242] PHASE3 PROBE road-speed applied-verdict f=242 PASS (A applied=42.00 expect=42.00, B applied=28.00 expect=28.00)
+[t=00:00:10.644039][f=0000242] PHASE3 PROBE road-speed source-verdict f=242 PASS (A source=mutator expect=mutator|rules-param)
+[t=00:00:10.720267][f=0000244] PHASE3 PROBE road-speed move-order f=244 A=43 -> (3400, 3884) B=28360 -> (4600, 4200)
+[t=00:00:11.709138][f=0000274] PHASE3 PROBE road-speed velocity f=274 A=43 velA=1.45 posA=(2810, 3886) B=28360 velB=0.98 posB=(4314, 4201) delta=0.47 PASS(soft)
+[t=00:00:12.520132][f=0000298] PHASE3 PROBE road-speed restore f=298 A=43 -> (3600, 4200) mode=set-position
+[t=00:00:12.642040][f=0000302] PHASE3 PROBE road-speed restore-state f=302 unit=43 onRoad=false base=28.00 applied=28.00 source=mutator
+[t=00:00:12.642117][f=0000302] PHASE3 PROBE road-speed restore-verdict f=302 PASS (onRoad=false expect=false pass=true, applied=28.00 expect=28.00 pass=true, mode=set-position)
+[t=00:00:12.642152][f=0000302] PHASE3 PROBE road-speed summary f=302 team=0 A=43 B=28360 velocity=PASS(soft) velA>velB
+```
+
+What these lines support: on-road unit A reports `onRoad=true`, `base=28.00`, `applied=42.00`
+(= 28 * 1.5), `source=mutator` — the engine mutator path was taken, not the rules-param fallback.
+Off-road unit B reports `onRoad=false`, `applied=28.00` (baseline restored), and is untracked for
+speed (`source=none`, because its state never changed from the baseline). After A is moved off-road
+at frame 298, the frame-302 scan restores it to `applied=28.00` with `onRoad=false`. The velocity
+check is soft by design (`PASS(soft)`, velA 1.45 > velB 0.98); the hard verdicts are the state and
+restore checks. No Lua errors occur inside the probe window f=238-302; the only two
+`Lua error|SCRIPT ERROR` matches in the log are the pre-existing pre-game
+`feature_s11n.lua:186 SetFeatureMoveCtrl` errors at `f=-000001`.
+
 ## Slice roadmap
 
 ### Slice 1 — roads, tech tree, fortifications
@@ -192,14 +259,59 @@ matches the spacing-refusal path already covered by the focused Lua harness.
       land-flagged terrain, so steep or impassable tiles are not excluded beyond the bounds check.
 - [x] Public API additions on `GG.MedievalLogistics`: `CanPlaceRoad(teamID, x, z)` and
       `PlaceRoad(teamID, unitID, x, z)`.
-- [x] Movement-speed enforcement is **DEFERRED**: no verified engine speed-mutator API has been
-      identified. A partial `.engine-src` extraction shows no `SetUnitSpeed` / `SpeedMod` style
-      mutator hits, but a partial extraction cannot prove API absence — the full engine source has
-      not been searched. `GG.MedievalLogistics.GetSpeedMultiplier` and `IsOnRoad` remain query-only;
-      the query multiplier does not change movement. No direct engine velocity changes are claimed.
+- [x] Movement-speed enforcement was **DEFERRED** at Slice 4 (no verified engine speed-mutator API
+      at the time; a partial `.engine-src` extraction showed no `SetUnitSpeed` / `SpeedMod` style
+      mutator hits, and a partial extraction cannot prove API absence). **Superseded by Slice 6**,
+      which uses the verified `Spring.MoveCtrl.SetGroundMoveTypeData`. At Slice 4,
+      `GG.MedievalLogistics.GetSpeedMultiplier` and `IsOnRoad` remained query-only.
 - [x] Focused 25 tests (`tests/test_phase3_slice4.py`) and full 197-test suite passing.
+
+### Slice 5 — building connectivity enforcement
+
+- [x] Pure connectivity policy in `scripts/medieval_logistics.lua`: `isBuildingConnected`,
+  `isSupplyEndpointConnected` (alias), `isSupplyEndpointDef`, `BUILD_LINK_RADIUS = 64.0`.
+- [x] Supply-endpoint placement gating in `AllowUnitCreation`; teams with no roads bootstrap freely.
+- [x] Per-team endpoint tracking with re-track on transfer; `BuildingConnected` and
+  `BuildingConnectivitySummary` on `GG.MedievalLogistics`.
+- [x] Focused 17 tests (`tests/test_phase3_slice5.py`) and full 214-test suite passing.
+
+### Slice 6 — road movement-speed enforcement
+
+- [x] Rule: eligible finished ground units within `ROAD_PROXIMITY_RADIUS = 48.0` of a **same-team**
+  road move at `base * ROAD_SPEED_MULT = 1.5`; off-road they return to their baseline
+  `UnitDefs[unitDefID].speed` (elmos/sec). The 48-elmo proximity radius is used, not the 64-elmo
+  road-graph `LINK_RADIUS` (which would over-report units as on-road).
+- [x] Pure API in `scripts/medieval_logistics.lua` (no engine calls):
+  `speedMultiplier(onRoad)` -> `ROAD_SPEED_MULT` or `1.0`;
+  `targetSpeed(baseSpeed, onRoad)` -> returns `baseSpeed` untouched when it is not a number or is
+  `<= 0`, otherwise `baseSpeed * speedMultiplier(onRoad == true)`;
+  `isEligibleSpeedUnitDef(def)` -> `def ~= nil and def.canMove == true and def.isBuilding ~= true`
+  (villagers are builders but stay eligible).
+- [x] Gadget tracking: `speedMovers[teamID][unitID] = { base, onRoad, applied, source }`. Eligibility
+  via the pure `isEligibleSpeedUnitDef`; `base` read from `UnitDefs[unitDefID].speed`. Units with an
+  unknown base are never tracked (`reason=no_base`).
+- [x] Throttled scan every `SPEED_SCAN_INTERVAL = 15` frames (0.5 s at 30 fps) in `GameFrame`,
+  reusing the existing point-on-road helper rather than new distance math.
+- [x] Application: `pcall Spring.MoveCtrl.SetGroundMoveTypeData(unitID, { maxSpeed = target,
+  maxWantedSpeed = target })` -> `source = "mutator"`; if `MoveCtrl` is missing or the pcall fails,
+  `pcall Spring.SetUnitRulesParam(unitID, "medieval_speed_target", target)` -> `source =
+  "rules-param"`, which is **observational only and non-enforcing** (the engine does not read that
+  param, so no speed change occurs); if neither is available -> `source = "none"`. Never crashes.
+  Writes only when `target ~= state.applied`.
+- [x] Lifecycle: `UnitFinished` tracks eligible units; `UnitDestroyed` and `UnitTaken` remove;
+  `UnitGiven` removes and re-tracks under the receiving team.
+- [x] Public API: `GG.MedievalLogistics.GetSpeedState(unitID)` -> live
+  `{ base, onRoad, applied, source }` table, or `nil` for unknown/ineligible units. Existing APIs
+  (`GetSpeedMultiplier`, `IsOnRoad`, `CanPlaceRoad`, `PlaceRoad`, connectivity queries) unchanged.
+- [x] Out of scope (documented, not implemented): air/hover and transported units, builder-assist
+  interactions, and per-slope effects.
+- [x] Focused 26 tests (`tests/test_phase3_slice6.py`) and full 240-test suite passing; Lua syntax
+  clean (44 files, 0 errors).
+- [x] Probe evidence (frames 238-302, `source=mutator`): see the Slice 6 excerpt in the Verification
+  section above.
 
 ## Next scope
 
-Movement-speed enforcement and end-to-end connectivity gameplay integration remain open. Do not claim
-Phase 3 is complete from Slice 4 road-build command work.
+Road movement-speed enforcement is implemented (Slice 6). Remaining Phase 3 work is connectivity
+gameplay effects: supply bonuses and pathing integration. Do not claim Phase 3 is complete from the
+Slice 4 road-build command or Slice 6 speed-enforcement work.

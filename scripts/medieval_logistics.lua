@@ -178,6 +178,22 @@ function M.speedMultiplier(isOnRoad)
   return 1.0
 end
 
+-- Road movement-speed policy. baseSpeed is in elmos/sec (the unit def's speed).
+-- Non-numeric or non-positive bases pass through untouched so callers never
+-- have to guess whether a def is speed-controllable.
+function M.targetSpeed(baseSpeed, onRoad)
+  if type(baseSpeed) ~= "number" or baseSpeed <= 0 then
+    return baseSpeed
+  end
+  return baseSpeed * M.speedMultiplier(onRoad == true)
+end
+
+-- A unit def is speed-eligible when it can move and is not a building.
+-- Villagers are builders (canBuild) but stay eligible: only isBuilding excludes.
+function M.isEligibleSpeedUnitDef(def)
+  return def ~= nil and def.canMove == true and def.isBuilding ~= true
+end
+
 function M.damageMultiplier(unlocked, unitName)
   if not unlocked or type(unlocked) ~= "table" then return 1.0 end
   local mult = 1.0

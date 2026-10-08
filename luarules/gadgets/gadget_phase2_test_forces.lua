@@ -24,6 +24,8 @@ local trackedVillager = nil
 local ROAD_PROBE_X, ROAD_PROBE_Z = 2600, 3700
 local roadProbe = nil
 local buildingProbe = nil
+-- Slice 6 road movement-speed probe state.
+local speedProbe = nil
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -54,6 +56,35 @@ local function roadProbeSnapshot(teamID)
     end
   end
   return snapshot
+end
+
+-- Slice 6 helper: format the enforced speed state of one tracked mover.
+-- Returns a human-readable fragment plus the raw state table (nil when the
+-- unit is untracked or the API is unavailable).
+local function speedStateText(unitID)
+  local api = GG and GG.MedievalLogistics
+  if not (api and type(api.GetSpeedState) == "function") then
+    return "SKIPPED missing GetSpeedState API", nil
+  end
+  local state = api.GetSpeedState(unitID)
+  if type(state) ~= "table" then
+    return "UNTRACKED", nil
+  end
+  return string.format("onRoad=%s base=%.2f applied=%.2f source=%s",
+    tostring(state.onRoad), state.base or -1, state.applied or -1, tostring(state.source)), state
+end
+
+-- Slice 6 helper: horizontal velocity magnitude in elmos/sec, or nil when the
+-- engine call is unavailable.
+local function speedUnitVelocity(unitID)
+  if type(Spring.GetUnitVelocity) ~= "function" then return nil end
+  local ok, vx, _, vz = pcall(Spring.GetUnitVelocity, unitID)
+  if not ok or type(vx) ~= "number" or type(vz) ~= "number" then return nil end
+  return math.sqrt(vx * vx + vz * vz)
+end
+
+local function speedNear(value, expected)
+  return type(value) == "number" and math.abs(value - expected) < 0.01
 end
 
 local function opposingTeams()
@@ -595,6 +626,163 @@ function gadget:GameFrame(frame)
     end
     buildingProbe = nil
   end
+  -- Phase 3 probe slice 6: road movement-speed enforcement (synced mutator).
+  -- Team `a` owns the slice-3 chain at (2608..2728, 3884); this block extends it
+  -- east with three more nodes so the on-road walker has a real runway.
+  if frame == 238 and spawned then
+    local api = GG and GG.MedievalLogistics
+    local a = opposingTeams()
+    local vilDef = UnitDefNames and UnitDefNames["medieval_villager"]
+    if not (api and type(api.GetSpeedState) == "function") then
+      Spring.Echo("PHASE3 PROBE road-speed SKIPPED missing GetSpeedState API")
+    elseif not a then
+      Spring.Echo("PHASE3 PROBE road-speed SKIPPED no opposing team")
+    elseif not vilDef then
+      Spring.Echo("PHASE3 PROBE road-speed SKIPPED missing medieval_villager UnitDef")
+    else
+      local roadDef = FeatureDefNames and FeatureDefNames["medieval_road"]
+      if roadDef and type(Spring.CreateFeature) == "function" then
+        for i = 1, 3 do
+          local rx, rz = 2788 + (i - 1) * 60, 3884
+          local ry = Spring.GetGroundHeight(rx, rz)
+          local fid = Spring.CreateFeature(roadDef.id, rx, ry, rz, 0, a)
+          Spring.Echo(string.format("PHASE3 PROBE road-speed road-extend#%d ftr=%s team=%d at=(%d, %d)",
+            i, tostring(fid), a, rx, rz))
+        end
+      end
+      -- The first extension road is at (2788, 3884); start within 48 elmos.
+      local ax, az = 2788, 3884
+      local bx, bz = 4300, 4200
+      local aid = Spring.CreateUnit(vilDef.id, ax, Spring.GetGroundHeight(ax, az), az, "south", a)
+      local bid = Spring.CreateUnit(vilDef.id, bx, Spring.GetGroundHeight(bx, bz), bz, "south", a)
+      Spring.Echo(string.format("PHASE3 PROBE road-speed spawned A=%s B=%s team=%d A_at=(%d, %d) B_at=(%d, %d)",
+        tostring(aid), tostring(bid), a, ax, az, bx, bz))
+      if aid and bid then
+        speedProbe = { team = a, a = aid, b = bid, stage = "spawned" }
+      else
+        Spring.Echo(string.format("PHASE3 PROBE road-speed SPAWN-FAILED A=%s B=%s", tostring(aid), tostring(bid)))
+      end
+    end
+  end
+
+  -- ~2 frames later: state check for both walkers.
+  if speedProbe and speedProbe.stage == "spawned" and frame >= 242 then
+    local aid, bid = speedProbe.a, speedProbe.b
+    local aText, aState = speedStateText(aid)
+    local bText, bState = speedStateText(bid)
+    Spring.Echo(string.format("PHASE3 PROBE road-speed state-a f=%d unit=%d %s", frame, aid, aText))
+    Spring.Echo(string.format("PHASE3 PROBE road-speed state-b f=%d unit=%d %s", frame, bid, bText))
+    if aState and bState then
+      local aBase, bBase = aState.base, bState.base
+      local aExp = aBase * 1.5
+      local passOnRoad = (aState.onRoad == true) and (bState.onRoad == false)
+      local passApplied = speedNear(aState.applied, aExp) and speedNear(bState.applied, bBase)
+      local passSource = (aState.source == "mutator") or (aState.source == "rules-param")
+      Spring.Echo(string.format("PHASE3 PROBE road-speed onroad-verdict f=%d %s (A onRoad=%s expect=true, B onRoad=%s expect=false)",
+        frame, passOnRoad and "PASS" or "FAIL", tostring(aState.onRoad), tostring(bState.onRoad)))
+      Spring.Echo(string.format("PHASE3 PROBE road-speed applied-verdict f=%d %s (A applied=%.2f expect=%.2f, B applied=%.2f expect=%.2f)",
+        frame, passApplied and "PASS" or "FAIL", aState.applied or -1, aExp, bState.applied or -1, bBase))
+      Spring.Echo(string.format("PHASE3 PROBE road-speed source-verdict f=%d %s (A source=%s expect=mutator|rules-param)",
+        frame, passSource and "PASS" or "FAIL", tostring(aState.source)))
+      if aState.source ~= "mutator" then
+        Spring.Echo(string.format("PHASE3 PROBE road-speed source-note f=%d A source=%s (MoveCtrl mutator unavailable; non-enforcing fallback)",
+          frame, tostring(aState.source)))
+      end
+    else
+      Spring.Echo(string.format("PHASE3 PROBE road-speed state-verdict f=%d SKIPPED (aState=%s bState=%s)",
+        frame, tostring(aState ~= nil), tostring(bState ~= nil)))
+    end
+    speedProbe.stage = "checked"
+  end
+
+  -- Long move orders so both walk: A east along the extended chain, B over open ground.
+  if speedProbe and speedProbe.stage == "checked" and frame >= 244 then
+    local ax, az = 3400, 3884
+    local bx, bz = 4600, 4200
+    if type(Spring.GiveOrderToUnit) == "function" then
+      pcall(Spring.GiveOrderToUnit, speedProbe.a, CMD.MOVE, { ax, Spring.GetGroundHeight(ax, az), az }, {})
+      pcall(Spring.GiveOrderToUnit, speedProbe.b, CMD.MOVE, { bx, Spring.GetGroundHeight(bx, bz), bz }, {})
+      Spring.Echo(string.format("PHASE3 PROBE road-speed move-order f=%d A=%d -> (%d, %d) B=%d -> (%d, %d)",
+        frame, speedProbe.a, ax, az, speedProbe.b, bx, bz))
+    else
+      Spring.Echo("PHASE3 PROBE road-speed move-order SKIPPED Spring.GiveOrderToUnit unavailable")
+    end
+    speedProbe.stage = "walking"
+  end
+
+  -- Mid-walk velocity evidence (soft: state checks own the verdict).
+  if speedProbe and speedProbe.stage == "walking" and frame >= 274 then
+    local velA = speedUnitVelocity(speedProbe.a)
+    local velB = speedUnitVelocity(speedProbe.b)
+    local posA, posB = "?", "?"
+    if type(Spring.GetUnitPosition) == "function" then
+      local ax, _, az = Spring.GetUnitPosition(speedProbe.a)
+      local bx, _, bz = Spring.GetUnitPosition(speedProbe.b)
+      if ax and az then posA = string.format("(%d, %d)", ax, az) end
+      if bx and bz then posB = string.format("(%d, %d)", bx, bz) end
+    end
+    if velA and velB then
+      local note = "EVIDENCE"
+      if velA > velB then note = "PASS(soft)" end
+      if velA <= 0.01 and velB <= 0.01 then note = "STUCK" end
+      Spring.Echo(string.format("PHASE3 PROBE road-speed velocity f=%d A=%d velA=%.2f posA=%s B=%d velB=%.2f posB=%s delta=%.2f %s",
+        frame, speedProbe.a, velA, posA, speedProbe.b, velB, posB, velA - velB, note))
+    else
+      Spring.Echo(string.format("PHASE3 PROBE road-speed velocity f=%d SKIPPED (velA=%s velB=%s)",
+        frame, tostring(velA), tostring(velB)))
+    end
+    speedProbe.velA = velA
+    speedProbe.velB = velB
+    speedProbe.stage = "measured"
+  end
+
+  -- Restoration: take A off the road, then let the next scan restore the baseline.
+  if speedProbe and speedProbe.stage == "measured" and frame >= 298 then
+    local ax, az = 3600, 4200
+    local mode = "none"
+    if type(Spring.SetUnitPosition) == "function" then
+      local ok = pcall(Spring.SetUnitPosition, speedProbe.a, ax, Spring.GetGroundHeight(ax, az), az)
+      if ok then mode = "set-position" end
+    end
+    if mode == "none" and type(Spring.GiveOrderToUnit) == "function" then
+      pcall(Spring.GiveOrderToUnit, speedProbe.a, CMD.MOVE, { ax, Spring.GetGroundHeight(ax, az), az }, {})
+      mode = "move-order"
+    end
+    if mode == "none" then
+      Spring.Echo("PHASE3 PROBE road-speed restore SKIPPED no SetUnitPosition/GiveOrderToUnit")
+    end
+    Spring.Echo(string.format("PHASE3 PROBE road-speed restore f=%d A=%d -> (%d, %d) mode=%s", frame, speedProbe.a, ax, az, mode))
+    speedProbe.restoreMode = mode
+    speedProbe.stage = "restored"
+  end
+
+  if speedProbe and speedProbe.stage == "restored" and frame >= 302 then
+    local aid = speedProbe.a
+    local aText, aState = speedStateText(aid)
+    Spring.Echo(string.format("PHASE3 PROBE road-speed restore-state f=%d unit=%d %s", frame, aid, aText))
+    if aState then
+      local passOffRoad = (aState.onRoad == false)
+      local passBase = speedNear(aState.applied, aState.base)
+      Spring.Echo(string.format("PHASE3 PROBE road-speed restore-verdict f=%d %s (onRoad=%s expect=false pass=%s, applied=%.2f expect=%.2f pass=%s, mode=%s)",
+        frame, (passOffRoad and passBase) and "PASS" or "FAIL",
+        tostring(aState.onRoad), tostring(passOffRoad),
+        aState.applied or -1, aState.base or -1, tostring(passBase),
+        tostring(speedProbe.restoreMode)))
+    else
+      Spring.Echo(string.format("PHASE3 PROBE road-speed restore-verdict f=%d SKIPPED (state unavailable)", frame))
+    end
+    local vA, vB = speedProbe.velA, speedProbe.velB
+    local velNote = "unavailable"
+    if vA and vB then
+      if vA > vB then velNote = "PASS(soft) velA>velB"
+      elseif vA <= 0.01 and vB <= 0.01 then velNote = "STUCK both stationary"
+      else velNote = string.format("EVIDENCE velA=%.2f velB=%.2f", vA, vB) end
+    end
+    Spring.Echo(string.format("PHASE3 PROBE road-speed summary f=%d team=%d A=%d B=%d velocity=%s",
+      frame, speedProbe.team, speedProbe.a, speedProbe.b, velNote))
+    speedProbe = nil
+  end
+
   if frame % 90 == 0 and spawned then
     local a, b = opposingTeams()
     if a then
