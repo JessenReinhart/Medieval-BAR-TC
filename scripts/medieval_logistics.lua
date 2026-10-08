@@ -7,6 +7,18 @@ local M = {
 
   BUILD_LINK_RADIUS = 64.0, -- supply-endpoint buildings must lie within this distance of a road node (matches medieval_road_graph.LINK_RADIUS)
 
+  -- Supply bonus policy: every road-connected supply endpoint projects a supply
+  -- area around itself and adds an additive bonus, capped at SUPPLY_BONUS_MAX.
+  SUPPLY_RADIUS = 96.0,            -- elmos; within this distance of a connected endpoint a unit is in supply
+  SUPPLY_BONUS_PER_ENDPOINT = 0.10,
+  SUPPLY_BONUS_MAX = 0.50,
+
+  -- Road-aware pathing policy: legs that run along the road network are cheaper
+  -- than open ground, and targets that are not attached to the network are
+  -- penalized so routes prefer supplied destinations.
+  ROAD_PATH_COST_MULT = 0.75,
+  UNSUPPLIED_PATH_COST_MULT = 1.5,
+
   COSTS = {
     medieval_road = { wood = 5, stone = 2 },
     medieval_wall = { wood = 10, stone = 40 },
@@ -192,6 +204,111 @@ end
 -- Villagers are builders (canBuild) but stay eligible: only isBuilding excludes.
 function M.isEligibleSpeedUnitDef(def)
   return def ~= nil and def.canMove == true and def.isBuilding ~= true
+end
+
+-- ---------------------------------------------------------------------------
+-- Supply bonuses
+-- ---------------------------------------------------------------------------
+-- A unit is "in supply" when it stands within SUPPLY_RADIUS of at least one
+-- supply endpoint that is itself attached to the team's road network
+-- (BUILD_LINK_RADIUS). Only connected endpoints project supply: an endpoint
+-- whose road was destroyed stops supplying immediately, matching the live
+-- recomputation the connectivity queries already use. The bonus is additive
+-- per contributing endpoint and clamped to SUPPLY_BONUS_MAX, so a dense road
+-- network cannot multiply a unit's effectiveness without bound.
+
+local function finiteNum(n)
+  return type(n) == "number" and n == n and n > -math.huge and n < math.huge
+end
+
+-- Road-connected endpoints whose supply area covers (x, z). Malformed input
+-- yields 0 rather than an error so callers can query freely.
+function M.supplyEndpointCount(buildings, roads, x, z, supplyRadius, linkRadius)
+  if not finiteNum(x) or not finiteNum(z) then return 0 end
+  if type(buildings) ~= "table" or type(roads) ~= "table" then return 0 end
+  if supplyRadius == nil then supplyRadius = M.SUPPLY_RADIUS end
+  if linkRadius == nil then linkRadius = M.BUILD_LINK_RADIUS end
+  if not finiteNum(supplyRadius) or supplyRadius < 0 then return 0 end
+  if not finiteNum(linkRadius) or linkRadius < 0 then return 0 end
+  local count = 0
+  for _, b in pairs(buildings) do
+    if type(b) == "table" and finiteNum(b.x) and finiteNum(b.z) then
+      local dx, dz = x - b.x, z - b.z
+      if (dx * dx + dz * dz) <= supplyRadius * supplyRadius
+        and M.isBuildingConnected(roads, b.x, b.z, linkRadius) then
+        count = count + 1
+      end
+    end
+  end
+  return count
+end
+
+-- Additive bonus for `count` contributing endpoints, clamped to maxBonus.
+-- Non-finite or negative counts contribute nothing.
+function M.supplyBonus(count, perEndpoint, maxBonus)
+  if perEndpoint == nil then perEndpoint = M.SUPPLY_BONUS_PER_ENDPOINT end
+  if maxBonus == nil then maxBonus = M.SUPPLY_BONUS_MAX end
+  if not finiteNum(count) or count <= 0 then return 0 end
+  if not finiteNum(perEndpoint) or perEndpoint <= 0 then return 0 end
+  if not finiteNum(maxBonus) or maxBonus <= 0 then return 0 end
+  local bonus = count * perEndpoint
+  if bonus > maxBonus then bonus = maxBonus end
+  return bonus
+end
+
+-- A unit def receives supply when it is a unit, not a building. Static
+-- fortifications are supplied by the same endpoints but gain nothing from a
+-- damage/speed bonus, so they are not tracked.
+function M.isSupplyEligibleUnitDef(def)
+  return def ~= nil and def.isBuilding ~= true
+end
+
+-- Full supply state for a point: contributing endpoint count, raw additive
+-- bonus, the resulting multiplier (1 + bonus), and the in-supply verdict.
+function M.supplyState(buildings, roads, x, z, supplyRadius, linkRadius)
+  local count = M.supplyEndpointCount(buildings, roads, x, z, supplyRadius, linkRadius)
+  local bonus = M.supplyBonus(count)
+  return {
+    count = count,
+    bonus = bonus,
+    multiplier = 1.0 + bonus,
+    inSupply = count > 0,
+  }
+end
+
+function M.isInSupply(buildings, roads, x, z, supplyRadius, linkRadius)
+  return M.supplyEndpointCount(buildings, roads, x, z, supplyRadius, linkRadius) > 0
+end
+
+-- ---------------------------------------------------------------------------
+-- Road-aware pathing cost model
+-- ---------------------------------------------------------------------------
+-- Pure cost policy for choosing between an open-ground leg and a road leg.
+-- Road legs are discounted; a destination that is known to be off the supply
+-- network is penalized so routes prefer supplied destinations. An unknown
+-- destination (`targetSupplied == nil`) is never penalized - the model stays
+-- conservative when the caller has no connectivity information.
+
+function M.pathCostMultiplier(onRoad, targetSupplied)
+  local mult = 1.0
+  if onRoad == true then mult = mult * M.ROAD_PATH_COST_MULT end
+  if targetSupplied == false then mult = mult * M.UNSUPPLIED_PATH_COST_MULT end
+  return mult
+end
+
+-- Cost of a leg of `distance` elmos. Invalid or negative distances are
+-- unreachable (math.huge) rather than silently free.
+function M.pathCost(distance, onRoad, targetSupplied)
+  if not finiteNum(distance) or distance < 0 then return math.huge end
+  return distance * M.pathCostMultiplier(onRoad, targetSupplied)
+end
+
+-- Whether the road route should be preferred over the open-ground route.
+-- Non-finite or negative costs are not preferred; ties keep the open route.
+function M.roadRoutePreferred(openCost, roadCost)
+  if not finiteNum(roadCost) or roadCost < 0 then return false end
+  if not finiteNum(openCost) or openCost < 0 then return false end
+  return roadCost < openCost
 end
 
 function M.damageMultiplier(unlocked, unitName)

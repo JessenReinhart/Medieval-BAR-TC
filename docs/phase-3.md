@@ -1,8 +1,15 @@
 # Phase 3: Logistics, Tech Tree & Fortifications
 
+Phase 3 Slice 7 (supply bonuses and road-aware pathing) is implemented and verified.
+The focused Slice 7 suite passes 57 tests; the full suite passes 297 tests, and
+`python tests/check_lua_syntax.py` checks 44 Lua files with 0 errors. Slice 7 adds a pure supply
+policy (`SUPPLY_RADIUS = 96.0`, `SUPPLY_BONUS_PER_ENDPOINT = 0.10`, `SUPPLY_BONUS_MAX = 0.50`) in
+which only **road-connected** supply endpoints project supply, publishes the resulting bonus per
+unit as rules params, applies it to outgoing damage, and makes villager destination choice
+cost-based so road-connected drop-offs and nodes are preferred.
+
 Phase 3 Slice 6 (road movement-speed enforcement) is implemented and verified.
-The focused Slice 6 suite passes 26 tests; the full suite passes 240 tests, and
-`python tests/check_lua_syntax.py` checks 44 Lua files with 0 errors. Slice 6 turns the
+The focused Slice 6 suite passes 26 tests. Slice 6 turns the
 pre-existing road speed query into an actual movement modifier: eligible finished ground units
 within `ROAD_PROXIMITY_RADIUS = 48.0` of a same-team road are set to
 `base * ROAD_SPEED_MULT (1.5)` through `Spring.MoveCtrl.SetGroundMoveTypeData`, with a
@@ -53,6 +60,16 @@ custom command (`CMD_BUILD_ROAD = 371922`), not by buildoptions.
 - **Pure road graph**: `scripts/medieval_road_graph.lua` — no engine calls. Public functions:
   `planarDist`, `buildEdges`, `adjacency`, `componentCount`, `componentOf`, `isConnected`,
   `connectedToNetwork`, and `networkSummary`. Constant: `LINK_RADIUS = 64.0`.
+- **Pure supply and pathing policy (Slice 7)**: `scripts/medieval_logistics.lua` also exports
+  `supplyEndpointCount(buildings, roads, x, z, supplyRadius, linkRadius)` (counts only endpoints
+  that are BOTH road-connected within `BUILD_LINK_RADIUS` and within `SUPPLY_RADIUS = 96.0`),
+  `supplyBonus(count, perEndpoint, maxBonus)` (additive `0.10` per endpoint, clamped at `0.50`),
+  `supplyState(...)` -> `{ count, bonus, multiplier, inSupply }`, `isInSupply(...)`,
+  `isSupplyEligibleUnitDef(def)` (non-buildings only), and the pathing cost model
+  `pathCostMultiplier(onRoad, targetSupplied)` / `pathCost(distance, onRoad, targetSupplied)` /
+  `roadRoutePreferred(openCost, roadCost)` with `ROAD_PATH_COST_MULT = 0.75` and
+  `UNSUPPLIED_PATH_COST_MULT = 1.5`. `scripts/medieval_gather.lua` adds `PATH_COST_UNSUPPLIED = 1.5`
+  plus `pathCost(ux, uz, tx, tz, supplied)` and `bestCandidate(candidates, ux, uz)`.
 - **Pure connectivity policy**: `scripts/medieval_logistics.lua` now exports
   `isBuildingConnected(roads, x, z, radius)` and `isSupplyEndpointConnected` (alias), plus
   `isSupplyEndpointDef(def)` which reads the `dropoff` customparam with engine-uppercase
@@ -82,11 +99,23 @@ custom command (`CMD_BUILD_ROAD = 371922`), not by buildoptions.
     speed change happens); else `source = "none"`. No path ever errors.
   - `GetSpeedState(unitID)` -> the live `{ base, onRoad, applied, source }` table for a tracked
     mover, or `nil` when the unit is unknown/ineligible.
+  - Slice 7 supply tracking: `supply[teamID][unitID] = { count, bonus, multiplier, inSupply }`,
+    with `supplyBonusMovers[unitID] = { teamID, bonus }`. Finished non-building units are tracked;
+    a shared `SUPPLY_SCAN_INTERVAL = 15` frame pass recomputes the state and publishes
+    `medieval_supply_bonus`, `medieval_supply_mult`, and `medieval_in_supply` per unit via
+    `Spring.SetUnitRulesParam`. `GetSupplyState(unitID)` computes live on first query.
+  - Slice 7 damage enforcement: `UnitPreDamaged` multiplies outgoing damage by
+    `1 + supplyBonus` for a supplied medieval attacker, after the `iron_swords` multiplier, so the
+    two stack multiplicatively.
+  - Slice 7 pathing: `luarules/gadgets/gadget_medieval_gather.lua` selects harvest nodes by
+    `PointOnRoadNetwork` and drop-offs by `SupplyStateAt`, both through the pure `bestCandidate`
+    cost model. With no roads every candidate carries the same penalty and nearest-wins behaviour
+    is preserved.
 - **Probe**: `luarules/gadgets/gadget_phase2_test_forces.lua` creates a three-node chain and an
   isolated node at frame 160, then logs summary and connectivity queries. It is a diagnostic probe,
   not a player command implementation.
 
-## Historical Slice 1-6 counts
+## Historical Slice 1-7 counts
 
 These are historical completion counts, not the current total:
 
@@ -96,7 +125,8 @@ These are historical completion counts, not the current total:
 - Slice 4 focused tests: 25 passing.
 - Slice 5 focused tests: 17 passing; full suite 214 passing.
 - Slice 6 focused tests: 26 passing (`tests/test_phase3_slice6.py`).
-- Current full suite: 240 passing.
+- Slice 7 focused tests: 57 passing (`tests/test_phase3_slice7.py`).
+- Current full suite: 297 passing.
 
 ## Verification
 
@@ -106,11 +136,14 @@ These are historical completion counts, not the current total:
 python -m pytest tests/test_phase3_slice4.py -q
 # 25 passed
 
+python -m pytest tests/test_phase3_slice7.py -q
+# 57 passed
+
 python -m pytest tests/test_phase3_slice6.py -q
 # 26 passed
 
 python -m pytest tests -q
-# 240 passed
+# 297 passed
 
 python tests/check_lua_syntax.py
 # Checked 44 lua files; 0 errors found.
@@ -312,6 +345,34 @@ restore checks. No Lua errors occur inside the probe window f=238-302; the only 
 
 ## Next scope
 
-Road movement-speed enforcement is implemented (Slice 6). Remaining Phase 3 work is connectivity
-gameplay effects: supply bonuses and pathing integration. Do not claim Phase 3 is complete from the
-Slice 4 road-build command or Slice 6 speed-enforcement work.
+Phase 3 connectivity gameplay effects are implemented: road movement-speed enforcement (Slice 6),
+supply bonuses, and road-aware pathing (Slice 7). Remaining Phase 3 work is verification in the
+live engine: Slice 7 has no headless probe evidence yet (unlike Slice 6), so the supply bonus,
+rules-param publication, and damage application are proven by the Lua test harness only. Do not
+claim Phase 3 is complete until a probe confirms the supply path in Recoil.
+
+### Slice 7 — supply bonuses and road-aware pathing
+
+- [x] Pure supply policy in `scripts/medieval_logistics.lua`: `SUPPLY_RADIUS = 96.0`,
+      `SUPPLY_BONUS_PER_ENDPOINT = 0.10`, `SUPPLY_BONUS_MAX = 0.50`, `supplyEndpointCount`,
+      `supplyBonus`, `supplyState`, `isInSupply`, `isSupplyEligibleUnitDef`.
+- [x] Only road-connected endpoints project supply; destroying a road removes the bonus on the next
+      scan. Supply is per team.
+- [x] Pure pathing policy: `pathCostMultiplier`, `pathCost`, `roadRoutePreferred`
+      (`ROAD_PATH_COST_MULT = 0.75`, `UNSUPPLIED_PATH_COST_MULT = 1.5`), plus
+      `PATH_COST_UNSUPPLIED`, `pathCost`, and `bestCandidate` in `scripts/medieval_gather.lua`.
+- [x] Gadget tracking with a shared `SUPPLY_SCAN_INTERVAL = 15` frame pass; lifecycle removal on
+      `UnitDestroyed`/`UnitTaken` and re-track on `UnitGiven`.
+- [x] Rules-param publication (`medieval_supply_bonus`, `medieval_supply_mult`,
+      `medieval_in_supply`) and damage application in `UnitPreDamaged`.
+- [x] Public APIs: `GetSupplyState`, `SupplyBonus`, `InSupply`, `SupplyStateAt`,
+      `SupplyEndpointCountAt`, `SupplySummary`, `PathCostMultiplier`, `PathCost`,
+      `RoadRoutePreferred`.
+- [x] Gather-gadget pathing: node selection uses `PointOnRoadNetwork`, drop-off selection uses
+      `SupplyStateAt`; no-road behaviour is unchanged.
+- [x] Fixed a latent `local`-ordering bug in `gadget_medieval_gather.lua`: `nearestDropoff`
+      referenced `dropoffs`/`allowsResource` before their declarations, so both resolved to nil
+      globals and every delivery selection raised on `pairs(nil)`.
+- [x] Focused 57 tests (`tests/test_phase3_slice7.py`) and full 297-test suite passing; Lua syntax
+      clean (44 files, 0 errors).
+- [ ] Engine probe evidence for the supply path (pending).

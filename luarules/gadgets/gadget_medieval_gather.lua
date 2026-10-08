@@ -23,6 +23,13 @@ local nodes = {}
 -- state: "move_node", "harvest", "move_drop", "deliver"
 local jobs = {}
 
+-- Drop-off registry: dropoffs[teamID][buildingUnitID] = true
+-- Declared before nearestDropoff: that function closes over these locals, so a
+-- later declaration would silently bind them as nil globals.
+local dropoffs = {}
+-- allowsResource[teamID][resource] = true if some dropoff of that team accepts it
+local allowsResource = {}
+
 -- ---------------------------------------------------------------------------
 -- Node registry (auto-populated from FeatureCreated)
 -- ---------------------------------------------------------------------------
@@ -79,46 +86,73 @@ local function alive(unitID)
   return ok and not alive
 end
 
-local function nearestNode(ux, uz, resource)
+-- Supply state of a point for pathing cost purposes. Returns true/false when
+-- the logistics gadget is available, nil when it is not (no penalty applied).
+local function pointSupplied(teamID, x, z)
+  local api = GG and GG.MedievalLogistics
+  if not (api and api.SupplyStateAt) then return nil end
+  local state = api.SupplyStateAt(teamID, x, z)
+  if not state then return nil end
+  return state.inSupply == true
+end
+
+-- Whether a point lies on the team's road network (true/false), or nil when the
+-- logistics gadget is unavailable. Used to make road-adjacent nodes cheaper.
+local function pointOnNetwork(teamID, x, z)
+  local api = GG and GG.MedievalLogistics
+  if not (api and api.PointOnRoadNetwork) then return nil end
+  local ok, onRoad = pcall(api.PointOnRoadNetwork, teamID, x, z)
+  if not ok then return nil end
+  return onRoad == true
+end
+
+local function nearestNode(ux, uz, resource, teamID)
   -- Nodes are registered by FeatureCreated; resource is optional for auto-assignment.
-  local best, bestD
+  -- Selection is cost-based (Slice 7): a node off the team's road network costs
+  -- more, so villagers prefer harvest sites they can haul from along roads.
+  -- With no roads every node is penalized equally and nearest-wins is unchanged.
+  local candidates = {}
   for featureID, node in pairs(nodes) do
     if node.remaining > 0 and (resource == nil or node.resource == resource) then
       local x, _, z = featurePos(featureID)
       if x then
-        local d = gather.planarDist(ux, uz, x, z)
-        if d and (not bestD or d < bestD) then
-          best, bestD = featureID, d
-        end
+        local supplied
+        if teamID ~= nil then supplied = pointOnNetwork(teamID, x, z) end
+        candidates[#candidates + 1] = {
+          key = featureID, x = x, z = z, supplied = supplied,
+        }
       end
     end
   end
+  local best = gather.bestCandidate(candidates, ux, uz)
   return best
 end
 
-local function nearestDropoff(ux, uz, resource)
-  local best, bestD
-  for teamID, list in pairs(dropoffs) do
-    if resource == nil or (allowsResource[teamID] and allowsResource[teamID][resource]) then
+local function nearestDropoff(ux, uz, resource, teamID)
+  -- Cost-based selection (Slice 7): a dropoff that is not on the team's supply
+  -- network costs PATH_COST_UNSUPPLIED times its distance, so a villager walks
+  -- past an unsupplied shed to a road-connected one.
+  local candidates = {}
+  for dropTeamID, list in pairs(dropoffs) do
+    if resource == nil or (allowsResource[dropTeamID] and allowsResource[dropTeamID][resource]) then
       for unitID in pairs(list) do
         local x, _, z = unitPos(unitID)
         if x then
-          local d = gather.planarDist(ux, uz, x, z)
-          if d and (not bestD or d < bestD) then
-            best, bestD = unitID, d
-          end
+          local supplied
+          if dropTeamID ~= nil then supplied = pointSupplied(dropTeamID, x, z) end
+          candidates[#candidates + 1] = {
+            key = unitID, x = x, z = z, supplied = supplied,
+          }
         end
       end
     end
   end
+  local best = gather.bestCandidate(candidates, ux, uz)
   return best
 end
 
 -- Drop-off registry: dropoffs[teamID][buildingUnitID] = true
-local dropoffs = {}
 -- allowsResource[teamID][resource] = true if some dropoff of that team accepts it
-local allowsResource = {}
-
 local function refreshTeamDropoffs(teamID)
   dropoffs[teamID] = dropoffs[teamID] or {}
   allowsResource[teamID] = allowsResource[teamID] or {}
@@ -188,7 +222,7 @@ local function assignGather(unitID, nodeID)
   if not x then return false end
 
   if not nodeID then
-    nodeID = nearestNode(x, z, nil)
+    nodeID = nearestNode(x, z, nil, Spring.GetUnitTeam(unitID))
   end
   if not nodeID or not (nodes[nodeID] and nodes[nodeID].remaining > 0) then
     jobs[unitID] = nil
@@ -222,7 +256,7 @@ local function assignDeliver(unitID, dropoffID)
     local x, _, z = unitPos(unitID)
     if not x then return false end
     refreshTeamDropoffs(teamID)
-    dropoffID = nearestDropoff(x, z, job.resource)
+    dropoffID = nearestDropoff(x, z, job.resource, teamID)
   end
   if not dropoffID then
     return false  -- no compatible dropoff; hold (resume later)

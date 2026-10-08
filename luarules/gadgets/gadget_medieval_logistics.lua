@@ -25,6 +25,8 @@ local roads = {}
 local buildings = {}
 local unlocked = {}
 local speedMovers = {}
+-- supply[teamID][unitID] = { count, bonus, multiplier, inSupply }
+local supply = {}
 
 -- Supply endpoints are only town center, granary and lumber camp, identified
 -- by the `dropoff` customparam (engine lowercases keys; source defs may not).
@@ -35,7 +37,18 @@ local removeTrackedBuilding, trackSupplyEndpoint
 -- Forward declarations: the speed scan and its interval are referenced by
 -- gadget:GameFrame and the lifecycle callins above their definitions.
 local trackSpeedMover, removeSpeedMover, scanSpeedMovers, isUnitBuilt
+-- Supply tracking is referenced by the lifecycle callins above its definition.
+local trackSupplyMover, removeSupplyMover, scanSupplyMovers, supplyBonusOf
 local SPEED_SCAN_INTERVAL = 15 -- frames; 15 frames = 0.5s at 30 game-fps
+local SUPPLY_SCAN_INTERVAL = 15 -- frames; same cadence as the road-speed scan
+
+-- supplyUnits[teamID][unitID] = true for finished supply-eligible units.
+-- supplyBonusMovers[unitID] = { teamID, bonus }
+-- Both tables are declared HERE, before gadget:Initialize resets them: a later
+-- `local` declaration would make that reset assign a fresh global instead, so
+-- the real table would survive a re-Initialize with stale entries.
+local supplyUnits = {}
+local supplyBonusMovers = {}
 
 -- Road-build command intent: AllowCommand records it here; the next
 -- GameFrame pass performs the economy transaction and feature creation.
@@ -183,6 +196,8 @@ function gadget:Initialize()
   unlocked = {}
   pendingRoadBuilds = {}
   speedMovers = {}
+  supply = {}
+  supplyBonusMovers = {}
   for _, teamID in ipairs(Spring.GetTeamList() or {}) do
     initTeam(teamID)
   end
@@ -199,6 +214,8 @@ function gadget:Initialize()
     -- Re-track speed movers that already exist at initialization (must be finished).
     if isUnitBuilt(unitID) then
       trackSpeedMover(unitID, unitDefID, Spring.GetUnitTeam and Spring.GetUnitTeam(unitID))
+      -- Re-track supply-eligible units that already exist at initialization.
+      trackSupplyMover(unitID, unitDefID, Spring.GetUnitTeam and Spring.GetUnitTeam(unitID))
     end
   end
 end
@@ -213,6 +230,7 @@ function gadget:UnitTaken(unitID, unitDefID, oldTeam, newTeam)
   removeTrackedBuilding(unitID)
   -- Speed tracking is per-team; the receiving team re-tracks in UnitGiven.
   removeSpeedMover(unitID)
+  removeSupplyMover(unitID)
 end
 
 function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
@@ -224,6 +242,9 @@ function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
   -- Re-track the speed mover under the receiving team.
   removeSpeedMover(unitID)
   trackSpeedMover(unitID, unitDefID, newTeam)
+  -- Re-track the supply mover under the receiving team.
+  removeSupplyMover(unitID)
+  trackSupplyMover(unitID, unitDefID, newTeam)
 end
 
 -- ---------------------------------------------------------------------------
@@ -330,6 +351,8 @@ function gadget:UnitFinished(unitID, unitDefID, unitTeam)
   trackSupplyEndpoint(unitID, unitDefID, unitTeam)
   -- Track finished speed-eligible movers (base speed from the unit def).
   trackSpeedMover(unitID, unitDefID, unitTeam)
+  -- Track supply-eligible units for the road-connected supply bonus.
+  trackSupplyMover(unitID, unitDefID, unitTeam)
   local u = unlocked[unitTeam]
   if not u then return end
   local healthMult = logistics.healthMultiplier(u, def.name)
@@ -386,6 +409,8 @@ function gadget:UnitDestroyed(unitID, unitDefID, teamID, attackerID, attackerDef
   removeTrackedBuilding(unitID)
   -- A destroyed mover leaves the speed table.
   removeSpeedMover(unitID)
+  -- A destroyed unit leaves the supply table.
+  removeSupplyMover(unitID)
 end
 
 function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
@@ -396,13 +421,24 @@ function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, w
   if not attackerDef or not attackerDef.name or not string.find(attackerDef.name, "^medieval_") then
     return damage, 1.0
   end
+  local outgoing = damage
   local u = unlocked[attackerTeam]
   if u and u.iron_swords and attackerDef.name == "medieval_infantry" then
     local newDamage = logistics.scaledDamage(damage, 1.25)
     echo("PHASE3 DAMAGE attacker=%d defender=%d base=%.1f scaled=%.1f", attackerID, unitID, damage, newDamage)
-    return newDamage, 1.0
+    outgoing = newDamage
   end
-  return damage, 1.0
+  -- Supply bonus (Slice 7): a supplied attacker deals more damage. The value is
+  -- read from the throttled supply scan, so no per-hit distance math runs on
+  -- the damage path; the two bonuses stack multiplicatively.
+  local supplyBonus = supplyBonusOf(attackerID)
+  if supplyBonus > 0 then
+    local supplied = logistics.scaledDamage(outgoing, 1.0 + supplyBonus)
+    echo("PHASE3 SUPPLY damage attacker=%d defender=%d base=%.1f bonus=%.2f scaled=%.1f",
+      attackerID, unitID, damage, supplyBonus, supplied)
+    return supplied, 1.0
+  end
+  return outgoing, 1.0
 end
 
 function gadget:AllowCommand(unitID, unitDefID, teamID, cmdID, params, opts)
@@ -431,6 +467,10 @@ function gadget:GameFrame(frame)
   -- Throttled movement-speed scan (every 15 frames = 0.5s).
   if frame % SPEED_SCAN_INTERVAL == 0 then
     scanSpeedMovers()
+  end
+  -- Throttled supply-bonus scan (same 15-frame cadence).
+  if frame % SUPPLY_SCAN_INTERVAL == 0 then
+    scanSupplyMovers()
   end
 end
 
@@ -544,6 +584,95 @@ scanSpeedMovers = function()
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- Supply bonuses (Phase 3 Slice 7).
+--
+-- Rule: a finished non-building unit is "in supply" when it stands within
+-- logistics.SUPPLY_RADIUS (96 elmos) of a supply endpoint that is itself
+-- road-connected (BUILD_LINK_RADIUS = 64 elmos). Only road-connected endpoints
+-- project supply, so destroying a road removes the bonus immediately. Each
+-- contributing endpoint adds SUPPLY_BONUS_PER_ENDPOINT (0.10) to the unit's
+-- damage, clamped at SUPPLY_BONUS_MAX (0.50).
+--
+-- Enforcement: the synced engine exposes no per-unit damage mutator, so the
+-- bonus is (a) published per unit as the rules param `medieval_supply_bonus`
+-- (plus `medieval_in_supply` and `medieval_supply_mult`) for UI and other
+-- gadgets, and (b) applied to outgoing damage in UnitPreDamaged, which is the
+-- existing damage path the iron_swords tech already uses. Recomputing on the
+-- throttled scan keeps the published state live; damage reads it at hit time.
+--
+-- Out of scope by design: buildings/fortifications receive no supply bonus,
+-- and no health, healing, or ammo effects are applied.
+-- ---------------------------------------------------------------------------
+
+local function findSupplyMover(unitID)
+  return supplyBonusMovers[unitID]
+end
+
+removeSupplyMover = function(unitID)
+  local entry = supplyBonusMovers[unitID]
+  if not entry then return nil end
+  supplyBonusMovers[unitID] = nil
+  local teamList = supplyUnits[entry.teamID]
+  if teamList then teamList[unitID] = nil end
+  local stateList = supply[entry.teamID]
+  if stateList then stateList[unitID] = nil end
+  return entry
+end
+
+trackSupplyMover = function(unitID, unitDefID, teamID)
+  local def = UnitDefs and UnitDefs[unitDefID]
+  if not logistics.isSupplyEligibleUnitDef(def) then return false, "ineligible" end
+  if teamID == nil then return false, "no_team" end
+  if not isUnitBuilt(unitID) then return false, "not_finished" end
+  initTeam(teamID)
+  supplyUnits[teamID] = supplyUnits[teamID] or {}
+  supplyUnits[teamID][unitID] = true
+  supplyBonusMovers[unitID] = { teamID = teamID, bonus = 0.0 }
+  echo("PHASE3 SUPPLY tracked unit=%d team=%d def=%s", unitID, teamID, tostring(def.name))
+  return true
+end
+
+-- Live supply state for one tracked unit, or nil when untracked/no position.
+local function computeSupplyState(teamID, unitID)
+  if not (Spring and Spring.GetUnitPosition) then return nil end
+  local x, _, z = Spring.GetUnitPosition(unitID)
+  if type(x) ~= "number" or type(z) ~= "number" then return nil end
+  return logistics.supplyState(buildings[teamID] or {}, roads[teamID] or {}, x, z)
+end
+
+-- Publishes the state and returns the bonus for a tracked unit.
+local function applySupplyState(unitID, entry)
+  local state = computeSupplyState(entry.teamID, unitID)
+  if not state then return entry.bonus end
+  supply[entry.teamID] = supply[entry.teamID] or {}
+  supply[entry.teamID][unitID] = state
+  if entry.bonus ~= state.bonus then
+    echo("PHASE3 SUPPLY unit=%d team=%d endpoints=%d bonus=%.2f inSupply=%s",
+      unitID, entry.teamID, state.count, state.bonus, tostring(state.inSupply))
+  end
+  entry.bonus = state.bonus
+  if Spring and Spring.SetUnitRulesParam then
+    pcall(Spring.SetUnitRulesParam, unitID, "medieval_supply_bonus", state.bonus)
+    pcall(Spring.SetUnitRulesParam, unitID, "medieval_supply_mult", state.multiplier)
+    pcall(Spring.SetUnitRulesParam, unitID, "medieval_in_supply", state.inSupply and 1 or 0)
+  end
+  return state.bonus
+end
+
+scanSupplyMovers = function()
+  for unitID, entry in pairs(supplyBonusMovers) do
+    applySupplyState(unitID, entry)
+  end
+end
+
+-- Bonus currently published for a unit (0 when not tracked or out of supply).
+supplyBonusOf = function(unitID)
+  local entry = findSupplyMover(unitID)
+  if not entry then return 0.0 end
+  return entry.bonus or 0.0
+end
+
 GG = GG or {}
 GG.MedievalLogistics = {
   GetSpeedMultiplier = function(teamID, unitID)
@@ -650,5 +779,83 @@ GG.MedievalLogistics = {
       end
     end
     return summary
+  end,
+
+  -- Supply bonus queries (Phase 3 Slice 7). All are computed from the live
+  -- road graph, so a destroyed road drops supply on the next query/scan.
+  -- `GetSupplyState` returns the cached per-unit state written by the scan
+  -- ({ count, bonus, multiplier, inSupply }), or nil for untracked units. A
+  -- tracked unit that has not been scanned yet is computed live on demand, so
+  -- the API is correct before the first scan tick.
+  GetSupplyState = function(unitID)
+    local entry = findSupplyMover(unitID)
+    if not entry then return nil end
+    local list = supply[entry.teamID]
+    local state = list and list[unitID]
+    if not state then
+      state = computeSupplyState(entry.teamID, unitID)
+      if state then
+        supply[entry.teamID] = supply[entry.teamID] or {}
+        supply[entry.teamID][unitID] = state
+      end
+    end
+    return state
+  end,
+
+  SupplyBonus = function(unitID)
+    return supplyBonusOf(unitID)
+  end,
+
+  InSupply = function(unitID)
+    local state = GG.MedievalLogistics.GetSupplyState(unitID)
+    return state ~= nil and state.inSupply == true
+  end,
+
+  -- Supply state recomputed at an arbitrary point (no unit required). Used by
+  -- tests, UI overlays, and any caller that needs the value between scans.
+  SupplyStateAt = function(teamID, x, z)
+    return logistics.supplyState(buildings[teamID] or {}, roads[teamID] or {}, x, z)
+  end,
+
+  SupplyEndpointCountAt = function(teamID, x, z)
+    return logistics.supplyEndpointCount(buildings[teamID] or {}, roads[teamID] or {}, x, z)
+  end,
+
+  SupplySummary = function(teamID)
+    local summary = { tracked = 0, inSupply = 0, outOfSupply = 0, endpoints = 0 }
+    local list = supply[teamID]
+    if list then
+      for _, state in pairs(list) do
+        summary.tracked = summary.tracked + 1
+        if state.inSupply then
+          summary.inSupply = summary.inSupply + 1
+        else
+          summary.outOfSupply = summary.outOfSupply + 1
+        end
+      end
+    end
+    local bList = buildings[teamID]
+    if bList then
+      for _, b in pairs(bList) do
+        if logistics.isBuildingConnected(roads[teamID] or {}, b.x, b.z, logistics.BUILD_LINK_RADIUS) then
+          summary.endpoints = summary.endpoints + 1
+        end
+      end
+    end
+    return summary
+  end,
+
+  -- Road-aware pathing cost queries (Phase 3 Slice 7). Pure policy, exposed so
+  -- movement gadgets can prefer road legs and supplied destinations.
+  PathCostMultiplier = function(onRoad, targetSupplied)
+    return logistics.pathCostMultiplier(onRoad, targetSupplied)
+  end,
+
+  PathCost = function(distance, onRoad, targetSupplied)
+    return logistics.pathCost(distance, onRoad, targetSupplied)
+  end,
+
+  RoadRoutePreferred = function(openCost, roadCost)
+    return logistics.roadRoutePreferred(openCost, roadCost)
   end,
 }

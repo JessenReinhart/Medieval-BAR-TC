@@ -1,16 +1,23 @@
-# Handoff: Medieval-BAR-TC (Phase 3 Slice 6 road movement-speed enforcement landed; Phase 3 gameplay integration still open)
+# Handoff: Medieval-BAR-TC (Phase 3 Slice 7 supply bonuses + road-aware pathing landed; engine probe evidence still open)
 
 Date: 2026-10-08
 Branch: `medieval-total-conversion`
-Last work: Phase 3 Slice 6 — road movement-speed enforcement. Eligible finished ground units on a
-same-team road run at `base * ROAD_SPEED_MULT (1.5)` through `Spring.MoveCtrl.SetGroundMoveTypeData`,
-tracked per team and throttled to a 15-frame scan, with `GG.MedievalLogistics.GetSpeedState(unitID)`.
+Last work: Phase 3 Slice 7 — supply bonuses and road-aware pathing. Finished non-building units
+within `SUPPLY_RADIUS = 96.0` of a **road-connected** supply endpoint gain an additive bonus
+(`0.10` per endpoint, capped at `0.50`), published per unit as rules params and applied to outgoing
+damage in `UnitPreDamaged`. Villager node/drop-off selection is now cost-based and prefers
+road-connected targets. Full suite: 297 passing.
+
+Previous work: Phase 3 Slice 6 — road movement-speed enforcement. Eligible finished ground units on
+a same-team road run at `base * ROAD_SPEED_MULT (1.5)` through
+`Spring.MoveCtrl.SetGroundMoveTypeData`, tracked per team and throttled to a 15-frame scan, with
+`GG.MedievalLogistics.GetSpeedState(unitID)`.
 
 Scope note: Slice 4 places roads by command, not by buildoptions. Roads are FEATURES
 (`gamedata/featuredefs.lua`, `medieval_road`), so unitdef buildoptions cannot place them and
 `AllowUnitCreation` does not fire for them. Villager build options remain wall/tower only.
-Movement-speed enforcement is now implemented (Slice 6); the rules-param fallback path is
-observational only, and end-to-end connectivity gameplay effects remain open.
+Movement-speed enforcement (Slice 6), supply bonuses, and pathing integration (Slice 7) are
+implemented; Slice 7 still lacks live-engine probe evidence.
 
 ## What Works Right Now
 
@@ -85,16 +92,42 @@ observational only, and end-to-end connectivity gameplay effects remain open.
     - `GG.MedievalLogistics.GetSpeedState(unitID)`.
     - 26 Slice 6 tests; full suite: **240 passed**; Lua syntax clean (44 files, 0 errors).
 
-## How to Run the Slice 6 Tests and Probe
+11. **Phase 3 Slice 7 (Supply Bonuses and Road-Aware Pathing)** — implemented:
+    - Pure supply policy in `scripts/medieval_logistics.lua`: `SUPPLY_RADIUS = 96.0`,
+      `SUPPLY_BONUS_PER_ENDPOINT = 0.10`, `SUPPLY_BONUS_MAX = 0.50`, `supplyEndpointCount`,
+      `supplyBonus`, `supplyState`, `isInSupply`, `isSupplyEligibleUnitDef`. Only endpoints that are
+      themselves road-connected (`BUILD_LINK_RADIUS = 64.0`) project supply, so road destruction
+      drops the bonus immediately.
+    - Gadget: finished non-building units tracked per team; a shared 15-frame scan recomputes state
+      and publishes `medieval_supply_bonus`, `medieval_supply_mult`, `medieval_in_supply`.
+      `UnitPreDamaged` scales a supplied medieval attacker's outgoing damage by `1 + bonus`, after
+      the `iron_swords` multiplier.
+    - APIs: `GetSupplyState`, `SupplyBonus`, `InSupply`, `SupplyStateAt`, `SupplyEndpointCountAt`,
+      `SupplySummary`, `PathCostMultiplier`, `PathCost`, `RoadRoutePreferred`.
+    - Pure pathing policy: `ROAD_PATH_COST_MULT = 0.75`, `UNSUPPLIED_PATH_COST_MULT = 1.5`,
+      `pathCostMultiplier`, `pathCost`, `roadRoutePreferred`; `scripts/medieval_gather.lua` adds
+      `PATH_COST_UNSUPPLIED = 1.5`, `pathCost`, and `bestCandidate`.
+    - Gather gadget pathing: node selection uses `PointOnRoadNetwork`, drop-off selection uses
+      `SupplyStateAt`; with no roads all candidates share one penalty and nearest-wins is preserved.
+    - Fixed a latent `local`-ordering bug: `nearestDropoff` referenced `dropoffs`/`allowsResource`
+      before their declarations, so both were nil globals and every delivery selection raised on
+      `pairs(nil)`. The declarations are now hoisted above the function.
+    - 57 Slice 7 tests (`tests/test_phase3_slice7.py`); full suite: **297 passed**; Lua syntax clean
+      (44 files, 0 errors). Engine probe evidence still pending.
+
+## How to Run the Slice 6 and Slice 7 Tests and Probe
 
 ```pwsh
-# Slice 6 (Phase 3) focused tests (26 new: pure speed policy + gadget tracking/apply/lifecycle)
+# Slice 7 (Phase 3) focused tests (57: pure supply policy + pathing cost + damage scaling + gather pathing)
+python -m pytest tests/test_phase3_slice7.py -q
+
+# Slice 6 (Phase 3) focused tests (26: pure speed policy + gadget tracking/apply/lifecycle)
 python -m pytest tests/test_phase3_slice6.py -q
 
 # Slice 5 (Phase 3) focused tests (17)
 python -m pytest tests/test_phase3_slice5.py -q
 
-# Full suite (240 passing as of this slice)
+# Full suite (297 passing as of Slice 7)
 python -m pytest tests -q
 
 # Lua syntax check (44 files, expect 0 errors)
@@ -275,11 +308,13 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
   fallback. The velocity check is soft by design (`PASS(soft)`); the hard verdicts are the state and
   restore checks. No Lua errors occur inside the probe window.
 
-## What's Next: Phase 3 gameplay integration (pending design)
+## What's Next: Phase 3 engine verification (pending)
 
-- Road movement-speed enforcement is **done** (Slice 6), using the verified `Spring.MoveCtrl`
-  mutator. Remaining work is end-to-end connectivity gameplay effects: supply bonuses and pathing
-  integration. Do not assume Phase 3 is complete.
+- Supply bonuses and road-aware pathing are **implemented** (Slice 7) and proven by the Lua test
+  harness (`tests/test_phase3_slice7.py`, 57 tests; full suite 297). Unlike Slice 6, Slice 7 has
+  **no live-engine probe evidence**: no run has yet confirmed `medieval_supply_bonus` publication,
+  the `UnitPreDamaged` scaling, or gather drop-off selection inside Recoil. Add probe coverage
+  before claiming Phase 3 complete.
 
 ## How to Resume in a New Session
 
@@ -288,8 +323,9 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
 git status
 python -m pytest tests -q
 
-# 2. Slice 6 focused tests
+# 2. Slice 6 / Slice 7 focused tests
 python -m pytest tests/test_phase3_slice6.py -q
+python -m pytest tests/test_phase3_slice7.py -q
 
 # 3. Run the headless probe and inspect Phase 3 output
 python tools/launch/run_phase2_slice2_probe.py

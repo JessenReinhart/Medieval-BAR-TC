@@ -7,6 +7,9 @@ local M = {
   CARRY_CAPACITY = 10,       -- villager inventory threshold
   HARVEST_RADIUS = 40,       -- elmos; within this distance harvesting ticks
   DROPOFF_RADIUS = 64,       -- elmos; within this distance deposit succeeds
+  -- Multiplier applied to the distance of a destination that is NOT on the
+  -- team's supply network; supplied/unknown destinations use 1.0.
+  PATH_COST_UNSUPPLIED = 1.5,
   DEFAULT_NODE_CAPACITY = 500,
   NODE_CAPACITY_BY_TYPE = {
     medieval_tree = 500,
@@ -74,6 +77,38 @@ end
 function M.inDropoffRange(ax, az, bx, bz)
   local d = M.planarDist(ax, az, bx, bz)
   return d ~= nil and d <= M.DROPOFF_RADIUS
+end
+
+-- ---------------------------------------------------------------------------
+-- Road-aware route selection
+-- ---------------------------------------------------------------------------
+-- Destination choice uses a cost, not raw distance: a destination that is not
+-- on the team's supply network costs PATH_COST_UNSUPPLIED times its distance,
+-- so a villager walks past an unsupplied shed to a road-connected one. An
+-- unknown supply state (nil) is never penalized - the caller may simply have
+-- no road network yet, and the pre-road behaviour must be unchanged.
+
+function M.pathCost(ux, uz, tx, tz, supplied)
+  local d = M.planarDist(ux, uz, tx, tz)
+  if d == nil then return nil end
+  if supplied == false then return d * M.PATH_COST_UNSUPPLIED end
+  return d
+end
+
+-- Lowest-cost entry of `candidates` (each { key=, x=, z=, supplied= }) for a
+-- unit at (ux, uz). Returns key, cost; nil, nil when nothing is reachable.
+function M.bestCandidate(candidates, ux, uz)
+  if type(candidates) ~= "table" then return nil, nil end
+  local bestKey, bestCost
+  for _, c in ipairs(candidates) do
+    if type(c) == "table" then
+      local cost = M.pathCost(ux, uz, c.x, c.z, c.supplied)
+      if cost ~= nil and (bestCost == nil or cost < bestCost) then
+        bestKey, bestCost = c.key, cost
+      end
+    end
+  end
+  return bestKey, bestCost
 end
 
 return M
