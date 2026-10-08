@@ -184,9 +184,9 @@ road chain, unit B (`8772`) off-road. These are the verbatim `road-speed` lines 
 `road-speed` lines in total; the set below is the printed head):
 
 ```text
-[t=00:00:11.533448][f=0000238] PHASE3 PROBE road-speed road-extend#1 ftr=25186 team=0 at=(2788, 3884)
-[t=00:00:11.533507][f=0000238] PHASE3 PROBE road-speed road-extend#2 ftr=962 team=0 at=(2848, 3884)
-[t=00:00:11.533570][f=0000238] PHASE3 PROBE road-speed road-extend#3 ftr=4290 team=0 at=(2908, 3884)
+[t=00:00:10.518886][f=0000238] PHASE3 PROBE road-speed road-extend#1 ftr=25323 team=0 at=(2788, 3884)
+[t=00:00:10.519017][f=0000238] PHASE3 PROBE road-speed road-extend#2 ftr=11042 team=0 at=(2848, 3884)
+[t=00:00:10.519080][f=0000238] PHASE3 PROBE road-speed road-extend#3 ftr=29641 team=0 at=(2908, 3884)
 [t=00:00:10.519422][f=0000238] PHASE3 PROBE road-speed spawned A=43 B=28360 team=0 A_at=(2788, 3884) B_at=(4300, 4200)
 [t=00:00:10.643868][f=0000242] PHASE3 PROBE road-speed state-a f=242 unit=43 onRoad=true base=28.00 applied=42.00 source=mutator
 [t=00:00:10.643934][f=0000242] PHASE3 PROBE road-speed state-b f=242 unit=28360 onRoad=false base=28.00 applied=28.00 source=none
