@@ -1,9 +1,10 @@
 # Phase 3: Logistics, Tech Tree & Fortifications
 
-Phase 3 Slice 3 (road adjacency/connectivity query API) is implemented and verified. The current
-focused Slice 3 suite passes 28 tests; the full suite passes 172 tests. This slice does not complete
-Phase 3 gameplay integration: it adds graph queries and lifecycle tracking, not player-issued road
-placement or enforced logistics gameplay.
+Phase 3 Slice 4 (player-issued road placement command) is implemented and verified. The focused
+Slice 4 suite passes 25 tests; the full suite passes 197 tests. Slice 4 adds the custom
+`CMD_BUILD_ROAD` (371922) command with deferred economy transaction and feature creation. It does
+not complete Phase 3 gameplay integration: movement-speed enforcement is DEFERRED pending a
+verified engine speed API, and connectivity gameplay enforcement remains open.
 
 ## Pinned Upstream BAR Reference
 
@@ -13,8 +14,9 @@ placement or enforced logistics gameplay.
 ## Scope and current behavior
 
 1. **Road feature and speed query** — `medieval_road` is a feature, not a unit. It is non-blocking,
-   costs `{ wood = 5, stone = 2 }`, and contributes `ROAD_SPEED_MULT = 1.5` within the existing
-   48-elmo road-proximity radius.
+   costs `{ wood = 5, stone = 2 }`. `scripts/medieval_logistics.lua` exposes a query-only speed
+   multiplier (`ROAD_SPEED_MULT = 1.5`, 48-elmo proximity radius). The query API does **not** change
+   unit movement; no engine speed mutator is applied.
 2. **Road graph (Slice 3)** — `scripts/medieval_road_graph.lua` is a pure module. It uses
    `LINK_RADIUS = 64.0` planar elmos: road nodes at or below that distance share an edge. The
    gadget tracks `{x, z}` road positions by team and recomputes graph state after road creation
@@ -26,8 +28,8 @@ placement or enforced logistics gameplay.
 
 This is a query API, not enforced logistics gameplay. `AllowUnitCreation` gates unit creation and
 unit costs; it does not provide a road-feature placement command. The villager currently has only
-wall and tower fortification build options for this feature work. There is no villager road command.
-Player-issued road placement and connectivity gameplay integration is the next design scope.
+wall and tower fortification build options for this feature work. Roads are placed only by the
+custom command (`CMD_BUILD_ROAD = 371922`), not by buildoptions.
 
 ## Architecture
 
@@ -50,19 +52,20 @@ These are historical completion counts, not the current total:
 
 - Slice 1: 131 tests passing.
 - Slice 2: 144 tests passing.
-- Slice 3 focused tests: 28 passing.
-- Current full suite: 172 passing.
+- Slice 3: 172 tests passing (28 focused).
+- Slice 4 focused tests: 25 passing.
+- Current full suite: 197 passing.
 
 ## Verification
 
 ### Focused and full tests
 
 ```pwsh
-python -m pytest tests/test_phase3_slice3.py -q
-# 28 passed
+python -m pytest tests/test_phase3_slice4.py -q
+# 25 passed
 
 python -m pytest tests -q
-# 172 passed
+# 197 passed
 ```
 
 ### Headless engine probe
@@ -84,18 +87,18 @@ Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE3|ROADGRAPH|Error|W
 Observed initial road creation and graph state in `tools/runtime/infolog.txt`:
 
 ```text
-[t=00:00:06.463575][f=0000120] PHASE3 ROAD placed ftr=21063 team=0 x=2608 z=3584
-[t=00:00:06.463642][f=0000120] PHASE3 ROADGRAPH team=0 nodes=1 edges=0 components=1 isolated=1 largest=1
+[t=00:00:06.684162][f=0000120] PHASE3 ROAD placed ftr=15992 team=0 x=2608 z=3584
+[t=00:00:06.684246][f=0000120] PHASE3 ROADGRAPH team=0 nodes=1 edges=0 components=1 isolated=1 largest=1
 ```
 
 Observed graph query results from the same log:
 
 ```text
-[t=00:00:07.780112][f=0000160] PHASE3 PROBE roadgraph nodes=5 edges=2 components=3 isolated=2 largest=3
-[t=00:00:07.780172][f=0000160] PHASE3 PROBE roadgraph connected-first-last=true
-[t=00:00:07.780206][f=0000160] PHASE3 PROBE roadgraph connected-chain-isolated=false
-[t=00:00:07.780232][f=0000160] PHASE3 PROBE roadgraph point-on-network=true
-[t=00:00:07.780254][f=0000160] PHASE3 PROBE roadgraph point-off-network=false
+[t=00:00:08.030778][f=0000160] PHASE3 PROBE roadgraph nodes=5 edges=2 components=3 isolated=2 largest=3
+[t=00:00:08.030804][f=0000160] PHASE3 PROBE roadgraph connected-first-last=true
+[t=00:00:08.030826][f=0000160] PHASE3 PROBE roadgraph connected-chain-isolated=false
+[t=00:00:08.030841][f=0000160] PHASE3 PROBE roadgraph point-on-network=true
+[t=00:00:08.030853][f=0000160] PHASE3 PROBE roadgraph point-off-network=false
 ```
 
 Bridge-removal behavior is covered by the focused Lua gadget harness, which observed this exact
@@ -105,6 +108,27 @@ is present in the checked-in engine `infolog.txt`, so it is not claimed as an en
 ```text
 PHASE3 ROAD removed ftr=102 team=0
 ```
+
+Observed Slice 4 road-build command end-to-end in `tools/runtime/infolog.txt` (frames 200-201; the
+issuing team is team 0, the ordered spot is `(2600, 3700)`):
+
+```text
+[t=00:00:09.350537][f=0000200] PHASE3 PROBE road-cmd precheck team=0 canPlace=true
+[t=00:00:09.350624][f=0000200] PHASE3 PROBE road-cmd order1 sent unit=3375 team=0 cmd=371922 at=(2600, 3700)
+[t=00:00:09.382353][f=0000201] PHASE3 ROAD placed ftr=23800 team=0 x=2600 z=3700
+[t=00:00:09.382410][f=0000201] PHASE3 ROADGRAPH team=0 nodes=6 edges=2 components=4 isolated=3 largest=3
+[t=00:00:09.382437][f=0000201] PHASE3 PROBE road-cmd placed team=0 reason=ok ftr=23800 x=2600 z=3700
+[t=00:00:09.382467][f=0000201] PHASE3 PROBE road-cmd summary team=0 RoadCount=6
+[t=00:00:09.382495][f=0000201] PHASE3 PROBE road-cmd roadgraph team=0 nodes=6 edges=2 components=4 isolated=3 largest=3
+[t=00:00:09.382514][f=0000201] PHASE3 PROBE road-cmd retry-precheck team=0 canPlace=false (expect false)
+[t=00:00:09.382541][f=0000201] PHASE3 PROBE road-cmd refused team=0 reason=too_close
+[t=00:00:09.382552][f=0000201] PHASE3 PROBE road-cmd order2 sent unit=3375 team=0 cmd=371922 at=(2600, 3700) (expect refusal)
+[t=00:00:09.382566][f=0000201] PHASE3 PROBE road-cmd final team=0 RoadCount=6 (expect unchanged)
+```
+
+The same run retried a second order at the same spot and the engine refused it with `too_close`; the
+road count stayed at 6 and the road was attributed to team 0 throughout (`ftr=23800 team=0`). This
+matches the spacing-refusal path already covered by the focused Lua harness.
 
 ## Slice roadmap
 
@@ -118,7 +142,7 @@ PHASE3 ROAD removed ftr=102 team=0
 - [x] Resource validation and damage scaling tests.
 - [x] Villager wall/tower build options.
 - [x] Corrected scope: `AllowUnitCreation` is a unit-creation gate; it is not a road-feature
-      command or road-feature placement implementation. Villagers do not have a road command.
+      command or road-feature placement implementation. Slice 2 did not add a road command; Slice 4 does.
 
 ### Slice 3 — road adjacency/connectivity queries
 
@@ -129,7 +153,39 @@ PHASE3 ROAD removed ftr=102 team=0
 - [x] Probe for initial graph state, chain connectivity, isolated-node rejection, and point queries.
 - [x] Focused 28 tests and full 172-test verification.
 
+### Slice 4 — player-issued road placement command
+
+- [x] Pure road placement validation in `scripts/medieval_logistics.lua`:
+      `ROAD_PLACEMENT_MIN_SPACING = 32.0`, `canPlaceRoad(x, z, existingRoads, stock, minSpacing)`.
+- [x] Custom road-build command ID `CMD_BUILD_ROAD = 371922` registered via `RegisterCMDID` and
+      intercepted via `gadgetHandler:RegisterAllowCommand(CMD.ANY)`.
+- [x] `AllowCommand` validates issuer is a `medieval_villager`, rejects modifier queueing (`shift`,
+      `alt`, `ctrl`, `right`), validates spacing (`ROAD_PLACEMENT_MIN_SPACING = 32`), map bounds,
+      and resource affordability (`wood = 5, stone = 2`), then consumes order and queues intent into
+      `pendingRoadBuilds`.
+- [x] Deferred execution on `GameFrame`: charges resources via `GG.MedievalEconomy.Transact` and
+      places the road feature via `Spring.CreateFeature("medieval_road", x, y, z, 0, teamID)` —
+      heading 0, issuing team as the sixth argument. Construction is instant on the next frame; the
+      feature appears without travel or build time. On placement failure, refunds cost via `Deposit`.
+- [x] Command descriptor and coordinate path: the villager gets a `CMDTYPE.ICON_MAP` descriptor
+      (`Build Road`, action `buildroad`) via `Spring.InsertUnitCmdDesc`. The UI click path can
+      deliver `{x, y, z}`; the probe/API path sends `{x, z}`. `AllowCommand` reads only `params[1]`
+      and `params[2]` as `(x, z)` and ignores any third component, so both forms resolve to ground
+      placement at `(x, z)`.
+- [x] Spacing and land scope: `ROAD_PLACEMENT_MIN_SPACING = 32.0` is enforced per issuing team
+      against that team's tracked roads only; another team's roads do not block placement. The check
+      is planar `{x, z}` distance plus map-bounds (`off_map`); it does not restrict to buildable or
+      land-flagged terrain, so steep or impassable tiles are not excluded beyond the bounds check.
+- [x] Public API additions on `GG.MedievalLogistics`: `CanPlaceRoad(teamID, x, z)` and
+      `PlaceRoad(teamID, unitID, x, z)`.
+- [x] Movement-speed enforcement is **DEFERRED**: no verified engine speed-mutator API has been
+      identified. A partial `.engine-src` extraction shows no `SetUnitSpeed` / `SpeedMod` style
+      mutator hits, but a partial extraction cannot prove API absence — the full engine source has
+      not been searched. `GG.MedievalLogistics.GetSpeedMultiplier` and `IsOnRoad` remain query-only;
+      the query multiplier does not change movement. No direct engine velocity changes are claimed.
+- [x] Focused 25 tests (`tests/test_phase3_slice4.py`) and full 197-test suite passing.
+
 ## Next scope
 
-Player-issued road placement and connectivity gameplay integration remains pending design. Do not
-claim the entire Phase 3 is complete from this Slice 3 query API work.
+Movement-speed enforcement and end-to-end connectivity gameplay integration remain open. Do not claim
+Phase 3 is complete from Slice 4 road-build command work.

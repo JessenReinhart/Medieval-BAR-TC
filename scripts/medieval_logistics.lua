@@ -3,6 +3,7 @@
 local M = {
   ROAD_SPEED_MULT = 1.5,
   ROAD_PROXIMITY_RADIUS = 48.0, -- distance in elmos within which a unit is considered on a road
+  ROAD_PLACEMENT_MIN_SPACING = 32.0, -- minimum distance in elmos between road placements
 
   COSTS = {
     medieval_road = { wood = 5, stone = 2 },
@@ -128,6 +129,32 @@ function M.scaledDamage(baseDamage, multiplier)
   local d = baseDamage * multiplier
   if d < 0 then d = 0 end
   return d
+end
+
+local function finiteNumber(value)
+  return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+
+function M.canPlaceRoad(x, z, existingRoads, stock, minSpacing)
+  if not finiteNumber(x) or not finiteNumber(z) then
+    return false, "invalid_coordinates"
+  end
+  minSpacing = minSpacing or M.ROAD_PLACEMENT_MIN_SPACING
+  if not finiteNumber(minSpacing) or minSpacing < 0 then return false, "invalid_spacing" end
+  local spacingSquared = minSpacing * minSpacing
+  for _, coord in pairs(type(existingRoads) == "table" and existingRoads or {}) do
+    if type(coord) == "table" and finiteNumber(coord.x) and finiteNumber(coord.z) then
+      local dx, dz = x - coord.x, z - coord.z
+      if dx * dx + dz * dz <= spacingSquared then return false, "too_close" end
+    end
+  end
+  stock = type(stock) == "table" and stock or {}
+  for resource, amount in pairs(M.COSTS.medieval_road) do
+    if not finiteNumber(stock[resource]) or stock[resource] < amount then
+      return false, "insufficient_resources"
+    end
+  end
+  return true, "ok"
 end
 
 function M.roadBuildQueueValidation(canAfford, costs)

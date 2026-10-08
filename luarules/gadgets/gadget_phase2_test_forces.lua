@@ -18,6 +18,42 @@ if not enabled then return end
 local spawned = false
 local assignmentPending = {}
 local trackedVillager = nil
+-- Slice 4 road-build command probe state: open spot far from existing probe
+-- roads (frame-120 road at 2608,3584; frame-160 chain at 2608..2728,3884 and
+-- isolated road at 2908,4184).
+local ROAD_PROBE_X, ROAD_PROBE_Z = 2600, 3700
+local roadProbe = nil
+
+local function roadProbeSnapshot(teamID)
+  local api = GG and GG.MedievalLogistics
+  if not api or type(api.RoadCount) ~= "function"
+      or type(Spring.GetGameRulesParam) ~= "function"
+      or type(Spring.GetAllFeatures) ~= "function"
+      or type(Spring.GetFeatureDefID) ~= "function"
+      or type(Spring.GetFeaturePosition) ~= "function"
+      or type(Spring.GetFeatureTeam) ~= "function" then
+    return nil, "missing count/balance/feature observation API"
+  end
+  local roadDef = FeatureDefNames and FeatureDefNames.medieval_road
+  if not roadDef then return nil, "missing medieval_road FeatureDef" end
+  local wood = Spring.GetGameRulesParam(string.format("team_%d_wood", teamID))
+  local stone = Spring.GetGameRulesParam(string.format("team_%d_stone", teamID))
+  if type(wood) ~= "number" or type(stone) ~= "number" then
+    return nil, "missing numeric wood/stone balances"
+  end
+  local snapshot = { count = api.RoadCount(teamID), wood = wood, stone = stone, features = {}, probeRoads = 0 }
+  if type(snapshot.count) ~= "number" then return nil, "missing numeric road count" end
+  for _, fid in ipairs(Spring.GetAllFeatures() or {}) do
+    if Spring.GetFeatureDefID(fid) == roadDef.id then
+      local x, _, z = Spring.GetFeaturePosition(fid)
+      if x and z and math.abs(x - ROAD_PROBE_X) < 1 and math.abs(z - ROAD_PROBE_Z) < 1 then
+        snapshot.features[fid] = Spring.GetFeatureTeam(fid)
+        snapshot.probeRoads = snapshot.probeRoads + 1
+      end
+    end
+  end
+  return snapshot
+end
 
 local function opposingTeams()
   local list = Spring.GetTeamList() or {}
@@ -286,6 +322,145 @@ function gadget:GameFrame(frame)
       Spring.Echo(string.format("PHASE3 PROBE villager-buildopts wall=%s tower=%s", hasWall and "t" or "f", hasTower and "t" or "f"))
     end
   end
+  -- Phase 3 probe slice 4: road-build custom command (371922) end-to-end.
+  -- State for the deferred-execution probe; AllowCommand defers the actual
+  -- road placement to the next GameFrame, so verification runs at frame+1.
+  if frame == 200 and spawned and GG and GG.MedievalEconomy then
+    local api = GG.MedievalLogistics
+    local a = 0
+    -- Fund the team (road cost: wood 5, stone 2) using the deposit pattern.
+    GG.MedievalEconomy.Deposit(a, "food", 100)
+    GG.MedievalEconomy.Deposit(a, "wood", 100)
+    GG.MedievalEconomy.Deposit(a, "stone", 100)
+    GG.MedievalEconomy.Deposit(a, "iron", 100)
+    local canAfford = api and api.CanPlaceRoad and api.CanPlaceRoad(a, ROAD_PROBE_X, ROAD_PROBE_Z)
+    Spring.Echo(string.format("PHASE3 PROBE road-cmd precheck team=%d canPlace=%s", a, tostring(canAfford)))
+
+    local baseline, baselineErr = roadProbeSnapshot(a)
+    if baseline then
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd baseline team=%d RoadCount=%d wood=%d stone=%d probeRoads=%d",
+        a, baseline.count, baseline.wood, baseline.stone, baseline.probeRoads))
+    else
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd baseline UNAVAILABLE team=%d reason=%s", a, tostring(baselineErr)))
+    end
+
+    -- Reuse the tracked villager, else spawn a fresh one on open ground.
+    local vilDef = UnitDefNames["medieval_villager"]
+    local vid = nil
+    if vilDef and trackedVillager and Spring.ValidUnitID(trackedVillager)
+        and Spring.GetUnitDefID(trackedVillager) == vilDef.id
+        and Spring.GetUnitTeam(trackedVillager) == a then
+      vid = trackedVillager
+    elseif vilDef then
+      local vx, vz = 2508 + 300, 3584 - 200
+      local vy = Spring.GetGroundHeight(vx, vz)
+      vid = Spring.CreateUnit(vilDef.id, vx, vy, vz, "south", a)
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd spawned villager id=%s team=%d", tostring(vid), a))
+    end
+    if vid and api then
+      -- Verify command descriptor attached if Spring.GetUnitCmdDescs available
+      if type(Spring.GetUnitCmdDescs) == "function" then
+        local foundDesc = false
+        local descs = Spring.GetUnitCmdDescs(vid) or {}
+        for _, desc in pairs(descs) do
+          if type(desc) == "table" and desc.id == 371922 then
+            foundDesc = true
+            break
+          end
+        end
+        Spring.Echo(string.format("PHASE3 PROBE road-cmd cmddesc unit=%d cmd=371922 found=%s", vid, tostring(foundDesc)))
+      else
+        Spring.Echo("PHASE3 PROBE road-cmd cmddesc Spring.GetUnitCmdDescs unavailable")
+      end
+
+      Spring.GiveOrderToUnit(vid, 371922, { ROAD_PROBE_X, ROAD_PROBE_Z }, {})
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd order1 sent unit=%d team=%d cmd=371922 at=(%d, %d)",
+        vid, a, ROAD_PROBE_X, ROAD_PROBE_Z))
+      roadProbe = { team = a, unit = vid, baseline = baseline, stage = "ordered" }
+    else
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd SKIPPED no villager team=%d", a))
+    end
+  end
+  if roadProbe and roadProbe.stage == "ordered" and frame >= 202 then
+    local api = GG and GG.MedievalLogistics
+    local a = roadProbe.team
+    if not api then
+      Spring.Echo("PHASE3 PROBE road-cmd SKIPPED missing MedievalLogistics API")
+      roadProbe = nil
+    else
+      local snap1, snapErr1 = roadProbeSnapshot(a)
+      local base = roadProbe.baseline
+      if not snap1 or not base then
+        Spring.Echo(string.format("PHASE3 PROBE road-cmd post1 observation failed: snap=%s base=%s err=%s",
+          tostring(snap1 ~= nil), tostring(base ~= nil), tostring(snapErr1)))
+      else
+        local countDelta = snap1.count - base.count
+        local woodDelta = base.wood - snap1.wood
+        local stoneDelta = base.stone - snap1.stone
+        local probeRoads = snap1.probeRoads
+        local passCount = (countDelta == 1)
+        local passCost = (woodDelta == 5 and stoneDelta == 2)
+        local passOwner = false
+        for fid, fteam in pairs(snap1.features) do
+          if fteam == a then
+            passOwner = true
+            break
+          end
+        end
+        local passOrder1 = passCount and passCost and passOwner and (probeRoads >= 1)
+        Spring.Echo(string.format("PHASE3 PROBE road-cmd order1-verdict f=%d team=%d %s (countDelta=%d pass=%s, cost woodDelta=%d stoneDelta=%d pass=%s, ownerTeam=%s pass=%s, probeRoads=%d)",
+          frame, a, passOrder1 and "PASS" or "FAIL",
+          countDelta, tostring(passCount),
+          woodDelta, stoneDelta, tostring(passCost),
+          tostring(a), tostring(passOwner),
+          probeRoads))
+      end
+
+      local count = api.RoadCount and api.RoadCount(a) or -1
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd summary team=%d RoadCount=%d", a, count))
+      local s = api.RoadNetworkSummary and api.RoadNetworkSummary(a)
+      if s then
+        Spring.Echo(string.format("PHASE3 PROBE road-cmd roadgraph team=%d nodes=%d edges=%d components=%d isolated=%d largest=%d",
+          a, s.nodes, s.edges, s.components, s.isolated, s.largest))
+      else
+        Spring.Echo(string.format("PHASE3 PROBE road-cmd roadgraph team=%d UNAVAILABLE", a))
+      end
+
+      local ok2 = api.CanPlaceRoad and api.CanPlaceRoad(a, ROAD_PROBE_X, ROAD_PROBE_Z)
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd retry-precheck team=%d canPlace=%s (expect false)", a, tostring(ok2)))
+      if roadProbe.unit and Spring.ValidUnitID(roadProbe.unit) then
+        Spring.GiveOrderToUnit(roadProbe.unit, 371922, { ROAD_PROBE_X, ROAD_PROBE_Z }, {})
+        Spring.Echo(string.format("PHASE3 PROBE road-cmd order2 sent unit=%d team=%d cmd=371922 at=(%d, %d) (expect refusal)",
+          roadProbe.unit, a, ROAD_PROBE_X, ROAD_PROBE_Z))
+      end
+      roadProbe.post1 = snap1
+      roadProbe.stage = "retried"
+    end
+  end
+  if roadProbe and roadProbe.stage == "retried" and frame >= 204 then
+    local a = roadProbe.team
+    local snap2, snapErr2 = roadProbeSnapshot(a)
+    local post1 = roadProbe.post1
+    if not snap2 or not post1 then
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd post2 observation failed: snap=%s post1=%s err=%s",
+        tostring(snap2 ~= nil), tostring(post1 ~= nil), tostring(snapErr2)))
+    else
+      local countDelta2 = snap2.count - post1.count
+      local woodDelta2 = post1.wood - snap2.wood
+      local stoneDelta2 = post1.stone - snap2.stone
+      local probeRoadsDelta = snap2.probeRoads - post1.probeRoads
+      local passNoExtraCount = (countDelta2 == 0)
+      local passNoExtraCost = (woodDelta2 == 0 and stoneDelta2 == 0)
+      local passDuplicateRejected = passNoExtraCount and passNoExtraCost and (probeRoadsDelta == 0)
+      Spring.Echo(string.format("PHASE3 PROBE road-cmd order2-verdict f=%d team=%d %s (extraCount=%d pass=%s, extraWood=%d extraStone=%d pass=%s, extraProbeRoads=%d)",
+        frame, a, passDuplicateRejected and "PASS" or "FAIL",
+        countDelta2, tostring(passNoExtraCount),
+        woodDelta2, stoneDelta2, tostring(passNoExtraCost),
+        probeRoadsDelta))
+    end
+    roadProbe = nil
+  end
+
   -- Phase 3 probe slice 3: road adjacency graph and connectivity validation.
   if frame == 160 and spawned then
     local api = GG and GG.MedievalLogistics
