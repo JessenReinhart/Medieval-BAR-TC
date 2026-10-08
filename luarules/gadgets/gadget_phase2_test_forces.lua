@@ -286,6 +286,56 @@ function gadget:GameFrame(frame)
       Spring.Echo(string.format("PHASE3 PROBE villager-buildopts wall=%s tower=%s", hasWall and "t" or "f", hasTower and "t" or "f"))
     end
   end
+  -- Phase 3 probe slice 3: road adjacency graph and connectivity validation.
+  if frame == 160 and spawned then
+    local api = GG and GG.MedievalLogistics
+    if not api or type(api.RoadNetworkSummary) ~= "function"
+        or type(api.RoadConnected) ~= "function"
+        or type(api.PointOnRoadNetwork) ~= "function" then
+      Spring.Echo("PHASE3 PROBE roadgraph SKIPPED missing road graph API")
+      return
+    end
+    local a = opposingTeams()
+    if a then
+      local roadDef = FeatureDefNames and FeatureDefNames["medieval_road"]
+      if roadDef then
+        -- Chain of three roads spaced 60 elmos apart (within LINK_RADIUS = 64)
+        -- plus one isolated road far away, so the graph has two components.
+        local ids = {}
+        for i = 1, 3 do
+          local rx, rz = 2508 + 100 + (i - 1) * 60, 3584 + 300
+          local ry = Spring.GetGroundHeight(rx, rz)
+          local fid = Spring.CreateFeature(roadDef.id, rx, ry, rz, 0, a)
+          ids[i] = fid
+          if fid then
+            Spring.Echo(string.format("PHASE3 PROBE roadgraph-create chain#%d ftr=%s team=%d at=(%d, %d)", i, tostring(fid), a, rx, rz))
+          else
+            Spring.Echo(string.format("PHASE3 PROBE roadgraph-create chain#%d FAILED team=%d at=(%d, %d)", i, a, rx, rz))
+          end
+        end
+        local ix, iz = 2508 + 400, 3584 + 600
+        local iy = Spring.GetGroundHeight(ix, iz)
+        local isoID = Spring.CreateFeature(roadDef.id, ix, iy, iz, 0, a)
+        Spring.Echo(string.format("PHASE3 PROBE roadgraph-create isolated ftr=%s team=%d at=(%d, %d)", tostring(isoID), a, ix, iz))
+
+        local s = GG.MedievalLogistics.RoadNetworkSummary(a)
+        if s then
+          Spring.Echo(string.format("PHASE3 PROBE roadgraph nodes=%d edges=%d components=%d isolated=%d largest=%d",
+            s.nodes, s.edges, s.components, s.isolated, s.largest))
+        end
+        Spring.Echo(string.format("PHASE3 PROBE roadgraph connected-first-last=%s",
+          tostring(GG.MedievalLogistics.RoadConnected(a, ids[1], ids[3]))))
+        Spring.Echo(string.format("PHASE3 PROBE roadgraph connected-chain-isolated=%s",
+          tostring(GG.MedievalLogistics.RoadConnected(a, ids[1], isoID))))
+        Spring.Echo(string.format("PHASE3 PROBE roadgraph point-on-network=%s",
+          tostring(GG.MedievalLogistics.PointOnRoadNetwork(a, 2508 + 100 + 60, 3584 + 300))))
+        Spring.Echo(string.format("PHASE3 PROBE roadgraph point-off-network=%s",
+          tostring(GG.MedievalLogistics.PointOnRoadNetwork(a, 2508 + 900, 3584 + 900))))
+      else
+        Spring.Echo("PHASE3 PROBE roadgraph missing medieval_road FeatureDef")
+      end
+    end
+  end
   if frame % 90 == 0 and spawned then
     local a, b = opposingTeams()
     if a then

@@ -1,106 +1,135 @@
 # Phase 3: Logistics, Tech Tree & Fortifications
 
-Phase 3 implementation **Slice 2 complete and verified** — full test suite green (144 tests),
-headless engine probe confirms road placement, speed multiplier echo, tech unlocks, scaled melee
-damage, and villager fortification build options.
+Phase 3 Slice 3 (road adjacency/connectivity query API) is implemented and verified. The current
+focused Slice 3 suite passes 28 tests; the full suite passes 172 tests. This slice does not complete
+Phase 3 gameplay integration: it adds graph queries and lifecycle tracking, not player-issued road
+placement or enforced logistics gameplay.
 
 ## Pinned Upstream BAR Reference
+
 - Repository: `https://github.com/beyond-all-reason/Beyond-All-Reason`
 - Commit: `c7eaa46992959435c6d3332e28e1169e1ddd43a6`
 
-## Scope
-1. **Road network** — `medieval_road` is a **feature** (`gamedata/featuredefs.lua`), not a
-   unit: `blocking=false`, `crushable=false`, `destructable=false`, cost
-   `{ wood = 5, stone = 2 }`, placed by villagers. Grants `ROAD_SPEED_MULT = 1.5` to any
-   unit within `ROAD_PROXIMITY_RADIUS = 48` elmos of a road feature. The gadget tracks road
-   features per team (`roads[teamID][featureID] = {x, z}`) for future connectivity validation.
-2. **Technology upgrades** — Blacksmith research unlocks three techs:
-   - `iron_swords` — +25% infantry melee damage (cost `{ wood = 50, iron = 100 }`, no prereq).
-   - `plate_armor` — +25% infantry & cavalry max HP (cost `{ iron = 150 }`, prereq `iron_swords`).
-   - `masonry` — +50% wall & tower HP (cost `{ stone = 150, wood = 50 }`, no prereq).
-   Each team tracks unlocks via synced gamerules `team_<id>_tech_<techID>` and
-   `GG.MedievalLogistics`.
-3. **Fortifications** — placeable `medieval_wall` (2x2, maxDamage 2500, cost
-   `{ wood = 10, stone = 40 }`) and `medieval_tower` (3x3, maxDamage 1500, sightDistance 600,
-   cost `{ wood = 20, stone = 50 }`). Walls/towers are military and do not affect pop cap;
-   cost is enforced at placement via `AllowUnitCreation`. Out of slice-1 scope: no enemy AI
-   targeting changes.
+## Scope and current behavior
+
+1. **Road feature and speed query** — `medieval_road` is a feature, not a unit. It is non-blocking,
+   costs `{ wood = 5, stone = 2 }`, and contributes `ROAD_SPEED_MULT = 1.5` within the existing
+   48-elmo road-proximity radius.
+2. **Road graph (Slice 3)** — `scripts/medieval_road_graph.lua` is a pure module. It uses
+   `LINK_RADIUS = 64.0` planar elmos: road nodes at or below that distance share an edge. The
+   gadget tracks `{x, z}` road positions by team and recomputes graph state after road creation
+   and removal.
+3. **Technology upgrades** — Blacksmith research tracks `iron_swords`, `plate_armor`, and
+   `masonry` through synced team rules and `GG.MedievalLogistics`.
+4. **Fortifications** — `medieval_wall` and `medieval_tower` are available to villagers and have
+   resource costs enforced by the logistics gadget.
+
+This is a query API, not enforced logistics gameplay. `AllowUnitCreation` gates unit creation and
+unit costs; it does not provide a road-feature placement command. The villager currently has only
+wall and tower fortification build options for this feature work. There is no villager road command.
+Player-issued road placement and connectivity gameplay integration is the next design scope.
 
 ## Architecture
-- **Pure module**: `scripts/medieval_logistics.lua` — no engine calls; exposes
-  `getCost`, `getTech`, `canResearch`, `applyUnlock`, `isPositionOnRoad`, `speedMultiplier`,
-  `damageMultiplier`, `healthMultiplier`, plus constants `ROAD_SPEED_MULT = 1.5`,
-  `ROAD_PROXIMITY_RADIUS = 48.0`, `COSTS`, `TECHS`.
-- **Gadget**: `luarules/gadgets/gadget_medieval_logistics.lua` (layer 3, synced) —
-  `FeatureCreated`/`FeatureDestroyed` track road features per team; `UnitFinished` applies
-  researched health/damage multipliers; `AllowUnitCreation` validates fortification costs.
-- **Synced Game Rules**: `team_<id>_tech_<techID>` for `iron_swords`, `plate_armor`, `masonry`.
-- **Public API**: `GG.MedievalLogistics`:
-  - `GetSpeedMultiplier(teamID, unitID)` -> 1.5 on road, else 1.0; `IsOnRoad(teamID, unitID)`;
-    `RoadCount(teamID)`.
-  - `CanResearch(teamID, techID)`, `Research(teamID, techID)` (atomic, charges resources via
-    `GG.MedievalEconomy.Transact`), `IsResearched(teamID, techID)`.
-  - `DamageMultiplier(teamID, unitName)`, `HealthMultiplier(teamID, unitName)`.
-- **Costs**: `medieval_road { wood = 5, stone = 2 }`,
-  `medieval_wall { wood = 10, stone = 40 }`, `medieval_tower { wood = 20, stone = 50 }`.
 
-## Surface Area (allowed edits)
-- `scripts/medieval_logistics.lua` (new)
-- `luarules/gadgets/gadget_medieval_logistics.lua` (new)
-- `gamedata/featuredefs.lua` (`medieval_road` feature)
-- `units/medieval_wall.lua`, `units/medieval_tower.lua` (new)
-- `tests/test_phase3_logistics.py` (new)
-- `docs/phase-3.md`, `docs/handoff.md`
+- **Pure road graph**: `scripts/medieval_road_graph.lua` — no engine calls. Public functions:
+  `planarDist`, `buildEdges`, `adjacency`, `componentCount`, `componentOf`, `isConnected`,
+  `connectedToNetwork`, and `networkSummary`. Constant: `LINK_RADIUS = 64.0`.
+- **Logistics gadget**: `luarules/gadgets/gadget_medieval_logistics.lua` tracks road feature
+  lifecycle per team and exposes these graph queries through `GG.MedievalLogistics`:
+  - `RoadNetworkSummary(teamID)` -> `{ nodes, edges, components, isolated, largest }`.
+  - `RoadConnected(teamID, keyA, keyB)` -> whether two tracked road feature IDs share a component.
+  - `PointOnRoadNetwork(teamID, x, z)` -> whether a point is within `LINK_RADIUS` of a road node.
+  - Existing speed, research, damage, health, and road-count APIs remain available.
+- **Probe**: `luarules/gadgets/gadget_phase2_test_forces.lua` creates a three-node chain and an
+  isolated node at frame 160, then logs summary and connectivity queries. It is a diagnostic probe,
+  not a player command implementation.
+
+## Historical Slice 1 and Slice 2 counts
+
+These are historical completion counts, not the current total:
+
+- Slice 1: 131 tests passing.
+- Slice 2: 144 tests passing.
+- Slice 3 focused tests: 28 passing.
+- Current full suite: 172 passing.
 
 ## Verification
 
-### Test suite
-```
-$ python -m pytest tests -q
-131 passed in 0.78s
+### Focused and full tests
+
+```pwsh
+python -m pytest tests/test_phase3_slice3.py -q
+# 28 passed
+
+python -m pytest tests -q
+# 172 passed
 ```
 
 ### Headless engine probe
-No separate `run_phase3_probe.py` was created; the `PHASE3` steps are driven by
-`gadget_phase2_test_forces.lua` at `GameFrame == 120` during the headless Phase 2 run.
-Verified excerpt from `tools/runtime/infolog.txt`:
 
-```
-[t=00:00:05.480374][f=-000001] Loaded synced gadget:  Medieval Logistics, Tech & Fortifications  <gadget_medieval_logistics.lua>
-[t=00:00:09.755144][f=0000120] PHASE3 PROBE deposit team=0 wood=300 stone=300 iron=300
-[t=00:00:09.755206][f=0000120] PHASE3 ROAD placed ftr=10676 team=0 x=2608 z=3584
-[t=00:00:09.755252][f=0000120] PHASE3 PROBE road-create ftr=10676 team=0 at=(2608, 3584)
-[t=00:00:09.755264][f=0000120] PHASE3 PROBE road-count team=0 count=1
-[t=00:00:09.755521][f=0000120] PHASE3 PROBE is-on-road team=0 unit=2968 on_road=true speed_mult=1.50
-[t=00:00:09.755548][f=0000120] PHASE3 TECH researched team=0 tech=iron_swords
-[t=00:00:09.755559][f=0000120] PHASE3 PROBE research iron_swords team=0 ok=true reason=nil
-[t=00:00:09.755951][f=0000120] PHASE3 PROBE param team_0_tech_iron_swords = 1
-[t=00:00:09.755970][f=0000120] PHASE3 PROBE is-researched iron_swords team=0 = true
-[t=00:00:09.756003][f=0000120] PHASE3 TECH researched team=0 tech=plate_armor
-[t=00:00:09.756016][f=0000120] PHASE3 PROBE research plate_armor team=0 ok=true reason=nil
-[t=00:00:09.756687][f=0000120] PHASE3 PROBE param team_0_tech_plate_armor = 1
-[t=00:00:09.756717][f=0000120] PHASE3 PROBE is-researched plate_armor team=0 = true
+The existing probe script syncs source into the SDD and launches the pinned Recoil headless
+executable. It is not a clean engine-start signal: the checked-in `tools/runtime/infolog.txt`
+contains startup caveats including a fallback SMF splat-detail texture, groundFX texture-atlas
+failure, missing `Fonts/FreeMonoBold.ttf`, a missing `ad0_senegal_2` feature followed by a
+`SetFeatureMoveCtrl` Lua call error, and missing COB scripts for several settlement units. Treat
+those as runtime-environment caveats, not as successful subsystem evidence.
+
+Run the existing probe and inspect the exact checked-in log:
+
+```pwsh
+python tools/launch/run_phase2_slice2_probe.py
+Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE3|ROADGRAPH|Error|Warning"
 ```
 
-`speed_mult=1.50` matches `ROAD_SPEED_MULT = 1.5` exactly (the earlier plan's value `2` was
-superseded).
+Observed initial road creation and graph state in `tools/runtime/infolog.txt`:
 
-## Slice 1 Roadmap
-- [x] Pure module `scripts/medieval_logistics.lua`.
-- [x] Gadget wiring (auto-discovered from `luarules/gadgets/`).
-- [x] Road feature def + wall/tower unit defs.
-- [x] Probe block (in `gadget_phase2_test_forces.lua`) + tests.
-- [x] Villager build command integration — done in Slice 2.
-- [x] Weapon upgrade application in combat LUS — done in Slice 2.
+```text
+[t=00:00:06.463575][f=0000120] PHASE3 ROAD placed ftr=21063 team=0 x=2608 z=3584
+[t=00:00:06.463642][f=0000120] PHASE3 ROADGRAPH team=0 nodes=1 edges=0 components=1 isolated=1 largest=1
+```
 
-## Slice 2 Roadmap
-- [x] Road build handling — `isBuildable` / `roadBuildQueueValidation` in the pure module;
-      `AllowUnitCreation` gates road feature placement on affordability.
-- [x] Wall/tower build options — `medieval_wall` / `medieval_tower` added to the villager
-      `buildoptions` (`units/medieval_villager.lua`) and cost-checked at placement.
-- [x] UnitPreDamaged damage scaling — `gadget_medieval_logistics.lua` applies researched
-      `iron_swords` (+25% infantry melee) via `logistics.scaledDamage`; echoes `PHASE3 DAMAGE`.
-- [x] Tests — `tests/test_phase3_slice2.py` (buildable detection, road positioning, scaled
-      damage, build-queue validation, gadget damage wiring); full suite 144 passing.
-- [x] Probe — `PHASE3 PROBE damage-scaling verified` and `PHASE3 PROBE villager-buildopts`
-      lines via `gadget_phase2_test_forces.lua` during the `run_phase2_slice2_probe.py` run.
+Observed graph query results from the same log:
+
+```text
+[t=00:00:07.780112][f=0000160] PHASE3 PROBE roadgraph nodes=5 edges=2 components=3 isolated=2 largest=3
+[t=00:00:07.780172][f=0000160] PHASE3 PROBE roadgraph connected-first-last=true
+[t=00:00:07.780206][f=0000160] PHASE3 PROBE roadgraph connected-chain-isolated=false
+[t=00:00:07.780232][f=0000160] PHASE3 PROBE roadgraph point-on-network=true
+[t=00:00:07.780254][f=0000160] PHASE3 PROBE roadgraph point-off-network=false
+```
+
+Bridge-removal behavior is covered by the focused Lua gadget harness, which observed this exact
+removal echo and recomputed the chain as two isolated nodes. No corresponding bridge-removal line
+is present in the checked-in engine `infolog.txt`, so it is not claimed as an engine log result:
+
+```text
+PHASE3 ROAD removed ftr=102 team=0
+```
+
+## Slice roadmap
+
+### Slice 1 — roads, tech tree, fortifications
+
+- [x] Pure logistics module, road feature, tech rules, wall/tower definitions, gadget wiring.
+- [x] Initial headless probe and logistics tests.
+
+### Slice 2 — build handling and damage scaling
+
+- [x] Resource validation and damage scaling tests.
+- [x] Villager wall/tower build options.
+- [x] Corrected scope: `AllowUnitCreation` is a unit-creation gate; it is not a road-feature
+      command or road-feature placement implementation. Villagers do not have a road command.
+
+### Slice 3 — road adjacency/connectivity queries
+
+- [x] Pure graph API with `LINK_RADIUS = 64.0`.
+- [x] Team-isolated road tracking on feature create/destroy.
+- [x] `RoadNetworkSummary`, `RoadConnected`, and `PointOnRoadNetwork` on
+      `GG.MedievalLogistics`.
+- [x] Probe for initial graph state, chain connectivity, isolated-node rejection, and point queries.
+- [x] Focused 28 tests and full 172-test verification.
+
+## Next scope
+
+Player-issued road placement and connectivity gameplay integration remains pending design. Do not
+claim the entire Phase 3 is complete from this Slice 3 query API work.

@@ -12,6 +12,7 @@ end
 if not gadgetHandler:IsSyncedCode() then return end
 
 local logistics = VFS.Include("scripts/medieval_logistics.lua")
+local roadGraph = VFS.Include("scripts/medieval_road_graph.lua")
 
 local DEBUG_LOG = true
 
@@ -64,6 +65,9 @@ function gadget:FeatureCreated(featureID, allyTeam)
   initTeam(owner)
   roads[owner][featureID] = { x = x, z = z }
   echo("PHASE3 ROAD placed ftr=%d team=%d x=%.0f z=%.0f", featureID, owner, x, z)
+  local s = roadGraph.networkSummary(roads[owner])
+  echo("PHASE3 ROADGRAPH team=%d nodes=%d edges=%d components=%d isolated=%d largest=%d",
+    owner, s.nodes, s.edges, s.components, s.isolated, s.largest)
 end
 
 function gadget:FeatureDestroyed(featureID, allyTeam)
@@ -71,6 +75,9 @@ function gadget:FeatureDestroyed(featureID, allyTeam)
     if list[featureID] then
       list[featureID] = nil
       echo("PHASE3 ROAD removed ftr=%d team=%d", featureID, teamID)
+      local s = roadGraph.networkSummary(list)
+      echo("PHASE3 ROADGRAPH team=%d nodes=%d edges=%d components=%d isolated=%d largest=%d",
+        teamID, s.nodes, s.edges, s.components, s.isolated, s.largest)
     end
   end
 end
@@ -212,5 +219,17 @@ GG.MedievalLogistics = {
 
   HealthMultiplier = function(teamID, unitName)
     return logistics.healthMultiplier(unlocked[teamID], unitName)
+  end,
+
+  RoadNetworkSummary = function(teamID)
+    return roadGraph.networkSummary(roads[teamID] or {})
+  end,
+
+  RoadConnected = function(teamID, keyA, keyB)
+    return roadGraph.isConnected(roads[teamID] or {}, keyA, keyB)
+  end,
+
+  PointOnRoadNetwork = function(teamID, x, z)
+    return roadGraph.connectedToNetwork(roads[teamID] or {}, x, z)
   end,
 }
