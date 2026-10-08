@@ -1,10 +1,12 @@
 # Phase 3: Logistics, Tech Tree & Fortifications
 
-Phase 3 Slice 4 (player-issued road placement command) is implemented and verified. The focused
-Slice 4 suite passes 25 tests; the full suite passes 197 tests. Slice 4 adds the custom
-`CMD_BUILD_ROAD` (371922) command with deferred economy transaction and feature creation. It does
-not complete Phase 3 gameplay integration: movement-speed enforcement is DEFERRED pending a
-verified engine speed API, and connectivity gameplay enforcement remains open.
+Phase 3 Slice 5 (road-network connectivity gameplay enforcement) is implemented and verified.
+The focused Slice 5 suite passes 17 tests; the full suite passes 214 tests. Slice 5 adds
+`BUILD_LINK_RADIUS = 64.0` supply-endpoint placement gating plus per-team building
+connectivity tracking and query APIs. Movement-speed enforcement remains DEFERRED, but the
+prior "no engine speed API" claim is corrected: the pinned engine does expose
+`Spring.MoveCtrl.SetGroundMoveTypeData` (see `docs/engine-speed-api-evidence.md`); Slice 5
+does not use it.
 
 ## Pinned Upstream BAR Reference
 
@@ -25,6 +27,13 @@ verified engine speed API, and connectivity gameplay enforcement remains open.
    `masonry` through synced team rules and `GG.MedievalLogistics`.
 4. **Fortifications** — `medieval_wall` and `medieval_tower` are available to villagers and have
    resource costs enforced by the logistics gadget.
+5. **Building connectivity (Slice 5)** — supply-endpoint buildings (dropoff customparam:
+   `medieval_town_center`, `medieval_granary`, `medieval_lumber_camp`) must lie within
+   `BUILD_LINK_RADIUS = 64.0` planar elmos of a same-team road node at placement time. When the
+   team has no roads yet, endpoints bootstrap freely (the rule does not gate the first
+   settlement). Finished endpoints are tracked per team and re-tracked on transfer; the query
+   APIs compute connectivity live from the current road graph, so road destruction immediately
+   disconnects buildings.
 
 This is a query API, not enforced logistics gameplay. `AllowUnitCreation` gates unit creation and
 unit costs; it does not provide a road-feature placement command. The villager currently has only
@@ -36,6 +45,11 @@ custom command (`CMD_BUILD_ROAD = 371922`), not by buildoptions.
 - **Pure road graph**: `scripts/medieval_road_graph.lua` — no engine calls. Public functions:
   `planarDist`, `buildEdges`, `adjacency`, `componentCount`, `componentOf`, `isConnected`,
   `connectedToNetwork`, and `networkSummary`. Constant: `LINK_RADIUS = 64.0`.
+- **Pure connectivity policy**: `scripts/medieval_logistics.lua` now exports
+  `isBuildingConnected(roads, x, z, radius)` and `isSupplyEndpointConnected` (alias), plus
+  `isSupplyEndpointDef(def)` which reads the `dropoff` customparam with engine-uppercase
+  (`customParams`) and lowercase source (`customparams`) fallback and normalizes bool/number/
+  string truth. `BUILD_LINK_RADIUS = 64.0`.
 - **Logistics gadget**: `luarules/gadgets/gadget_medieval_logistics.lua` tracks road feature
   lifecycle per team and exposes these graph queries through `GG.MedievalLogistics`:
   - `RoadNetworkSummary(teamID)` -> `{ nodes, edges, components, isolated, largest }`.

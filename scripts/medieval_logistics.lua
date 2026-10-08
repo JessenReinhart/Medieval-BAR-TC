@@ -5,6 +5,8 @@ local M = {
   ROAD_PROXIMITY_RADIUS = 48.0, -- distance in elmos within which a unit is considered on a road
   ROAD_PLACEMENT_MIN_SPACING = 32.0, -- minimum distance in elmos between road placements
 
+  BUILD_LINK_RADIUS = 64.0, -- supply-endpoint buildings must lie within this distance of a road node (matches medieval_road_graph.LINK_RADIUS)
+
   COSTS = {
     medieval_road = { wood = 5, stone = 2 },
     medieval_wall = { wood = 10, stone = 40 },
@@ -71,6 +73,85 @@ function M.applyUnlock(unlocked, techID)
   end
   copy[techID] = true
   return copy
+end
+
+-- Team-local attachment, not connectivity to every component or another endpoint.
+-- Pass only the team's road nodes. Invalid coordinates/roads/radius return false;
+-- malformed nodes are ignored. The boundary is inclusive, like LINK_RADIUS.
+function M.isBuildingConnected(roads, x, z, radius)
+  local function finite(n)
+    return type(n) == "number" and n == n and n > -math.huge and n < math.huge
+  end
+  if not finite(x) or not finite(z) or type(roads) ~= "table" then return false end
+  if radius == nil then radius = M.BUILD_LINK_RADIUS end
+  if not finite(radius) or radius < 0 then return false end
+  for _, node in pairs(roads) do
+    if type(node) == "table" and finite(node.x) and finite(node.z) then
+      local dx, dz = x - node.x, z - node.z
+      if dx * dx + dz * dz <= radius * radius then return true end
+    end
+  end
+  return false
+end
+
+M.isSupplyEndpointConnected = M.isBuildingConnected
+
+-- Normalize truthiness for customParams values that may be Lua booleans,
+-- strings like "true"/"false"/"1"/"0", or numbers.
+local TRUTHY_STRINGS = { ["true"] = true, ["1"] = true, ["yes"] = true, ["on"] = true }
+local FALSY_STRINGS = { ["false"] = true, ["0"] = true, ["no"] = true, ["off"] = true, [""] = true }
+
+function M.truthy(value)
+  if value == nil then return false end
+  if type(value) == "boolean" then return value end
+  if type(value) == "number" then return value ~= 0 end
+  if type(value) == "string" then
+    local key = string.lower(value)
+    if TRUTHY_STRINGS[key] then return true end
+    if FALSY_STRINGS[key] then return false end
+    return false
+  end
+  return false
+end
+
+-- Engine defs expose customparams with lowercase keys; source-side defs may
+-- use customParams with mixed case. Check both spellings and normalize.
+function M.isSupplyEndpointDef(def)
+  if not def then return false end
+  local cp = def.customParams or def.customparams
+  if not cp then return false end
+  if cp.dropoff ~= nil then return M.truthy(cp.dropoff) end
+  if cp.DropOff ~= nil then return M.truthy(cp.DropOff) end
+  return false
+end
+
+-- Same-team road attachment for supply endpoints. When the team has no roads
+-- yet the endpoint is allowed regardless of position (bootstrap).
+function M.isEndpointPlacementAllowed(roads, x, z, radius)
+  if x == nil or z == nil then return true end
+  local function finite(n)
+    return type(n) == "number" and n == n and n > -math.huge and n < math.huge
+  end
+  if not finite(x) or not finite(z) then return false end
+  if type(roads) ~= "table" or next(roads) == nil then return true end
+  return M.isBuildingConnected(roads, x, z, radius)
+end
+
+function M.isBuildingConnectedSummary(buildings, roads, radius)
+  local summary = { total = 0, connected = 0, disconnected = 0 }
+  for _ in pairs(buildings or {}) do summary.total = summary.total + 1 end
+  if type(roads) ~= "table" or next(roads) == nil then
+    summary.connected = summary.total
+    return summary
+  end
+  for _, b in pairs(buildings or {}) do
+    if M.isBuildingConnected(roads, b.x, b.z, radius) then
+      summary.connected = summary.connected + 1
+    else
+      summary.disconnected = summary.disconnected + 1
+    end
+  end
+  return summary
 end
 
 function M.isPositionOnRoad(x, z, roadCoords, radius)

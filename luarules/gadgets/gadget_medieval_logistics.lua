@@ -18,9 +18,18 @@ local DEBUG_LOG = true
 
 -- Synced state:
 -- roads[teamID] = { [featureID] = { x = number, z = number } }
+-- buildings[teamID] = { [unitID] = { x = number, z = number, name = string } }
 -- unlocked[teamID][techID] = true
 local roads = {}
+local buildings = {}
 local unlocked = {}
+
+-- Supply endpoints are only town center, granary and lumber camp, identified
+-- by the `dropoff` customparam (engine lowercases keys; source defs may not).
+local function isSupplyEndpointDef(def)
+  return logistics.isSupplyEndpointDef(def)
+end
+local removeTrackedBuilding, trackSupplyEndpoint
 
 -- Road-build command intent: AllowCommand records it here; the next
 -- GameFrame pass performs the economy transaction and feature creation.
@@ -35,9 +44,11 @@ end
 
 local function initTeam(teamID)
   roads[teamID] = roads[teamID] or {}
+  buildings[teamID] = buildings[teamID] or {}
   unlocked[teamID] = unlocked[teamID] or {}
   syncTechParams(teamID)
 end
+
 
 local function echo(fmt, ...)
   if DEBUG_LOG and Spring and Spring.Echo then
@@ -162,6 +173,7 @@ end
 
 function gadget:Initialize()
   roads = {}
+  buildings = {}
   unlocked = {}
   pendingRoadBuilds = {}
   for _, teamID in ipairs(Spring.GetTeamList() or {}) do
@@ -173,7 +185,10 @@ function gadget:Initialize()
   if ok then gadgetHandler:RegisterAllowCommand(CMD.ANY) end
   roadCommandAttached = {}
   for _, unitID in ipairs(Spring.GetAllUnits and Spring.GetAllUnits() or {}) do
-    attachRoadCommand(unitID, Spring.GetUnitDefID(unitID))
+    local unitDefID = Spring.GetUnitDefID and Spring.GetUnitDefID(unitID)
+    attachRoadCommand(unitID, unitDefID)
+    -- Re-track supply endpoints that already exist at initialization.
+    trackSupplyEndpoint(unitID, unitDefID, Spring.GetUnitTeam and Spring.GetUnitTeam(unitID))
   end
 end
 
@@ -181,13 +196,55 @@ function gadget:UnitCreated(unitID, unitDefID)
   attachRoadCommand(unitID, unitDefID)
 end
 
-function gadget:UnitTaken(unitID)
+function gadget:UnitTaken(unitID, unitDefID, oldTeam, newTeam)
   cancelRoadOrders(unitID)
+  -- Supply-endpoint buildings move with the unit: drop the old-team entry.
+  removeTrackedBuilding(unitID)
 end
 
-function gadget:UnitGiven(unitID, unitDefID)
+function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
   cancelRoadOrders(unitID)
   attachRoadCommand(unitID, unitDefID)
+  -- Re-track under the receiving team, if this is a supply endpoint.
+  if newTeam == nil and Spring and Spring.GetUnitTeam then newTeam = Spring.GetUnitTeam(unitID) end
+  trackSupplyEndpoint(unitID, unitDefID, newTeam)
+end
+
+-- ---------------------------------------------------------------------------
+-- Supply-endpoint buildings: track finished drop-off buildings per team.
+-- ---------------------------------------------------------------------------
+
+removeTrackedBuilding = function(unitID)
+  for teamID, list in pairs(buildings) do
+    if list[unitID] then
+      list[unitID] = nil
+      echo("PHASE3 BUILDING removed unit=%d team=%d", unitID, teamID)
+      return teamID
+    end
+  end
+  return nil
+end
+
+-- Finished means build progress is 1 (or unknown). Mid-construction units
+-- (progress in (0,1)) are not tracked as endpoints.
+local function isUnitBuilt(unitID)
+  if not (Spring and Spring.GetUnitHealth) then return true end
+  local _, _, _, _, buildProgress = Spring.GetUnitHealth(unitID)
+  if buildProgress == nil then return true end
+  return buildProgress == 1
+end
+
+trackSupplyEndpoint = function(unitID, unitDefID, teamID)
+  local def = UnitDefs and UnitDefs[unitDefID]
+  if not def or not isSupplyEndpointDef(def) then return end
+  if teamID == nil then return end
+  if not isUnitBuilt(unitID) then return end
+  local x, _, z
+  if Spring and Spring.GetUnitPosition then x, _, z = Spring.GetUnitPosition(unitID) end
+  if not x or not z then return end
+  initTeam(teamID)
+  buildings[teamID][unitID] = { x = x, z = z }
+  echo("PHASE3 BUILDING tracked unit=%d team=%d x=%.0f z=%.0f", unitID, teamID, x, z)
 end
 
 -- ---------------------------------------------------------------------------
@@ -253,6 +310,8 @@ end
 function gadget:UnitFinished(unitID, unitDefID, unitTeam)
   local def = UnitDefs and UnitDefs[unitDefID]
   if not def then return end
+  -- Track finished supply endpoints for the owning team.
+  trackSupplyEndpoint(unitID, unitDefID, unitTeam)
   local u = unlocked[unitTeam]
   if not u then return end
   local healthMult = logistics.healthMultiplier(u, def.name)
@@ -274,6 +333,23 @@ end
 function gadget:AllowUnitCreation(unitDefID, builderID, builderTeam, x, y, z, facing)
   local def = UnitDefs and UnitDefs[unitDefID]
   if not def then return true end
+  -- Supply-endpoint placement policy: drop-off buildings must sit within
+  -- BUILD_LINK_RADIUS (64 elmos) of a team road node. When the team has no
+  -- roads yet the first endpoint is allowed (seed building); a missing or
+  -- invalid build position is invalid input and allowed to keep the engine
+  -- callin contract (creation without buildInfo) unchanged.
+  if isSupplyEndpointDef(def) then
+    -- Non-placement callins (nil build coordinates) bypass the road gate.
+    if x == nil or z == nil then
+      initTeam(builderTeam)
+      return true
+    end
+    initTeam(builderTeam)
+    if not logistics.isEndpointPlacementAllowed(roads[builderTeam], x, z, logistics.BUILD_LINK_RADIUS) then
+      echo("PHASE3 BUILDING denied team=%d def=%s reason=off_road", builderTeam, def.name)
+      return false
+    end
+  end
   local costs = logistics.getCost(def.name)
   if not costs then return true end
   local economy = GG and GG.MedievalEconomy
@@ -288,6 +364,8 @@ end
 function gadget:UnitDestroyed(unitID, unitDefID, teamID, attackerID, attackerDefID, attackerTeam)
   -- Any queued road-build intent for a destroyed/gone villager is void.
   cancelRoadOrders(unitID)
+  -- A destroyed endpoint building leaves the tracking table.
+  removeTrackedBuilding(unitID)
 end
 
 function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
@@ -403,5 +481,31 @@ GG.MedievalLogistics = {
 
   PointOnRoadNetwork = function(teamID, x, z)
     return roadGraph.connectedToNetwork(roads[teamID] or {}, x, z)
+  end,
+
+  -- Supply-endpoint building queries. Connectivity is recomputed from the
+  -- team's roads at query time, so road removal takes effect immediately.
+  -- Unknown units or mismatched teams return false.
+  BuildingConnected = function(teamID, unitID)
+    local list = buildings[teamID]
+    local b = list and list[unitID]
+    if not b then return false end
+    return logistics.isBuildingConnected(roads[teamID] or {}, b.x, b.z, logistics.BUILD_LINK_RADIUS)
+  end,
+
+  BuildingConnectivitySummary = function(teamID)
+    local list = buildings[teamID]
+    local summary = { total = 0, connected = 0, disconnected = 0 }
+    if not list then return summary end
+    local teamRoads = roads[teamID] or {}
+    for _, b in pairs(list) do
+      summary.total = summary.total + 1
+      if logistics.isBuildingConnected(teamRoads, b.x, b.z, logistics.BUILD_LINK_RADIUS) then
+        summary.connected = summary.connected + 1
+      else
+        summary.disconnected = summary.disconnected + 1
+      end
+    end
+    return summary
   end,
 }

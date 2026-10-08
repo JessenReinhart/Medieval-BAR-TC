@@ -23,6 +23,7 @@ local trackedVillager = nil
 -- isolated road at 2908,4184).
 local ROAD_PROBE_X, ROAD_PROBE_Z = 2600, 3700
 local roadProbe = nil
+local buildingProbe = nil
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -510,6 +511,89 @@ function gadget:GameFrame(frame)
         Spring.Echo("PHASE3 PROBE roadgraph missing medieval_road FeatureDef")
       end
     end
+  end
+  -- Phase 3 probe slice 5: building connectivity enforcement.
+  -- Team `a` already owns roads from the slice-3 block: a chain at
+  -- (2608..2728, 3884) and an isolated node at (2908, 4184).
+  if frame == 220 and spawned then
+    local api = GG and GG.MedievalLogistics
+    if not api or type(api.BuildingConnected) ~= "function"
+        or type(api.BuildingConnectivitySummary) ~= "function" then
+      Spring.Echo("PHASE3 PROBE building-connectivity SKIPPED missing building API")
+    else
+      local a, b = opposingTeams()
+      if a then
+        local granaryDef = UnitDefNames and UnitDefNames["medieval_granary"]
+        if granaryDef then
+          local before = api.BuildingConnectivitySummary(a)
+          if before then
+            Spring.Echo(string.format("PHASE3 PROBE building-connectivity baseline team=%d total=%d connected=%d disconnected=%d",
+              a, before.total or -1, before.connected or -1, before.disconnected or -1))
+          end
+          -- Connected endpoint: 40 elmos from the chain road at (2608, 3884).
+          local nx, nz = 2648, 3884
+          local ny = Spring.GetGroundHeight(nx, nz)
+          local nearID = Spring.CreateUnit(granaryDef.id, nx, ny, nz, "south", a)
+          -- Disconnected endpoint: far from every team road.
+          local fx, fz = 4200, 4200
+          local fy = Spring.GetGroundHeight(fx, fz)
+          local farID = Spring.CreateUnit(granaryDef.id, fx, fy, fz, "south", a)
+          Spring.Echo(string.format("PHASE3 PROBE building-connectivity spawned near=%s far=%s team=%d",
+            tostring(nearID), tostring(farID), a))
+          if nearID and farID then
+            local passNear = api.BuildingConnected(a, nearID) == true
+            local passFar = api.BuildingConnected(a, farID) == false
+            local passIsolation = (b == nil) or (api.BuildingConnected(b, nearID) == false)
+            local after = api.BuildingConnectivitySummary(a)
+            local passSummary = false
+            if before and after then
+              passSummary = (after.total == before.total + 2)
+                and (after.connected == before.connected + 1)
+                and (after.disconnected == before.disconnected + 1)
+            end
+            Spring.Echo(string.format("PHASE3 PROBE building-connectivity near-verdict f=%d team=%d %s (unit=%d connected=%s)",
+              frame, a, passNear and "PASS" or "FAIL", nearID, tostring(api.BuildingConnected(a, nearID))))
+            Spring.Echo(string.format("PHASE3 PROBE building-connectivity far-verdict f=%d team=%d %s (unit=%d connected=%s)",
+              frame, a, passFar and "PASS" or "FAIL", farID, tostring(api.BuildingConnected(a, farID))))
+            Spring.Echo(string.format("PHASE3 PROBE building-connectivity isolation-verdict f=%d otherTeam=%s %s (otherTeamSeesNear=%s)",
+              frame, tostring(b), passIsolation and "PASS" or "FAIL",
+              tostring(b and api.BuildingConnected(b, nearID))))
+            if after then
+              Spring.Echo(string.format("PHASE3 PROBE building-connectivity summary team=%d total=%d connected=%d disconnected=%d %s",
+                a, after.total or -1, after.connected or -1, after.disconnected or -1,
+                passSummary and "PASS" or "FAIL"))
+            end
+            buildingProbe = { team = a, far = farID, stage = "placed" }
+          else
+            Spring.Echo(string.format("PHASE3 PROBE building-connectivity SPAWN-FAILED team=%d near=%s far=%s", a, tostring(nearID), tostring(farID)))
+          end
+        else
+          Spring.Echo("PHASE3 PROBE building-connectivity missing medieval_granary UnitDef")
+        end
+      end
+    end
+  end
+  if buildingProbe and buildingProbe.stage == "placed" and frame >= 224 then
+    if Spring.ValidUnitID(buildingProbe.far) then
+      Spring.DestroyUnit(buildingProbe.far)
+      Spring.Echo(string.format("PHASE3 PROBE building-connectivity destroyed far unit=%d team=%d", buildingProbe.far, buildingProbe.team))
+    end
+    buildingProbe.stage = "destroyed"
+  end
+  if buildingProbe and buildingProbe.stage == "destroyed" and frame >= 228 then
+    local api = GG and GG.MedievalLogistics
+    local a = buildingProbe.team
+    if api and api.BuildingConnectivitySummary then
+      local final = api.BuildingConnectivitySummary(a)
+      if final then
+        -- Settlement baseline is unknown here; the far unit was the only unit
+        -- this probe created, so require: no disconnected endpoint remains
+        -- that this probe introduced (the far granary is gone).
+        Spring.Echo(string.format("PHASE3 PROBE building-connectivity post-destroy team=%d total=%d connected=%d disconnected=%d (far unit removed)",
+          a, final.total or -1, final.connected or -1, final.disconnected or -1))
+      end
+    end
+    buildingProbe = nil
   end
   if frame % 90 == 0 and spawned then
     local a, b = opposingTeams()

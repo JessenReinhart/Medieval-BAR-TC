@@ -183,10 +183,40 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
   planar `{x, z}` distance plus map bounds (`off_map`); buildable or land-flagged terrain is not
   additionally restricted.
 
+## Phase 3 Slice 5 (building connectivity enforcement) — implemented:
+
+- **Rule**: supply-endpoint buildings (`medieval_town_center`, `medieval_granary`,
+  `medieval_lumber_camp`, via `dropoff` customparam with casing/truth normalization) must lie
+  within `BUILD_LINK_RADIUS = 64.0` planar elmos of a same-team road node when placed through
+  `AllowUnitCreation`. Teams with no roads bootstrap freely (the rule never gates the first
+  settlement); nil coordinates bypass the gate (no placement context).
+- **Tracking**: finished endpoints tracked per team (`buildings[teamID]`), removed on
+  `UnitDestroyed`/`UnitTaken`, re-tracked under the receiving team on `UnitGiven`.
+- **APIs**: `GG.MedievalLogistics.BuildingConnected(teamID, unitID)` (live computation from the
+  current road graph; road destruction disconnects immediately) and
+  `BuildingConnectivitySummary(teamID)` -> `{ total, connected, disconnected }`.
+- **Tests**: 17 focused (`tests/test_phase3_slice5.py`, real Lua harness: buildings are units,
+  roads are features); full suite **214 passed**; Lua syntax clean (44 files).
+- **Engine probe** (`tools/runtime/infolog.txt`, frames 220-228):
+  ```text
+  [f=0000220] PHASE3 PROBE building-connectivity baseline team=0 total=2 connected=0 disconnected=2
+  [f=0000220] PHASE3 PROBE building-connectivity near-verdict f=220 team=0 PASS (unit=29462 connected=true)
+  [f=0000220] PHASE3 PROBE building-connectivity far-verdict f=220 team=0 PASS (unit=5320 connected=false)
+  [f=0000220] PHASE3 PROBE building-connectivity isolation-verdict f=220 otherTeam=1 PASS (otherTeamSeesNear=false)
+  [f=0000220] PHASE3 PROBE building-connectivity summary team=0 total=4 connected=1 disconnected=3 PASS
+  [f=0000224] PHASE3 PROBE building-connectivity destroyed far unit=5320 team=0
+  [f=0000228] PHASE3 PROBE building-connectivity post-destroy team=0 total=3 connected=1 disconnected=2 (far unit removed)
+  ```
+- **Speed API verdict (corrected)**: the pinned engine (`2026.07.04`) does expose
+  `Spring.MoveCtrl.SetGroundMoveTypeData` (`maxSpeed`, `maxWantedSpeed`, …) and `SetMoveDef`;
+  see `docs/engine-speed-api-evidence.md`. Movement-speed enforcement is still not implemented;
+  Slice 5 does not use the mutator.
+
 ## What's Next: Phase 3 gameplay integration (pending design)
 
-- Movement-speed enforcement pending a verified engine speed API; connectivity gameplay
-  enforcement remains open. Do not assume Phase 3 is complete.
+- Movement-speed enforcement is now implementable with the verified `Spring.MoveCtrl`
+  mutator (deferred to a later slice); end-to-end connectivity effects (supply bonuses,
+  pathfinding integration) remain open. Do not assume Phase 3 is complete.
 
 ## How to Resume in a New Session
 
