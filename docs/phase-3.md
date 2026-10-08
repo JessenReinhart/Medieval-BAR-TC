@@ -179,9 +179,9 @@ road count stayed at 6 and the road was attributed to team 0 throughout (`ftr=23
 matches the spacing-refusal path already covered by the focused Lua harness.
 
 Observed Slice 6 road movement-speed enforcement end-to-end in `tools/runtime/infolog.txt` (probe
-steps at frames 238-302; max simulated frame this run was 450). Unit A (`14749`) is spawned on the
-road chain, unit B (`8772`) off-road. These are the verbatim `road-speed` lines (the run emitted 17
-`road-speed` lines in total; the set below is the printed head):
+steps at frames 238-302; max simulated frame this run was 450). Unit A (`43`) is spawned on the
+road chain, unit B (`28360`) off-road. These are the verbatim `road-speed` lines (the run emitted 15
+`road-speed` lines in total; the set below is all of them):
 
 ```text
 [t=00:00:10.518886][f=0000238] PHASE3 PROBE road-speed road-extend#1 ftr=25323 team=0 at=(2788, 3884)
