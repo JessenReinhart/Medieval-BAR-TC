@@ -1,17 +1,40 @@
-# Handoff: Medieval-BAR-TC (Phase 4 Slice 2 damage types & fortification destruction landed; engine probe evidence verified)
+# Handoff: Medieval-BAR-TC (Phase 4 Slices 1–4 complete; Slice 5 in-progress savepoint)
 
 Date: 2026-10-09
 Branch: `medieval-total-conversion`
-Last work: Phase 4 Slice 2 — damage-type matrix & fortification destruction, on top of Slice 1's
-catapult. New pure-Lua `scripts/medieval_damage_types.lua` maps weapon class (siege/melee/ranged)
-against armor class (fortification/building/standard): siege x3.0 vs fortification, siege x1.5 vs
-non-fort buildings, melee/ranged x0.25 vs fortification, 1.0 elsewhere. `gamedata/weapondefs.lua`
-tags `damage_class`; `units/medieval_wall.lua` + `units/medieval_tower.lua` tag
-`armor_class = "fortification"`. `gadget_medieval_logistics.lua` applies the matrix in
-`UnitPreDamaged` after tech->supply scaling (`base * tech * supply * matrix`), echoes
-`PHASE4 DMATRIX ...`, and exposes `GG.MedievalLogistics.DamageTypeMultiplier`. Walls/towers are
-UNITS, so no feature damage hook was added. Headless probe reports both Slice 2 verdicts `PASS`.
-Full suite: 348 passing.
+Status: Wrapped up for the day; 492 tests pass, 56 Lua files clean; all committed and pushed.
+
+### Phase 4 Status by Slice
+
+1. **Slice 1 — Siege Warfare Core (COMPLETE, commit `a09cf28` / merged prior)**:
+   - `medieval_catapult` unit (0 A.D. lithobolos OBJ/DDS), ballistic arc, AoE crush damage, aim-dead-zone LUS. Headless probe PASS (f=360–570).
+2. **Slice 2 — Damage Types & Fortification Destruction (COMPLETE, commit `bc2191e`)**:
+   - `scripts/medieval_damage_types.lua` matrix (siege 3.0x vs fort, melee/ranged 0.25x vs fort). Weapon and armor class tags. Headless probe PASS (f=570–600).
+3. **Slice 3 — Production Chains (COMPLETE, commit `28370ba`)**:
+   - `medieval_blacksmith` and `medieval_fletcher` crafting buildings.
+   - `luarules/gadgets/gadget_production_chains.lua` converts iron+wood into swords and bows.
+   - Recruitment gating: cavalry/catapult require sword stock > 0, archer requires bow stock > 0.
+   - Headless probe PASS (f=620–880). 30 tests in `tests/test_phase4_slice3.py`.
+4. **Slice 4 — Military Upgrades & Veteran Tiers (COMPLETE, commit `333923e`)**:
+   - 3 advanced unit tiers: `medieval_men_at_arms`, `medieval_crossbow`, `medieval_knight`.
+   - Tech tree registry in `scripts/medieval_logistics.lua`: `veteran_infantry`, `crossbow_tech`, `chivalry`.
+   - Tech prerequisite gating on recruitment + multiplicative damage scaling stacking with supply bonus.
+   - Headless probe PASS (f=920–1030). 63 tests in `tests/test_phase4_slice4.py`.
+5. **Slice 5 — Transport & Hauler Units (IN-PROGRESS SAVEPOINT)**:
+   - Civilian hauler `medieval_cart` (`units/medieval_cart.lua`, LUS `scripts/medieval_cart.lua`, pop 0, non-military).
+   - Pure-Lua hauler policy `scripts/medieval_haul.lua` (storage hub discovery, resource ordering, route selection pairing surplus to deficit).
+   - Synced gadget `luarules/gadgets/gadget_medieval_hauling.lua` (cart tracking, road-speed mutator enforcement, live haul jobs, `GG.MedievalEconomy.Transact` settlement).
+   - Probe runner `tools/launch/run_phase2_slice5_probe.py` and probe stage in `luarules/gadgets/gadget_phase2_test_forces.lua` (f=1060–1260).
+   - VERIFIED: road-speed mutator PASS (`onroad=0.08`, `offroad=0.05`, 1.50x target).
+   - REMAINING: live hub deficit trigger window in probe needs fine-tuning so `route-verdict` and `delivery-verdict` complete cleanly.
+   - 51 tests in `tests/test_phase4_slice5.py`.
+6. **Slice 6 — Basic Medieval Skirmish AI (NEXT)**:
+   - Full automated skirmish match probe planned.
+
+### Test & Syntax Counts
+
+- `python tests/check_lua_syntax.py` -> 56 lua files, 0 errors.
+- `python -m pytest tests -q` -> 492 passed in 1.15s.
 
 Previous work: Phase 4 Slice 1 — siege warfare core. New `medieval_catapult` unit built from the
 0 A.D. Hellenic lithobolos (982 verts / 556 tris), a slow heavy `catapult` weapon def (range 550,

@@ -14,6 +14,11 @@ local M = {
     medieval_men_at_arms = 3,
     medieval_crossbow = 3,
     medieval_knight = 4,
+    -- Civilian hauler, deliberately not a recruit: an explicit 0 rate keeps the
+    -- cart out of isMilitary/armyCounts/armyUpkeep (upkeepFor returns 0, and a 0
+    -- rate adds nothing even if a caller passes it in). It is intentionally
+    -- absent from COSTS as well, so it has no recruitment cost.
+    medieval_cart = 0,
   },
   COSTS = {
     medieval_infantry = { food = 30, wood = 20, stone = 10, iron = 5 },

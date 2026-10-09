@@ -287,10 +287,38 @@ matrix verdicts (`siege-vs-wall PASS`, `melee-vs-wall PASS`) and all Slice 3
 crafting verdicts (`sword-vs-verdict`, `bow-vs-verdict`, `recruit-gate-verdict`
 f=620..880 PASS), so the new stage breaks no earlier slice.
 
-### Slice 5 — Transport & Hauler Units
-- `medieval_cart` with high carry capacity; road-dependent speed via Slice 6 (Phase 3)
-  mutator; auto-haul between storage hubs when local deficit exists.
-- Tests: haul policy + road-speed integration.
+### Slice 5 — Transport & Hauler Units (in-progress)
+- Civilian hauler unit `medieval_cart` (`units/medieval_cart.lua`, LUS `scripts/medieval_cart.lua`):
+  health 220, slow base off-road speed (0.50 elmos/s), `carry_capacity = 400`, `unit_role = "hauler"`,
+  pop cost 0 in `scripts/medieval_housing.lua`, explicit exclusion from military recruitment in `scripts/medieval_recruitment.lua`.
+- Pure-Lua hauler policy `scripts/medieval_haul.lua`:
+  storage-hub discovery across town centers, granaries, lumber camps, blacksmiths, fletchers;
+  deterministic resource ordering (`wood`, `iron`); route selection (`chooseHaulRoute`) pairing a
+  supply hub with a deficit sink hub under `carry_capacity` clamping.
+- Synced hauler gadget `luarules/gadgets/gadget_medieval_hauling.lua`:
+  tracks live carts and storage hubs, enforces road-speed mutator (+50% velocity on road nodes,
+  matching the Phase 3 Slice 6 road mutator), drives cart transit between source and sink hubs,
+  and settles transfers via `GG.MedievalEconomy.Transact`. Exposes `HaulSummary`, `HaulRoute`,
+  and `HaulHubStock` on `GG.MedievalLogistics`.
+- Headless probe runner `tools/launch/run_phase2_slice5_probe.py` and probe stage in
+  `luarules/gadgets/gadget_phase2_test_forces.lua` (f=1060–1260):
+  verifies cart off-road vs on-road velocity multiplier (PASS: onroad=0.08, offroad=0.05, 1.50× target);
+  active haul routing and delivery settlement across simulated storage hubs is under tuning.
+- Tests: `tests/test_phase4_slice5.py` (51 tests).
+
+#### Slice 5 test count & current probe status
+
+```
+python tests/check_lua_syntax.py   -> Checked 56 lua files; 0 errors found.
+python -m pytest tests -q          -> 492 passed
+```
+
+Verified probe verdict:
+```
+[t=00:00:40.660868][f=0001124] PHASE4 HAUL road-speed-verdict PASS f=1124 onroad=0.08 offroad=0.05 (onRoad=true offRoad=false applied=22.50 expect=22.50 base=15.00 source=mutator state-ok=true applied-ok=true)
+```
+
+Remaining for completion: tune live hub deficit triggering window so `route-verdict` and `delivery-verdict` complete cleanly in the probe.
 
 ### Slice 6 — Basic Medieval Skirmish AI
 - Lua skirmish AI: place houses, harvest, connect endpoints with roads, train military,

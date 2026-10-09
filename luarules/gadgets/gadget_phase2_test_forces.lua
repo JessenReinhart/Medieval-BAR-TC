@@ -42,6 +42,28 @@ local craftProbe = nil
 -- Phase 4 Slice 4 military-upgrade probe state (chivalry tech gate -> knight
 -- recruit gate -> +20% knight damage multiplier).
 local upgradeProbe = nil
+-- Phase 4 Slice 5 hauler probe state (cart road-speed pair -> live haul route ->
+-- sink-hub delivery ledger).
+local haulProbe = nil
+
+-- Slice 5 lane geometry. x 3500..3820 / z 4350..4950 is flat (heightmap
+-- 89.8..90.4) and the map feature map is empty there, so no earlier slice
+-- shares the lane. The lumber camp sits 40 elmos from a road node because
+-- AllowUnitCreation only admits a supply endpoint within BUILD_LINK_RADIUS (64)
+-- of a same-team road.
+local HAUL_ROAD_X = 3620
+local HAUL_ROAD_Z0, HAUL_ROAD_Z1, HAUL_ROAD_STEP = 4700, 4900, 40
+local HAUL_SOURCE_X, HAUL_SOURCE_Z = 3660, 4780 -- medieval_lumber_camp (wood source)
+local HAUL_SINK_X, HAUL_SINK_Z = 3660, 4700     -- medieval_blacksmith (wood sink)
+local HAUL_CART_X, HAUL_CART_Z = 3700, 4560     -- 80 elmos off the lane
+local HAUL_OFFROAD_X, HAUL_OFFROAD_Z = 3700, 4560
+local HAUL_OFFROAD_END_X, HAUL_OFFROAD_END_Z = 3700, 4260
+local HAUL_ONROAD_X, HAUL_ONROAD_Z = 3620, 4900
+local HAUL_ONROAD_END_X, HAUL_ONROAD_END_Z = 3620, 4700
+local HAUL_HUB_OFFSET = 48 -- elmos; inside the hauling gadget's 64-elmo arrival radius
+local HAUL_WOOD_TARGET = 26 -- bottom of the policy's deficit band [HAUL_STEP=25, DEFICIT_THRESHOLD=80)
+local HAUL_CUSHION_WOOD = 300 -- above DEFICIT_THRESHOLD: holds the policy idle during Phase A
+local HAUL_LEG_FRAMES = 30 -- both speed legs are sampled this long after their move order
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -246,6 +268,75 @@ local function recruitGateAllows(teamID, defName)
     if ok then return allowed and true or false end
   end
   return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Phase 4 Slice 5 helpers: transport & hauler probe support.
+-- ---------------------------------------------------------------------------
+
+-- Force one resource of a team pool to an exact value. The haul policy reads the
+-- shared pool on every scan and only routes while a resource sits inside the
+-- deficit band [HAUL_STEP, DEFICIT_THRESHOLD), so live gather/production would
+-- otherwise make the band a moving target. Returns the settled value, or nil
+-- when the economy API is unavailable.
+local function pinStock(teamID, resource, target)
+  local econ = GG and GG.MedievalEconomy
+  if not (econ and type(econ.GetResource) == "function") then return nil end
+  local cur = econ.GetResource(teamID, resource)
+  if type(cur) ~= "number" then return nil end
+  local delta = target - math.floor(cur)
+  if delta > 0 and type(econ.Deposit) == "function" then
+    econ.Deposit(teamID, resource, delta)
+  elseif delta < 0 and type(econ.Withdraw) == "function" then
+    econ.Withdraw(teamID, resource, -delta)
+  end
+  return econ.GetResource(teamID, resource)
+end
+
+-- Resolve a hub unit id to its UnitDef name so the route verdict can assert the
+-- source/sink ROLES the policy actually chose instead of hard-coding engine ids.
+local function unitDefNameOf(unitID)
+  if type(unitID) ~= "number" or type(Spring.GetUnitDefID) ~= "function" then return nil end
+  local defID = Spring.GetUnitDefID(unitID)
+  local def = defID and UnitDefs and UnitDefs[defID]
+  return def and def.name
+end
+
+-- Per-hub storage ledger written by the hauling gadget when a haul completes.
+-- The team pool is shared (a same-team hub->hub haul conserves it), so this
+-- ledger is the only per-hub "stock" a haul moves; the hauling gadget exposes it
+-- read-only through GG.MedievalLogistics.HaulHubStock.
+local function haulHubStock(teamID, hubID, resource)
+  local api = GG and GG.MedievalLogistics
+  if not (api and type(api.HaulHubStock) == "function") then return nil end
+  local ok, value = pcall(api.HaulHubStock, teamID, hubID, resource)
+  if not ok then return nil end
+  return value
+end
+
+-- Reposition a probe unit without pathing so the haul state machine can be
+-- driven inside the frame budget. Same technique the Slice 6 road-speed restore
+-- step already uses on a mobile unit; the gadget's own arrival checks still gate
+-- every phase change, so a reposition is not itself a delivery.
+local function placeUnit(unitID, x, z)
+  if type(Spring.SetUnitPosition) ~= "function" then return false end
+  local ok = pcall(Spring.SetUnitPosition, unitID, x, Spring.GetGroundHeight(x, z), z)
+  return ok
+end
+
+-- Snapshot one mover's enforced speed state into plain scalars. The table
+-- GetSpeedState returns is the LIVE synced entry, which the logistics gadget
+-- rewrites in place on every scan, so holding the table would make the off-road
+-- sample silently read the on-road values at verdict time.
+local function snapshotSpeedState(unitID)
+  local text, state = speedStateText(unitID)
+  if not state then return text, nil end
+  return text, {
+    onRoad = state.onRoad,
+    base = state.base,
+    applied = state.applied,
+    source = state.source,
+  }
 end
 
 -- Phase 4 Slice 2 raw weapon base damage, documented in gamedata/weapondefs.lua
@@ -1437,6 +1528,279 @@ function gadget:GameFrame(frame)
     local pass = type(mult) == "number" and math.abs(mult - 1.20) < 0.001
     Spring.Echo(string.format("PHASE4 UPGRADE damage-mult-verdict %s f=%d mult=%s expect=1.20 unit=medieval_knight",
       pass and "PASS" or "FAIL", frame, tostring(mult)))
+  end
+
+  -- -------------------------------------------------------------------------
+  -- Phase 4 Slice 5: transport & hauler units (frames 1060..1200).
+  --
+  -- Phase A (f=1060..1124) measures the cart's road-speed integration in an
+  -- isolated lane (x 3500..3820 / z 4250..4950: heightmap span < 1 elmo, empty
+  -- map feature map, >800 elmos from every earlier probe road). Two storage hubs
+  -- are spawned there - a lumber camp (dedicated wood SOURCE) and a blacksmith
+  -- (wood SINK / demand) - plus one medieval_cart.
+  --
+  -- Phase B (f=1128..1140) leaves the team pool in the haul policy's deficit band
+  -- [HAUL_STEP, DEFICIT_THRESHOLD) = [25, 80) for wood. That IS what "fund one hub
+  -- with a surplus, leave the other at a deficit" means in this total conversion:
+  -- the stockpile is per-TEAM, so a hub's surplus/deficit is a role projection
+  -- over that one pool (scripts/medieval_haul.lua header). The policy then assigns
+  -- the live route, read back through GG.MedievalLogistics.HaulRoute.
+  --
+  -- Phase C (f=1140..1200) drives that route: the cart is placed at the chosen
+  -- source hub, the state machine advances to "to_sink", then to the sink, where
+  -- the gadget's own completeHaul writes the delivery into its per-hub ledger.
+  -- -------------------------------------------------------------------------
+  if frame == 1060 and spawned and not haulProbe then
+    local api = GG and GG.MedievalLogistics
+    local econ = GG and GG.MedievalEconomy
+    local a = opposingTeams()
+    local campDef = UnitDefNames and UnitDefNames["medieval_lumber_camp"]
+    local smithDef = UnitDefNames and UnitDefNames["medieval_blacksmith"]
+    local cartDef = UnitDefNames and UnitDefNames["medieval_cart"]
+    local roadDef = FeatureDefNames and FeatureDefNames["medieval_road"]
+    if not a then
+      haulProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 HAUL SKIPPED no probe team")
+    elseif not (campDef and smithDef and cartDef) then
+      haulProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 HAUL SKIPPED missing lumber_camp/blacksmith/cart UnitDef")
+    elseif not roadDef then
+      haulProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 HAUL SKIPPED missing medieval_road FeatureDef")
+    elseif not (api and type(api.GetSpeedState) == "function"
+        and type(api.HaulRoute) == "function" and type(api.HaulSummary) == "function"
+        and type(api.HaulHubStock) == "function") then
+      haulProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 HAUL SKIPPED missing haul/speed API (need GetSpeedState, HaulRoute, HaulSummary, HaulHubStock)")
+    elseif not (econ and type(econ.GetResource) == "function"
+        and type(econ.Deposit) == "function" and type(econ.Withdraw) == "function") then
+      haulProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 HAUL SKIPPED missing economy API (need GetResource/Deposit/Withdraw)")
+    else
+      -- Roads first: AllowUnitCreation admits a supply endpoint only within
+      -- BUILD_LINK_RADIUS (64) of a same-team road node.
+      local roads = {}
+      for rz = HAUL_ROAD_Z0, HAUL_ROAD_Z1, HAUL_ROAD_STEP do
+        local ry = Spring.GetGroundHeight(HAUL_ROAD_X, rz)
+        local fid = Spring.CreateFeature(roadDef.id, HAUL_ROAD_X, ry, rz, 0, a)
+        roads[#roads + 1] = fid
+      end
+      local cy = Spring.GetGroundHeight(HAUL_SOURCE_X, HAUL_SOURCE_Z)
+      local camp = Spring.CreateUnit(campDef.id, HAUL_SOURCE_X, cy, HAUL_SOURCE_Z, "south", a)
+      local sy = Spring.GetGroundHeight(HAUL_SINK_X, HAUL_SINK_Z)
+      local smith = Spring.CreateUnit(smithDef.id, HAUL_SINK_X, sy, HAUL_SINK_Z, "south", a)
+      local ky = Spring.GetGroundHeight(HAUL_CART_X, HAUL_CART_Z)
+      local cart = Spring.CreateUnit(cartDef.id, HAUL_CART_X, ky, HAUL_CART_Z, "south", a)
+      -- The policy breaks ties by (hub profile rank, unit id), so the settlement
+      -- camp/TC and the Slice 3 blacksmith - all spawned far earlier and therefore
+      -- lower-id - would win the wood route over the two hubs just created here.
+      -- Every earlier verdict is already published (the last Slice 4 sample is
+      -- f=1030), so retiring those competing hubs makes this stage's route
+      -- deterministic without invalidating an earlier slice. The route verdict
+      -- below still asserts the exact probe endpoints, so a failed retirement
+      -- shows up as a FAIL rather than silently exercising someone else's hubs.
+      local retired = 0
+      if type(Spring.GetAllUnits) == "function" and type(Spring.GetUnitTeam) == "function"
+          and type(Spring.DestroyUnit) == "function" then
+        for _, unitID in ipairs(Spring.GetAllUnits() or {}) do
+          if Spring.GetUnitTeam(unitID) == a
+              and unitID ~= camp and unitID ~= smith and unitID ~= cart then
+            local name = unitDefNameOf(unitID)
+            if name == "medieval_town_center" or name == "medieval_granary"
+                or name == "medieval_lumber_camp" or name == "medieval_blacksmith"
+                or name == "medieval_fletcher" then
+              Spring.DestroyUnit(unitID, false, true)
+              retired = retired + 1
+            end
+          end
+        end
+      end
+      -- Surplus: keep the pool above DEFICIT_THRESHOLD (80) so the haul policy
+      -- stays idle while Phase A measures road speed.
+      local wood0 = pinStock(a, "wood", HAUL_CUSHION_WOOD)
+      haulProbe = {
+        team = a, camp = camp, smith = smith, cart = cart, roads = roads,
+        wood0 = wood0, stage = "spawned",
+      }
+      Spring.Echo(string.format("PHASE4 HAUL setup f=%d team=%d cart=%s source=%s sink=%s roads=%d retired-hubs=%d wood=%s lane=(%d, %d..%d)",
+        frame, a, tostring(cart), tostring(camp), tostring(smith), #roads, retired, tostring(wood0),
+        HAUL_ROAD_X, HAUL_ROAD_Z0, HAUL_ROAD_Z1))
+    end
+  end
+
+  -- Hold the pool above DEFICIT_THRESHOLD while the speed legs run, so the haul
+  -- scan cannot assign a route mid-measurement (live gathering keeps depositing
+  -- wood, so this is re-pinned every frame rather than set once).
+  if haulProbe and (haulProbe.stage == "spawned" or haulProbe.stage == "offroad"
+      or haulProbe.stage == "onroad") then
+    pinStock(haulProbe.team, "wood", HAUL_CUSHION_WOOD)
+  end
+
+  -- Off-road leg: the cart starts (and stays) >48 elmos from every road node -
+  -- the nearest is the x=3620 lane, 80 elmos east - so the Slice 6 mutator must
+  -- leave it at its base speed while it runs south over open ground.
+  if haulProbe and haulProbe.stage == "spawned" and frame >= 1064 then
+    local cart = haulProbe.cart
+    local moved = false
+    if type(Spring.GiveOrderToUnit) == "function" then
+      local ok = pcall(Spring.GiveOrderToUnit, cart, CMD.MOVE,
+        { HAUL_OFFROAD_END_X, Spring.GetGroundHeight(HAUL_OFFROAD_END_X, HAUL_OFFROAD_END_Z), HAUL_OFFROAD_END_Z }, {})
+      moved = ok
+    end
+    placeUnit(cart, HAUL_OFFROAD_X, HAUL_OFFROAD_Z)
+    haulProbe.offroadFrame = frame + HAUL_LEG_FRAMES
+    haulProbe.stage = "offroad"
+    Spring.Echo(string.format("PHASE4 HAUL offroad-leg f=%d cart=%s at=(%d, %d) -> (%d, %d) moveOrder=%s",
+      frame, tostring(cart), HAUL_OFFROAD_X, HAUL_OFFROAD_Z,
+      HAUL_OFFROAD_END_X, HAUL_OFFROAD_END_Z, tostring(moved)))
+  end
+
+  if haulProbe and haulProbe.stage == "offroad" and frame >= haulProbe.offroadFrame then
+    local cart = haulProbe.cart
+    haulProbe.offroadVel = speedUnitVelocity(cart)
+    local text, state = snapshotSpeedState(cart)
+    haulProbe.offroadState = state
+    Spring.Echo(string.format("PHASE4 HAUL offroad-state f=%d cart=%s %s vel=%.2f",
+      frame, tostring(cart), text, haulProbe.offroadVel or -1))
+    -- On-road leg: start exactly on a lane node and run along the lane, so the
+    -- cart is within ROAD_PROXIMITY_RADIUS (48) of a node for the whole run.
+    if type(Spring.GiveOrderToUnit) == "function" then
+      pcall(Spring.GiveOrderToUnit, cart, CMD.MOVE,
+        { HAUL_ONROAD_END_X, Spring.GetGroundHeight(HAUL_ONROAD_END_X, HAUL_ONROAD_END_Z), HAUL_ONROAD_END_Z }, {})
+    end
+    placeUnit(cart, HAUL_ONROAD_X, HAUL_ONROAD_Z)
+    haulProbe.onroadFrame = frame + HAUL_LEG_FRAMES
+    haulProbe.stage = "onroad"
+    Spring.Echo(string.format("PHASE4 HAUL onroad-leg f=%d cart=%s at=(%d, %d) -> (%d, %d)",
+      frame, tostring(cart), HAUL_ONROAD_X, HAUL_ONROAD_Z,
+      HAUL_ONROAD_END_X, HAUL_ONROAD_END_Z))
+  end
+
+  -- Road-speed verdict: both legs are sampled exactly HAUL_LEG_FRAMES after their
+  -- move order, so the velocity comparison is like-for-like. The enforced state
+  -- (base/applied/source) is read through the same Slice 6 helper the earlier
+  -- road-speed probe uses, and the boost must be exactly ROAD_SPEED_MULT (1.5).
+  if haulProbe and haulProbe.stage == "onroad" and frame >= haulProbe.onroadFrame then
+    local cart = haulProbe.cart
+    local onVel = speedUnitVelocity(cart)
+    local text, onState = snapshotSpeedState(cart)
+    local offVel, offState = haulProbe.offroadVel, haulProbe.offroadState
+    Spring.Echo(string.format("PHASE4 HAUL onroad-state f=%d cart=%s %s vel=%.2f",
+      frame, tostring(cart), text, onVel or -1))
+    if onState and offState and type(onVel) == "number" and type(offVel) == "number" then
+      local base = offState.base or -1
+      local expected = base * 1.5
+      local passOnRoad = offState.onRoad == false and onState.onRoad == true
+      local passApplied = speedNear(offState.applied, base) and speedNear(onState.applied, expected)
+      local passVel = onVel > offVel + 0.01
+      local pass = passOnRoad and passApplied and passVel
+      Spring.Echo(string.format("PHASE4 HAUL road-speed-verdict %s f=%d onroad=%.2f offroad=%.2f (onRoad=%s offRoad=%s applied=%.2f expect=%.2f base=%.2f source=%s state-ok=%s applied-ok=%s)",
+        pass and "PASS" or "FAIL", frame, onVel, offVel, tostring(onState.onRoad), tostring(offState.onRoad),
+        onState.applied or -1, expected, base, tostring(onState.source), tostring(passOnRoad), tostring(passApplied)))
+      haulProbe.speedPass = pass
+    else
+      Spring.Echo(string.format("PHASE4 HAUL road-speed-verdict FAIL f=%d onroad=%s offroad=%s (state-ok=false onState=%s offState=%s)",
+        frame, tostring(onVel), tostring(offVel), tostring(onState ~= nil), tostring(offState ~= nil)))
+      haulProbe.speedPass = false
+    end
+    haulProbe.deficitFrame = frame + 4
+    haulProbe.stage = "speed-done"
+  end
+
+  -- Deficit trigger: wood enters the band [25, 80). Pinned every frame because
+  -- the shared pool keeps moving under gather/production, and the haul scan runs
+  -- at frame%30==0 BEFORE this gadget (layer 4 < layer 50), so the value pinned
+  -- on the previous frame is the one the scan reads.
+  if haulProbe and haulProbe.stage == "speed-done" and frame >= haulProbe.deficitFrame then
+    pinStock(haulProbe.team, "wood", HAUL_WOOD_TARGET)
+    haulProbe.stage = "deficit"
+    haulProbe.deficitSeen = frame
+    Spring.Echo(string.format("PHASE4 HAUL deficit-trigger f=%d team=%d wood=%s target=%d band=[%d, %d)",
+      frame, haulProbe.team, tostring(pinStock(haulProbe.team, "wood", HAUL_WOOD_TARGET)),
+      HAUL_WOOD_TARGET, 25, 80))
+  end
+
+  if haulProbe and haulProbe.stage == "deficit" then
+    local woodNow = pinStock(haulProbe.team, "wood", HAUL_WOOD_TARGET)
+    local api = GG.MedievalLogistics
+    if frame % 30 == 0 then
+      local s = api.HaulSummary(haulProbe.team)
+      Spring.Echo(string.format("PHASE4 HAUL diag f=%d wood=%s carts=%s hubs=%s assigned=%s delivered=%s",
+        frame, tostring(woodNow), tostring(s and s.carts), tostring(s and s.hubs),
+        tostring(s and s.routesAssigned), tostring(s and s.delivered)))
+    end
+    local route = api.HaulRoute(haulProbe.team, haulProbe.cart)
+    if route then
+      -- Freeze further assignments (pool back above the threshold) while the
+      -- in-flight job finishes, so exactly one delivery lands in the ledger.
+      pinStock(haulProbe.team, "wood", HAUL_CUSHION_WOOD)
+      haulProbe.route = route
+      haulProbe.before = haulHubStock(haulProbe.team, route.to, route.resource) or 0
+      local fromName = unitDefNameOf(route.from)
+      local toName = unitDefNameOf(route.to)
+      -- Assert both the exact probe endpoints (so a stray hub cannot be what got
+      -- exercised) and the ROLES the policy must produce: the source is the
+      -- dedicated wood dropoff, the sink the wood-demanding blacksmith.
+      local passFrom = route.from == haulProbe.camp and fromName == "medieval_lumber_camp"
+      local passTo = route.to == haulProbe.smith and toName == "medieval_blacksmith"
+      local passKind = route.resource == "wood"
+      local passAmount = route.amount == 25
+      local passDistinct = route.from ~= route.to
+      local pass = passFrom and passTo and passKind and passAmount and passDistinct
+      Spring.Echo(string.format("PHASE4 HAUL route-verdict %s f=%d from=%s to=%s kind=%s amount=%s (fromRole=%s toRole=%s expect-from=%s expect-to=%s)",
+        pass and "PASS" or "FAIL", frame, tostring(route.from), tostring(route.to),
+        tostring(route.resource), tostring(route.amount), tostring(fromName), tostring(toName),
+        tostring(haulProbe.camp), tostring(haulProbe.smith)))
+      -- Park the cart just inside the source hub's 64-elmo arrival radius but
+      -- clear of its footprint, so the state machine advances without the engine
+      -- resolving a collision against the building.
+      local fx, _, fz = Spring.GetUnitPosition(route.from)
+      placeUnit(haulProbe.cart, fx + HAUL_HUB_OFFSET, fz)
+      haulProbe.sinkFrame = frame + 30
+      haulProbe.deadlineFrame = frame + 120
+      haulProbe.stage = "to-source"
+    elseif frame >= haulProbe.deficitSeen + 60 then
+      Spring.Echo(string.format("PHASE4 HAUL route-verdict FAIL f=%d from=? to=? kind=? amount=0 (no route assigned within 60 frames of the deficit trigger)",
+        frame))
+      haulProbe.stage = "done"
+    end
+  end
+
+  -- Advance the cart to the sink hub so the gadget's own arrival check fires.
+  if haulProbe and haulProbe.stage == "to-source" and frame >= haulProbe.sinkFrame then
+    local route = haulProbe.route
+    local x, _, z = Spring.GetUnitPosition(route.to)
+    if x and z then
+      placeUnit(haulProbe.cart, x + HAUL_HUB_OFFSET, z)
+      haulProbe.stage = "to-sink"
+      Spring.Echo(string.format("PHASE4 HAUL to-sink f=%d cart=%s sink=%s at=(%d, %d)",
+        frame, tostring(haulProbe.cart), tostring(route.to), x + HAUL_HUB_OFFSET, z))
+    else
+      Spring.Echo(string.format("PHASE4 HAUL to-sink SKIPPED f=%d sink=%s (no position; hub gone)",
+        frame, tostring(route.to)))
+      haulProbe.stage = "to-sink"
+    end
+  end
+
+  -- Delivery verdict: completeHaul writes hubDelivered[team][route.to]
+  -- [route.resource] += route.amount, so the sink hub's stock must rise by
+  -- exactly the transferred amount. Polled rather than sampled once because the
+  -- gadget's arrival check runs on its own 30-frame scan cadence, so the exact
+  -- completion frame depends on where the route landed in that cadence.
+  if haulProbe and haulProbe.stage == "to-sink" then
+    local route = haulProbe.route
+    local before = haulProbe.before or 0
+    local after = haulHubStock(haulProbe.team, route.to, route.resource)
+    local summary = GG.MedievalLogistics.HaulSummary(haulProbe.team)
+    local delivered = summary and summary.delivered or 0
+    local settled = type(after) == "number" and after == before + route.amount and delivered >= 1
+    if settled or frame >= haulProbe.deadlineFrame then
+      local pass = settled
+      Spring.Echo(string.format("PHASE4 HAUL delivery-verdict %s f=%d before=%s after=%s (hub=%s kind=%s amount=%s delivered=%s)",
+        pass and "PASS" or "FAIL", frame, tostring(before), tostring(after),
+        tostring(route.to), tostring(route.resource), tostring(route.amount), tostring(delivered)))
+      haulProbe.stage = "done"
+    end
   end
 
   if frame % 90 == 0 and spawned then

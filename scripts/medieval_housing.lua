@@ -57,6 +57,10 @@ function M.unitConsumesPop(defName)
     medieval_men_at_arms = 1,
     medieval_crossbow = 1,
     medieval_knight = 2,
+    -- Civilian wagon: registered explicitly at 0 so the housing and recruitment
+    -- gadgets never charge it a population slot. 0 is truthy in Lua, so the
+    -- `popUnits[defName] or 0` lookup returns 0 rather than falling through.
+    medieval_cart = 0,
   }
   return popUnits[defName] or 0
 end
