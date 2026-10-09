@@ -9,6 +9,11 @@ local M = {
     medieval_archer = 2,
     medieval_cavalry = 3,
     medieval_catapult = 3,        -- Phase 4 Slice 1: siege crew eats like heavy cavalry
+    -- Upgraded (veteran) tiers: trained retinues cost more food than their
+    -- Phase 1 counterparts (infantry/archer 2 -> 3, cavalry 3 -> 4).
+    medieval_men_at_arms = 3,
+    medieval_crossbow = 3,
+    medieval_knight = 4,
   },
   COSTS = {
     medieval_infantry = { food = 30, wood = 20, stone = 10, iron = 5 },
@@ -16,6 +21,12 @@ local M = {
     medieval_cavalry = { food = 50, wood = 20, stone = 20, iron = 25 },
     -- Mirrors units/medieval_catapult.lua customparams resource_cost_*.
     medieval_catapult = { wood = 120, stone = 40, iron = 10 },
+    -- Mirrors units/medieval_men_at_arms.lua customparams resource_cost_*.
+    medieval_men_at_arms = { food = 45, wood = 25, stone = 15, iron = 15 },
+    -- Mirrors units/medieval_crossbow.lua customparams resource_cost_*.
+    medieval_crossbow = { food = 35, wood = 45, stone = 5, iron = 10 },
+    -- Mirrors units/medieval_knight.lua customparams resource_cost_*.
+    medieval_knight = { food = 70, wood = 25, stone = 25, iron = 40 },
   },
   -- Equipment gating: high-tier units need the matching gear in the team's
   -- equipment stock before they can be trained. Stock is published by the
@@ -24,6 +35,19 @@ local M = {
     medieval_cavalry = "sword",
     medieval_catapult = "sword",
     medieval_archer = "bow",
+    medieval_men_at_arms = "sword",
+    medieval_knight = "sword",
+    medieval_crossbow = "bow",
+  },
+
+  -- Tech gating: advanced units stay locked until their unlocking tech is
+  -- researched. Mirrors the `unlocks` field of the tech registry in
+  -- scripts/medieval_logistics.lua; duplicated here so this module stays
+  -- dependency-free.
+  TECH_PREREQ = {
+    medieval_men_at_arms = "veteran_infantry",
+    medieval_crossbow = "crossbow_tech",
+    medieval_knight = "chivalry",
   },
 }
 
@@ -75,6 +99,23 @@ function M.teamEquipmentStock(api, teamID)
   if type(team) == "table" then return team end
   -- Fallback: a flat { [resource] = amount } table shared by every team.
   return stock
+end
+
+-- Tech that must be researched before a unit can be trained, or nil when the
+-- unit is not tech-gated.
+function M.techPrereqFor(unitName)
+  if type(unitName) ~= "string" then return nil end
+  return M.TECH_PREREQ[unitName]
+end
+
+-- True when the unit's tech requirement is satisfied by an unlocked-tech table
+-- ({ [techID] = true }). Units without a requirement always pass; a gated unit
+-- with a missing/non-table unlocked set fails closed.
+function M.hasTech(unlocked, unitName)
+  local prereq = M.techPrereqFor(unitName)
+  if not prereq then return true end
+  if type(unlocked) ~= "table" then return false end
+  return unlocked[prereq] and true or false
 end
 
 -- Legacy Phase-2 flat-rate helper (1 food per military unit per tick).

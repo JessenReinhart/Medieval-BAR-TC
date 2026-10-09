@@ -447,10 +447,16 @@ function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, w
     return damage, 1.0
   end
   local outgoing = damage
-  local u = unlocked[attackerTeam]
-  if u and u.iron_swords and attackerDef.name == "medieval_infantry" then
-    local newDamage = logistics.scaledDamage(damage, 1.25)
-    echo("PHASE3 DAMAGE attacker=%d defender=%d base=%.1f scaled=%.1f", attackerID, unitID, damage, newDamage)
+  -- Tech damage bonuses: every researched tech that lists this attacker's def
+  -- in `damage_mult` contributes its factor, folded multiplicatively by
+  -- logistics.damageMultiplier. This covers iron_swords (+25% infantry) as well
+  -- as the military unlock techs (veteran_infantry, crossbow_tech, chivalry),
+  -- which each boost their base and advanced unit.
+  local techMult = logistics.damageMultiplier(unlocked[attackerTeam], attackerDef.name)
+  if techMult > 1.0 then
+    local newDamage = logistics.scaledDamage(damage, techMult)
+    echo("PHASE3 DAMAGE attacker=%d defender=%d base=%.1f tech_mult=%.2f scaled=%.1f",
+      attackerID, unitID, damage, techMult, newDamage)
     outgoing = newDamage
   end
   -- Supply bonus (Slice 7): a supplied attacker deals more damage. The value is
@@ -782,6 +788,31 @@ GG.MedievalLogistics = {
     return (unlocked[teamID] or {})[techID] == true
   end,
 
+  -- Alias used by the recruitment gate: the tech that unlocks a unit is
+  -- "unlocked" for a team exactly when it has been researched.
+  IsTechUnlocked = function(teamID, techID)
+    if type(techID) ~= "string" then return false end
+    return (unlocked[teamID] or {})[techID] == true
+  end,
+
+  -- Atomic tech unlock entry point, mirroring Research. Returns ok, reason.
+  UnlockTech = function(teamID, techID)
+    return researchTech(teamID, techID)
+  end,
+
+  -- The tech that gates a unit, or nil when the unit is not tech-gated.
+  TechUnlockPrereq = function(unitName)
+    return logistics.techUnlockPrereq(unitName)
+  end,
+
+  -- Whether a unit is trainable by this team from the tech standpoint alone.
+  -- Unknown/ungated units pass; gated units need their tech researched.
+  UnitTechUnlocked = function(teamID, unitName)
+    return logistics.isUnitUnlocked(unlocked[teamID], unitName)
+  end,
+
+  -- Base * researched-tech bonuses, folded multiplicatively. Supply is added by
+  -- the damage path (see UnitPreDamaged), not here.
   DamageMultiplier = function(teamID, unitName)
     return logistics.damageMultiplier(unlocked[teamID], unitName)
   end,
@@ -913,14 +944,16 @@ GG.MedievalLogistics = {
   -- Phase-4 Slice 3: equipment-gated recruitment. equipmentStock is published by
   -- gadget_production_chains.lua as equipmentStock[teamID][resource] = amount;
   -- this API only reads it. Recruitment eligibility stays owned by
-  -- GG.MedievalRecruitment.CanRecruit (food/wood/stone/iron + pop + equipment),
-  -- so the delegation below keeps a single source of truth and falls back to
-  -- the pure equipment rule when the recruitment gadget is not loaded.
+  -- GG.MedievalRecruitment.CanRecruit (food/wood/stone/iron + pop + equipment +
+  -- tech prereq), so the delegation below keeps a single source of truth and
+  -- falls back to the pure equipment + tech rules when the recruitment gadget
+  -- is not loaded.
   UnitCanRecruit = function(teamID, unitName)
     local recruitment = GG and GG.MedievalRecruitment
     if recruitment and recruitment.CanRecruit then
       return recruitment.CanRecruit(teamID, unitName) and true or false
     end
+    if not recruit.hasTech(unlocked[teamID], unitName) then return false end
     local stock = recruit.teamEquipmentStock(GG.MedievalLogistics, teamID)
     return recruit.hasEquipment(stock, unitName)
   end,

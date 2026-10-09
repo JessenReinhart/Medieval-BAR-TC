@@ -47,6 +47,34 @@ local M = {
       description = "+50% wall and tower hitpoints",
       health_mult = { medieval_wall = 1.5, medieval_tower = 1.5 },
     },
+    -- Military unlock techs. `unlocks` lists the unit defs the tech makes
+    -- trainable; `damage_mult` is the per-unit damage bonus, keyed by unit name
+    -- and folded multiplicatively by M.damageMultiplier. A tech may boost both
+    -- the base unit and the advanced unit it unlocks (veteran_infantry).
+    veteran_infantry = {
+      name = "Veteran Infantry",
+      cost = { iron = 50, wood = 50 },
+      prereq = nil,
+      description = "Unlocks Men-at-Arms; +15% melee damage for infantry and men-at-arms",
+      unlocks = { medieval_men_at_arms = true },
+      damage_mult = { medieval_infantry = 1.15, medieval_men_at_arms = 1.15 },
+    },
+    crossbow_tech = {
+      name = "Crossbow Technology",
+      cost = { wood = 60, iron = 40 },
+      prereq = nil,
+      description = "Unlocks Crossbowmen; +15% ranged damage for archers and crossbows",
+      unlocks = { medieval_crossbow = true },
+      damage_mult = { medieval_archer = 1.15, medieval_crossbow = 1.15 },
+    },
+    chivalry = {
+      name = "Chivalry",
+      cost = { food = 80, iron = 60 },
+      prereq = nil,
+      description = "Unlocks Knights; +20% damage for cavalry and knights",
+      unlocks = { medieval_knight = true },
+      damage_mult = { medieval_cavalry = 1.20, medieval_knight = 1.20 },
+    },
   },
 }
 
@@ -74,6 +102,29 @@ function M.canResearch(unlocked, techID, stock, economy)
     end
   end
   return true
+end
+
+-- Tech that makes a unit trainable, or nil when the unit is not tech-gated.
+-- Derived from the `unlocks` field on TECHS so the registry stays the single
+-- source of truth for which tech opens which unit.
+function M.techUnlockPrereq(unitName)
+  if type(unitName) ~= "string" then return nil end
+  for techID, t in pairs(M.TECHS) do
+    if type(t) == "table" and type(t.unlocks) == "table" and t.unlocks[unitName] then
+      return techID
+    end
+  end
+  return nil
+end
+
+-- Whether a unit may be trained given a team's unlocked-tech table. Units with
+-- no tech prereq always pass; a gated unit with no/nil unlocked table fails
+-- closed so an unpublished registry can never leak advanced units.
+function M.isUnitUnlocked(unlocked, unitName)
+  local prereq = M.techUnlockPrereq(unitName)
+  if not prereq then return true end
+  if type(unlocked) ~= "table" then return false end
+  return unlocked[prereq] and true or false
 end
 
 function M.applyUnlock(unlocked, techID)

@@ -72,6 +72,28 @@ local function equipmentBlocked(teamID, defName)
   return not recruit.hasEquipment(stock, defName)
 end
 
+-- Tech gate: advanced units stay locked until the tech that unlocks them is
+-- researched. The prerequisite is resolved through the logistics API
+-- (GG.MedievalLogistics.TechUnlockPrereq / IsTechUnlocked) when available and
+-- falls back to the pure registry in scripts/medieval_recruitment.lua.
+local function techBlocked(teamID, defName)
+  if not recruit or not recruit.techPrereqFor then return false end
+  local api = GG and GG.MedievalLogistics
+  local prereq = recruit.techPrereqFor(defName)
+  if api and type(api.TechUnlockPrereq) == "function" then
+    prereq = api.TechUnlockPrereq(defName) or prereq
+  end
+  if not prereq then return false end
+  if api and type(api.IsTechUnlocked) == "function" then
+    return not api.IsTechUnlocked(teamID, prereq)
+  end
+  if api and type(api.IsResearched) == "function" then
+    return not api.IsResearched(teamID, prereq)
+  end
+  -- No tech registry published: fail closed so advanced units cannot leak.
+  return true
+end
+
 local chargedUnits = {}
 -- Last team_<id>_starving marker published per team; nil until the first tick.
 local starvingState = {}
@@ -87,6 +109,7 @@ function gadget:AllowUnitCreation(unitDefID, builderID, builderTeam, x, y, z, fa
   if not def then return true end
 
   if popBlocked(builderTeam, internalName(unitDefID)) then return false end
+  if techBlocked(builderTeam, internalName(unitDefID)) then return false end
   if equipmentBlocked(builderTeam, internalName(unitDefID)) then return false end
 
   if not GG or not GG.MedievalEconomy then return true end
@@ -298,6 +321,7 @@ GG.MedievalRecruitment = {
     local def = UnitDefNames and UnitDefNames[defName]
     if not def then return false end
     if popBlocked(teamID, defName) then return false end
+    if techBlocked(teamID, defName) then return false end
     if equipmentBlocked(teamID, defName) then return false end
     local costs = unitCosts(def)
     if costs and GG and GG.MedievalEconomy and not GG.MedievalEconomy.CanAfford(teamID, costs) then

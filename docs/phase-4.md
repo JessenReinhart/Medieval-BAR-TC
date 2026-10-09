@@ -217,10 +217,75 @@ Slice 2 matrix verdicts (`siege-vs-wall PASS dealt=1353.5 mult=2.71`,
 `melee-vs-wall PASS ratio=0.56 matrix=0.25`), so the new stage breaks no earlier
 slice.
 
-### Slice 4 — Military Upgrades & Veteran Tiers
-- Tech-tree research unlocks advanced variants (crossbow, men-at-arms, knight).
-- Stats scale via existing `GG.MedievalLogistics` damage multipliers and new tech IDs.
-- Tests: unlock policy + damage stacking with supply bonus.
+### Slice 4 — Military Upgrades & Veteran Tiers (complete)
+- Three tech-tree techs in `scripts/medieval_logistics.lua` `M.TECHS`, each with a
+  cost, a `description`, an `unlocks` set and a `damage_mult` table:
+  - `veteran_infantry` (iron 50 + wood 50) — unlocks `medieval_men_at_arms`;
+    +15% damage for `medieval_infantry` and `medieval_men_at_arms`.
+  - `crossbow_tech` (wood 60 + iron 40) — unlocks `medieval_crossbow`;
+    +15% ranged damage for `medieval_archer` and `medieval_crossbow`.
+  - `chivalry` (food 80 + iron 60) — unlocks `medieval_knight`;
+    +20% damage for `medieval_cavalry` and `medieval_knight`.
+- Three upgraded unit defs, each declaring `customparams.tech_prereq` so the tech
+  gate is data-driven rather than hardcoded:
+  - `units/medieval_men_at_arms.lua` (Men-at-Arms, `tech_prereq = "veteran_infantry"`,
+    `equipment_needed = "sword"`).
+  - `units/medieval_crossbow.lua` (Crossbowman, `tech_prereq = "crossbow_tech"`,
+    `equipment_needed = "bow"`).
+  - `units/medieval_knight.lua` (Chivalric Knight, `tech_prereq = "chivalry"`,
+    `equipment_needed = "sword"`, `movementclass = "TANK3"`, reuses the base cavalry
+    OBJ/LUS since no upgraded-tier 0 A.D. asset exists).
+- Unlock and multiplier plumbing is shared, not per-unit:
+  `M.techUnlockPrereq` derives the gating tech from each tech's `unlocks` set,
+  `M.isUnitUnlocked` answers the tech clause, and `M.damageMultiplier` folds every
+  researched `damage_mult` entry multiplicatively. `GG.MedievalLogistics` exposes
+  `UnlockTech`, `TechUnlockPrereq`, `UnitTechUnlocked` and `DamageMultiplier` over
+  that registry, and `GG.MedievalRecruitment.CanRecruit` composes the tech clause
+  (`techBlocked`) with the pop, equipment and resource clauses.
+- The three upgraded tiers also carry Phase-3 upkeep entries in
+  `scripts/medieval_recruitment.lua` `UPKEEP` (men-at-arms 3, crossbow 3, knight 4)
+  and pop costs in `scripts/medieval_housing.lua`, so unlocking a tier costs food.
+- Tests: `tests/test_phase4_slice4.py` (63 tests; unitdef fields and `tech_prereq` wiring,
+  tech registry shape and prereq/unlock inversion, `UnlockTech` atomicity and
+  idempotency, damage-multiplier folding with supply bonus stacking, recruit-gate
+  composition, upkeep/pop integration).
+
+#### Slice 4 test count & probe evidence
+
+```
+python tests/check_lua_syntax.py   -> Checked 52 lua files; 0 errors found.
+python -m pytest tests -q          -> 441 passed
+```
+
+Headless probe (`tools/launch/run_phase2_slice4_probe.py`) verbatim verdicts:
+
+```
+[t=00:00:55.237084][f=0000920] PHASE4 UPGRADE setup f=920 team=0 knight=11 tech-prereq=chivalry sword=10 stage=armed
+[t=00:00:55.237187][f=0000920] PHASE4 UPGRADE tech-gate-baseline PASS f=920 knight-can-recruit=false sword-stock=10
+[t=00:00:56.231485][f=0000950] PHASE4 UPGRADE tech-unlock PASS f=950 chivalry-unlocked=true ok=true reason=nil
+[t=00:00:57.564775][f=0000990] PHASE4 UPGRADE recruit-gate-verdict PASS f=990 knight-can-recruit=true before=false tech=chivalry
+[t=00:00:58.935954][f=0001030] PHASE4 UPGRADE damage-mult-verdict PASS f=1030 mult=1.20000005 expect=1.20 unit=medieval_knight
+```
+
+The stage is ordered so each verdict is falsifiable on its own. The baseline
+(f=920) funds the team to food/wood/stone/iron 300 and reads sword stock 10 from
+the Slice 3 blacksmith, then samples the live gate
+(`GG.MedievalRecruitment.CanRecruit`) while chivalry is locked: the unit is
+refused, and because the equipment and resource clauses are both satisfied, the
+tech clause is the only one that can be responsible. `chivalry` is then researched
+through `GG.MedievalLogistics.UnlockTech(team, "chivalry")` — the same atomic
+entry point the UI uses, which charges food 80 + iron 60 through
+`GG.MedievalEconomy.Transact` — and `IsTechUnlocked` confirms the registry flipped.
+The f=990 sample re-reads the identical gate and must now allow the knight, so the
+before/after pair is a real state transition rather than two independent probes.
+The final verdict reads `DamageMultiplier(team, "medieval_knight")` and requires
+exactly 1.20, the `chivalry` entry; the knight has no other damage tech, so the
+folded value would drift off 1.20 if the registry over- or under-applied.
+
+Re-verified in the same run: all Slice 1 verdicts (f=360..570 PASS), both Slice 2
+matrix verdicts (`siege-vs-wall PASS`, `melee-vs-wall PASS`) and all Slice 3
+crafting verdicts (`sword-vs-verdict`, `bow-vs-verdict`, `recruit-gate-verdict`
+f=620..880 PASS), so the new stage breaks no earlier slice.
 
 ### Slice 5 — Transport & Hauler Units
 - `medieval_cart` with high carry capacity; road-dependent speed via Slice 6 (Phase 3)

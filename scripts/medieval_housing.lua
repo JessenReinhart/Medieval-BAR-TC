@@ -52,6 +52,11 @@ function M.unitConsumesPop(defName)
     medieval_archer = 1,
     medieval_cavalry = 1,
     medieval_catapult = 1,
+    -- Upgraded (veteran) tiers: the knight is a mounted noble retinue and eats
+    -- two population slots, the two foot tiers stay at one each.
+    medieval_men_at_arms = 1,
+    medieval_crossbow = 1,
+    medieval_knight = 2,
   }
   return popUnits[defName] or 0
 end

@@ -39,6 +39,9 @@ local dmatrixMeleeVerdictDone = false
 -- Phase 4 Slice 3 production-chain probe state (blacksmith/fletcher crafting and
 -- the equipment-gated recruit check).
 local craftProbe = nil
+-- Phase 4 Slice 4 military-upgrade probe state (chivalry tech gate -> knight
+-- recruit gate -> +20% knight damage multiplier).
+local upgradeProbe = nil
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -1317,6 +1320,123 @@ function gadget:GameFrame(frame)
     Spring.Echo(string.format("PHASE4 CRAFT recruit-gate-verdict %s f=%d before(sword=%s)=%s after(sword=%s)=%s unit=medieval_cavalry",
       pass and "PASS" or "FAIL", frame, tostring(craftProbe.sword0), tostring(craftProbe.highTier0),
       tostring(craftProbe.sword), tostring(allowed)))
+  end
+
+  -- Phase 4 Slice 4 military-upgrade probe. Stage 1 (f=920) records the tech-gate
+  -- baseline: the Chivalric Knight is equipment-gated on a sword (which the Slice 3
+  -- blacksmith has already stocked) and tech-gated on chivalry (not yet researched),
+  -- so the live gate must refuse it. Stage 2 (f=950) unlocks chivalry through the
+  -- real API, stage 3 (f=990) re-reads the same gate and stage 4 (f=1030) reads the
+  -- damage multiplier the logistics registry folds from the researched tech.
+  if frame >= 920 and spawned and not upgradeProbe then
+    local a = opposingTeams()
+    local knightDef = UnitDefNames and UnitDefNames["medieval_knight"]
+    local api = GG and GG.MedievalLogistics
+    if not a then
+      upgradeProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 UPGRADE SKIPPED no probe team")
+    elseif not knightDef then
+      upgradeProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 UPGRADE SKIPPED missing medieval_knight UnitDef")
+    elseif not (api and type(api.UnlockTech) == "function"
+        and type(api.IsTechUnlocked) == "function"
+        and type(api.DamageMultiplier) == "function") then
+      upgradeProbe = { stage = "skipped" }
+      Spring.Echo("PHASE4 UPGRADE SKIPPED missing MedievalLogistics tech API")
+    else
+      -- Fund every cost clause (knight: food 70/wood 25/stone 25/iron 40) so the
+      -- gate verdict can only be produced by the tech clause.
+      local econ = GG and GG.MedievalEconomy
+      if econ and type(econ.Deposit) == "function" then
+        econ.Deposit(a, "food", 300)
+        econ.Deposit(a, "wood", 300)
+        econ.Deposit(a, "stone", 300)
+        econ.Deposit(a, "iron", 300)
+      end
+      local sword = equipmentStockOf(a, "sword")
+      upgradeProbe = {
+        team = a, stage = "armed", baselineFrame = 920,
+        sword = sword, baseline = nil, unlocked = nil, allowed = nil, mult = nil,
+      }
+      if not (type(sword) == "number" and sword > 0) then
+        -- Slice 3 did not run: seed the equipment clause through the real crafting
+        -- path (a blacksmith in the isolated craft lane) and give it 40 frames
+        -- before the baseline sample.
+        local smithDef = UnitDefNames and UnitDefNames["medieval_blacksmith"]
+        if smithDef then
+          local sx, sz = 5440, 6000
+          local smith = Spring.CreateUnit(smithDef.id, sx, Spring.GetGroundHeight(sx, sz), sz, "south", a)
+          upgradeProbe.stage = "seeding"
+          upgradeProbe.baselineFrame = 960
+          Spring.Echo(string.format("PHASE4 UPGRADE setup seeding-sword-blacksmith f=%d blacksmith=%s",
+            frame, tostring(smith)))
+        end
+      end
+      Spring.Echo(string.format("PHASE4 UPGRADE setup f=%d team=%d knight=%s tech=chivalry sword=%s stage=%s",
+        frame, a, tostring(knightDef.id), tostring(upgradeProbe.sword), upgradeProbe.stage))
+    end
+  end
+
+  -- Baseline verdict: blocked while chivalry is locked, with sword stock present so
+  -- the equipment clause cannot be what refuses the unit.
+  if upgradeProbe and (upgradeProbe.stage == "armed" or upgradeProbe.stage == "seeding")
+      and frame >= upgradeProbe.baselineFrame then
+    local sword = equipmentStockOf(upgradeProbe.team, "sword")
+    upgradeProbe.sword = sword
+    local blocked = recruitGateAllows(upgradeProbe.team, "medieval_knight")
+    if upgradeProbe.stage == "seeding" and not (type(sword) == "number" and sword > 0)
+        and frame < 1000 then
+      -- The seeded blacksmith has not crafted yet; retry shortly instead of
+      -- publishing a verdict whose equipment clause was never satisfied.
+      upgradeProbe.baselineFrame = frame + 10
+    else
+      upgradeProbe.stage = "baseline"
+      upgradeProbe.baseline = blocked
+      upgradeProbe.unlockFrame = frame + 30
+      local armed = type(sword) == "number" and sword > 0
+      local pass = blocked == false and armed
+      Spring.Echo(string.format("PHASE4 UPGRADE tech-gate-baseline %s f=%d knight-can-recruit=%s sword-stock=%s",
+        pass and "PASS" or "FAIL", frame, tostring(blocked), tostring(sword)))
+    end
+  end
+
+  -- Tech unlock verdict: research chivalry for the probe team through the public
+  -- logistics API, then confirm the registry reports the tech as unlocked.
+  if upgradeProbe and upgradeProbe.stage == "baseline" and frame >= upgradeProbe.unlockFrame then
+    upgradeProbe.stage = "unlocked"
+    upgradeProbe.gateFrame = frame + 40
+    upgradeProbe.damageFrame = frame + 80
+    local api = GG.MedievalLogistics
+    local ok, reason = api.UnlockTech(upgradeProbe.team, "chivalry")
+    local isUnlocked = api.IsTechUnlocked(upgradeProbe.team, "chivalry") == true
+    upgradeProbe.unlocked = isUnlocked
+    local pass = isUnlocked
+    Spring.Echo(string.format("PHASE4 UPGRADE tech-unlock %s f=%d chivalry-unlocked=%s ok=%s reason=%s",
+      pass and "PASS" or "FAIL", frame, tostring(isUnlocked), tostring(ok), tostring(reason)))
+  end
+
+  -- Recruit-gate verdict: the same live gate must now allow the knight. Both samples
+  -- come from GG.MedievalRecruitment.CanRecruit, not from a re-derived rule.
+  if upgradeProbe and upgradeProbe.stage == "unlocked" and frame >= upgradeProbe.gateFrame then
+    upgradeProbe.stage = "gated"
+    local allowed = recruitGateAllows(upgradeProbe.team, "medieval_knight")
+    upgradeProbe.allowed = allowed
+    local pass = upgradeProbe.baseline == false and allowed == true
+    Spring.Echo(string.format("PHASE4 UPGRADE recruit-gate-verdict %s f=%d knight-can-recruit=%s before=%s tech=chivalry",
+      pass and "PASS" or "FAIL", frame, tostring(allowed), tostring(upgradeProbe.baseline)))
+  end
+
+  -- Damage-multiplier verdict: chivalry's damage_mult entry for medieval_knight is
+  -- 1.20, and the knight carries no other researched damage tech, so the folded
+  -- multiplier must be exactly 1.20.
+  if upgradeProbe and upgradeProbe.stage == "gated" and frame >= upgradeProbe.damageFrame then
+    upgradeProbe.stage = "done"
+    local api = GG.MedievalLogistics
+    local mult = api.DamageMultiplier(upgradeProbe.team, "medieval_knight")
+    upgradeProbe.mult = mult
+    local pass = type(mult) == "number" and math.abs(mult - 1.20) < 0.001
+    Spring.Echo(string.format("PHASE4 UPGRADE damage-mult-verdict %s f=%d mult=%s expect=1.20 unit=medieval_knight",
+      pass and "PASS" or "FAIL", frame, tostring(mult)))
   end
 
   if frame % 90 == 0 and spawned then

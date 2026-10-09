@@ -105,7 +105,9 @@ class TestLogisticsGadgetWiring(unittest.TestCase):
         self.assertIn("PHASE3 DAMAGE", self.src)
 
     def test_scaled_damage_wired(self):
-        self.assertIn("logistics.scaledDamage(damage, 1.25)", self.src)
+        # Tech damage is folded from the registry multiplier (which covers
+        # iron_swords 1.25 plus the military unlock techs) instead of a literal.
+        self.assertIn("logistics.scaledDamage(damage, techMult)", self.src)
 
 
 if __name__ == "__main__":
