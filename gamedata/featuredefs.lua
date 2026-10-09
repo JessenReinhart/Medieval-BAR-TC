@@ -37,7 +37,10 @@ return {
     description = "Medieval Dirt Road",
     blocking = false,
     crushable = false,
-    destructable = false,
+    -- Roads must be destructable so combat can cut supply by removing a road
+    -- (Slice 7 "restoration after road removal"); `destructable = false` also
+    -- made Spring.DestroyFeature a no-op in the probe.
+    destructable = true,
     footprintX = 2,
     footprintZ = 2,
     object = "0ad/medieval_infantry.obj",

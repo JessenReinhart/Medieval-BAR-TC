@@ -40,6 +40,7 @@ GATHER_GADGET_PATH = ROOT / "luarules" / "gadgets" / "gadget_medieval_gather.lua
 # UnitDef ids used by the gadget harness stubs
 VILLAGER, INFANTRY, GRANARY = 1, 2, 3
 TOWN_CENTER, WALL = 4, 5
+OUTSIDER = 6
 ROAD_FDEF = 7
 
 SUPPLY_RADIUS = 96.0
@@ -199,14 +200,20 @@ class TestSlice7PureSupplyPolicy(unittest.TestCase):
     # -- isSupplyEligibleUnitDef ------------------------------------------
 
     def test_supply_eligibility_accepts_non_buildings(self):
+        # Engine-shaped mobile defs: every mobile unit sets `canMove = true`;
+        # this TC's source defs never set `isBuilding`, so eligibility is keyed
+        # on mobility rather than the engine's unreliable derived `isBuilding`.
         t = self.lua.table
-        self.assertTrue(self.m.isSupplyEligibleUnitDef(t(name="medieval_infantry")))
-        self.assertTrue(self.m.isSupplyEligibleUnitDef(t(name="medieval_villager", canBuild=True)))
-        self.assertTrue(self.m.isSupplyEligibleUnitDef(t(name="medieval_cart", isBuilding=False)))
+        self.assertTrue(self.m.isSupplyEligibleUnitDef(t(name="medieval_infantry", canMove=True)))
+        self.assertTrue(self.m.isSupplyEligibleUnitDef(t(name="medieval_villager", canMove=True, canBuild=True)))
+        self.assertTrue(self.m.isSupplyEligibleUnitDef(t(name="medieval_cart", canMove=True, isBuilding=False)))
 
     def test_supply_eligibility_rejects_buildings_and_nil(self):
         t = self.lua.table
-        self.assertFalse(self.m.isSupplyEligibleUnitDef(t(name="medieval_wall", isBuilding=True)))
+        # Engine-shaped building: `canMove = false` (the reliable discriminator).
+        self.assertFalse(self.m.isSupplyEligibleUnitDef(t(name="medieval_wall", canMove=False)))
+        # A def that merely claims `isBuilding = true` but is not mobile stays excluded.
+        self.assertFalse(self.m.isSupplyEligibleUnitDef(t(name="medieval_wall", canMove=False, isBuilding=True)))
         self.assertFalse(self.m.isSupplyEligibleUnitDef(None))
 
     # -- pathing cost policy ----------------------------------------------
@@ -316,6 +323,7 @@ class TestSlice7GadgetSupply(unittest.TestCase):
         g.GRANARY = GRANARY
         g.TOWN_CENTER = TOWN_CENTER
         g.WALL = WALL
+        g.OUTSIDER = OUTSIDER
         g.ROAD_FDEF = ROAD_FDEF
         self.lua.execute(r"""
         -- Engine stubs ---------------------------------------------------------
@@ -339,11 +347,16 @@ class TestSlice7GadgetSupply(unittest.TestCase):
 
         FeatureDefs = { [ROAD_FDEF] = { name = "medieval_road" } }
         UnitDefs = {
+          -- Engine-shaped defs: mobile units set `canMove = true`; every static
+          -- def in this TC sets `canMove = false` and NONE sets `isBuilding`
+          -- (the engine derives `isBuilding` as false/nil for them). A foreign
+          -- def (`barbarian_raider`) represents the "non-medieval attacker".
           [VILLAGER]    = { name = "medieval_villager", canMove = true, speed = 28 },
           [INFANTRY]    = { name = "medieval_infantry", canMove = true, speed = 32 },
-          [GRANARY]     = { name = "medieval_granary", isBuilding = true, customParams = { dropoff = true } },
-          [TOWN_CENTER] = { name = "medieval_town_center", isBuilding = true, customParams = { dropoff = true } },
-          [WALL]        = { name = "medieval_wall", isBuilding = true },
+          [GRANARY]     = { name = "medieval_granary", canMove = false, customParams = { dropoff = true } },
+          [TOWN_CENTER] = { name = "medieval_town_center", canMove = false, customParams = { dropoff = true } },
+          [WALL]        = { name = "medieval_wall", canMove = false },
+          [OUTSIDER]    = { name = "barbarian_raider", canMove = true, speed = 30 },
         }
         UnitDefNames = {}
         for id, def in pairs(UnitDefs) do UnitDefNames[def.name] = { id = id } end
@@ -538,6 +551,19 @@ class TestSlice7GadgetSupply(unittest.TestCase):
         self._g("FireInitialize")()
         self.assertIsNotNone(self._state(301))
 
+    def test_initialize_resets_previous_supply_state(self):
+        # Re-running Initialize must discard all cached supply tables
+        # (supply, supplyUnits, supplyBonusMovers). Simulate a tracked unit that
+        # leaves the engine roster with no UnitDestroyed callin, then re-init:
+        # the stale entry must be gone rather than surviving the reset.
+        self._finish_unit(311, INFANTRY, 0, 1000.0, 1000.0)
+        self.assertIsNotNone(self._state(311))
+        self._g("RemoveUnit")(311)          # gone from Spring.GetAllUnits
+        self._g("FireInitialize")()
+        self.assertIsNone(self._state(311))
+        self.assertAlmostEqual(self._api().SupplyBonus(311), 0.0)
+        self.assertFalse(self._api().InSupply(311))
+
     # -- supply computation ------------------------------------------------
 
     def test_unit_near_connected_endpoint_gains_supply(self):
@@ -637,6 +663,26 @@ class TestSlice7GadgetSupply(unittest.TestCase):
         self.assertEqual(int(summary["outOfSupply"]), 1)
         self.assertEqual(int(summary["endpoints"]), 1)
 
+    # -- exposed API wrappers ----------------------------------------------
+
+    def test_supply_endpoint_count_at_wrapper(self):
+        self._place_road(0, 1000, 1000)
+        self._finish_building(851, GRANARY, 0, 1000.0, 1000.0)
+        # A second endpoint with no road within BUILD_LINK_RADIUS must not count.
+        self._finish_building(852, GRANARY, 0, 5000.0, 5000.0)
+        self.assertEqual(int(self._api().SupplyEndpointCountAt(0, 1000.0, 1000.0)), 1)
+        self.assertEqual(int(self._api().SupplyEndpointCountAt(0, 1200.0, 1000.0)), 0)  # outside SUPPLY_RADIUS
+        self.assertEqual(int(self._api().SupplyEndpointCountAt(1, 1000.0, 1000.0)), 0)  # team isolated
+
+    def test_path_cost_wrappers(self):
+        api = self._api()
+        self.assertAlmostEqual(api.PathCostMultiplier(True, True), 0.75)
+        self.assertAlmostEqual(api.PathCostMultiplier(True, False), 0.75 * 1.5)
+        self.assertAlmostEqual(api.PathCost(100.0, False, False), 150.0)
+        self.assertEqual(api.PathCost(-1.0, True, True), self.lua.eval("math.huge"))
+        self.assertTrue(api.RoadRoutePreferred(100.0, 75.0))
+        self.assertFalse(api.RoadRoutePreferred(100.0, 100.0))
+
     # -- damage application ------------------------------------------------
 
     def test_supplied_attacker_deals_more_damage(self):
@@ -658,10 +704,18 @@ class TestSlice7GadgetSupply(unittest.TestCase):
     def test_non_medieval_attacker_is_untouched(self):
         self._place_road(0, 1000, 1000)
         self._finish_building(921, GRANARY, 0, 1000.0, 1000.0)
-        self._finish_unit(922, INFANTRY, 0, 1050.0, 1000.0)
+        self._finish_unit(922, INFANTRY, 1, 2000.0, 2000.0)   # defender (enemy)
+        # A REAL attacker whose def is not a medieval_* def: the callin must
+        # return the damage unchanged (it must not apply tech or supply).
+        self._finish_unit(923, OUTSIDER, 0, 1050.0, 1000.0)
         self._g("FireGameFrame")(15)
-        # attacker nil -> the callin must return the damage unchanged.
-        damage, _ = self._g("FireUnitPreDamaged")(922, 100.0, None)
+        damage, _ = self._g("FireUnitPreDamaged")(922, 100.0, 923)
+        self.assertAlmostEqual(damage, 100.0)
+
+    def test_missing_attacker_returns_damage_unchanged(self):
+        # No attacker id/def id at all: the callin must pass damage through.
+        self._finish_unit(924, INFANTRY, 0, 1000.0, 1000.0)
+        damage, _ = self._g("FireUnitPreDamaged")(924, 100.0, None)
         self.assertAlmostEqual(damage, 100.0)
 
     def test_tech_and_supply_bonuses_stack_multiplicatively(self):

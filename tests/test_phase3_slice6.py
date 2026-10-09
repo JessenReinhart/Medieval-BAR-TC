@@ -98,7 +98,8 @@ class TestSlice6PureSpeedPolicy(unittest.TestCase):
 
     def test_ineligible_building_def(self):
         t = self.lua.table
-        building = t(canMove=True, isBuilding=True)
+        # Engine-shaped building: `canMove = false` (the reliable discriminator).
+        building = t(canMove=False, isBuilding=True)
         self.assertFalse(self.m.isEligibleSpeedUnitDef(building))
 
     def test_ineligible_immobile_and_nil_defs(self):
@@ -343,14 +344,25 @@ class TestSlice6GadgetSpeedEnforcement(unittest.TestCase):
         self.assertEqual(st["source"], "none")
 
     def test_buildings_and_ineligible_defs_are_never_tracked(self):
-        # Building: canMove false. Speedless mover: no numeric base. Immobile
-        # def with a speed, and a mobile building: both ineligible.
+        # Building (canMove false), a speedless mover (no numeric base), and an
+        # immobile def that still carries a speed (factory yard speed) are all
+        # ineligible. The engine does NOT use `isBuilding` to decide this: see
+        # the follow-on test for the legacy-field shape.
         self._finish_unit(201, GRANARY, 0, 1000.0, 1000.0)
         self._finish_unit(202, MOVER_NO_SPEED, 0, 1000.0, 1000.0)
         self._finish_unit(203, STATIC_MOVER, 0, 1000.0, 1000.0)
-        self._finish_unit(204, MOBILE_BUILDING, 0, 1000.0, 1000.0)
-        for unit_id in (201, 202, 203, 204):
+        for unit_id in (201, 202, 203):
             self.assertIsNone(self._state(unit_id), unit_id)
+
+    def test_mobile_def_with_legacy_is_building_field_stays_eligible(self):
+        # Mobility (canMove) decides eligibility; a synthetic def that claims
+        # `isBuilding = true` while `canMove = true` is still a mobile unit and
+        # must be tracked. This documents the field choice against engine truth
+        # (real TC buildings all set `canMove = false` and none set isBuilding).
+        self._finish_unit(204, MOBILE_BUILDING, 0, 1000.0, 1000.0)
+        st = self._state(204)
+        self.assertIsNotNone(st)
+        self.assertAlmostEqual(st["base"], 20.0)
 
     def test_initialize_tracks_existing_finished_movers(self):
         self._g("PlaceUnit")(301, VILLAGER, 1000.0, 1000.0, 0, 1)

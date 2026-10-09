@@ -197,6 +197,7 @@ function gadget:Initialize()
   pendingRoadBuilds = {}
   speedMovers = {}
   supply = {}
+  supplyUnits = {}
   supplyBonusMovers = {}
   for _, teamID in ipairs(Spring.GetTeamList() or {}) do
     initTeam(teamID)

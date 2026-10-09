@@ -200,10 +200,13 @@ function M.targetSpeed(baseSpeed, onRoad)
   return baseSpeed * M.speedMultiplier(onRoad == true)
 end
 
--- A unit def is speed-eligible when it can move and is not a building.
--- Villagers are builders (canBuild) but stay eligible: only isBuilding excludes.
+-- A unit def is speed-eligible when it can move. Mobility is the reliable
+-- engine discriminator for this total conversion: every source building def
+-- sets `canMove = false` (and none sets `isBuilding`), so the engine's derived
+-- `isBuilding` field is false/nil for static structures and cannot be used to
+-- exclude them. Villagers are builders (canBuild) but stay eligible.
 function M.isEligibleSpeedUnitDef(def)
-  return def ~= nil and def.canMove == true and def.isBuilding ~= true
+  return def ~= nil and def.canMove == true
 end
 
 -- ---------------------------------------------------------------------------
@@ -256,11 +259,13 @@ function M.supplyBonus(count, perEndpoint, maxBonus)
   return bonus
 end
 
--- A unit def receives supply when it is a unit, not a building. Static
--- fortifications are supplied by the same endpoints but gain nothing from a
--- damage/speed bonus, so they are not tracked.
+-- A unit def receives supply when it is a mobile unit. Buildings in this
+-- total conversion are identified by `canMove == false` (every static def sets
+-- it; the engine exposes `isBuilding` as false/nil for them, so that field
+-- cannot exclude buildings). Static fortifications are supplied by the same
+-- endpoints but gain nothing from a damage/speed bonus, so they are not tracked.
 function M.isSupplyEligibleUnitDef(def)
-  return def ~= nil and def.isBuilding ~= true
+  return def ~= nil and def.canMove == true
 end
 
 -- Full supply state for a point: contributing endpoint count, raw additive

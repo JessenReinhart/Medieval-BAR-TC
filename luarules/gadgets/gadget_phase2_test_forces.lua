@@ -26,6 +26,9 @@ local roadProbe = nil
 local buildingProbe = nil
 -- Slice 6 road movement-speed probe state.
 local speedProbe = nil
+-- Slice 7 supply + road-aware pathing probe state.
+local supplyProbe = nil
+local gatherProbe = nil
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -781,6 +784,207 @@ function gadget:GameFrame(frame)
     Spring.Echo(string.format("PHASE3 PROBE road-speed summary f=%d team=%d A=%d B=%d velocity=%s",
       frame, speedProbe.team, speedProbe.a, speedProbe.b, velNote))
     speedProbe = nil
+  end
+
+  -- -------------------------------------------------------------------------
+  -- Phase 3 probe slice 7: supply bonuses, road-aware pathing, and damage.
+  -- Uses an isolated region (6000, 6000) so settlement/probe state from earlier
+  -- slices cannot bias these verdicts. Target SELECTION is the only thing the
+  -- gather gadget implements (no waypoint routing); the probe therefore asserts
+  -- the selected target id, not any routed path.
+  -- -------------------------------------------------------------------------
+
+  -- Def-shape evidence: print the actual engine fields the eligibility check
+  -- keys on, proving buildings must be discriminated by `canMove`, not the
+  -- unreliable derived `isBuilding`.
+  if frame == 320 and spawned then
+    local gd = UnitDefNames and UnitDefNames["medieval_granary"] and UnitDefs and UnitDefs[UnitDefNames["medieval_granary"].id]
+    local idf = UnitDefNames and UnitDefNames["medieval_infantry"] and UnitDefs and UnitDefs[UnitDefNames["medieval_infantry"].id]
+    if gd and idf then
+      Spring.Echo(string.format("PHASE3 PROBE supply def-shape granary.isBuilding=%s granary.canMove=%s granary.speed=%s | infantry.isBuilding=%s infantry.canMove=%s infantry.speed=%s",
+        tostring(gd.isBuilding), tostring(gd.canMove), tostring(gd.speed),
+        tostring(idf.isBuilding), tostring(idf.canMove), tostring(idf.speed)))
+    end
+  end
+
+  if frame == 322 and spawned then
+    local api = GG and GG.MedievalLogistics
+    local a, b = opposingTeams()
+    local granaryDef = UnitDefNames and UnitDefNames["medieval_granary"]
+    local infDef = UnitDefNames and UnitDefNames["medieval_infantry"]
+    local roadDef = FeatureDefNames and FeatureDefNames["medieval_road"]
+    if not (api and type(api.SupplyStateAt) == "function" and type(api.SupplyEndpointCountAt) == "function"
+        and type(api.SupplyBonus) == "function" and type(api.Research) == "function"
+        and type(api.IsResearched) == "function" and type(api.DamageMultiplier) == "function") then
+      Spring.Echo("PHASE3 PROBE supply SKIPPED missing MedievalLogistics supply API")
+    elseif not (a and b) then
+      Spring.Echo("PHASE3 PROBE supply SKIPPED no opposing teams")
+    elseif not (granaryDef and infDef and roadDef) then
+      Spring.Echo("PHASE3 PROBE supply SKIPPED missing granary/infantry/road defs")
+    else
+      local ry = Spring.GetGroundHeight(6000, 6000)
+      local road = Spring.CreateFeature(roadDef.id, 6000, ry, 6000, 0, a)
+      local gy = Spring.GetGroundHeight(6000, 6000)
+      local endpoint = Spring.CreateUnit(granaryDef.id, 6000, gy, 6000, "south", a)
+      local sy = Spring.GetGroundHeight(6050, 6000)
+      local supplied = Spring.CreateUnit(infDef.id, 6050, sy, 6000, "south", a)
+      local iy = Spring.GetGroundHeight(6060, 6000)
+      local isolated = Spring.CreateUnit(infDef.id, 6060, iy, 6000, "south", b)
+      local fy = Spring.GetGroundHeight(6400, 6400)
+      local far = Spring.CreateUnit(infDef.id, 6400, fy, 6400, "south", a)
+      if road and endpoint and supplied and isolated and far then
+        supplyProbe = { team = a, enemy = b, road = road, endpoint = endpoint,
+          supplied = supplied, isolated = isolated, far = far, stage = "setup" }
+        Spring.Echo(string.format("PHASE3 PROBE supply setup f=%d team=%d enemy=%d road=%s endpoint=%s supplied=%s isolated=%s far=%s",
+          frame, a, b, tostring(road), tostring(endpoint), tostring(supplied), tostring(isolated), tostring(far)))
+      else
+        Spring.Echo(string.format("PHASE3 PROBE supply SPAWN-FAILED f=%d road=%s endpoint=%s supplied=%s isolated=%s far=%s",
+          frame, tostring(road), tostring(endpoint), tostring(supplied), tostring(isolated), tostring(far)))
+      end
+    end
+  end
+
+  if supplyProbe and supplyProbe.stage == "setup" and frame >= 326 then
+    local api = GG.MedievalLogistics
+    local a, b = supplyProbe.team, supplyProbe.enemy
+    local suppliedSt = api.SupplyStateAt(a, 6050, 6000)
+    local unsuppliedSt = api.SupplyStateAt(a, 6400, 6400)
+    local isolatedSt = api.SupplyStateAt(b, 6060, 6000)
+    local endCount = api.SupplyEndpointCountAt(a, 6050, 6000)
+    local passSupplied = suppliedSt ~= nil and suppliedSt.inSupply == true and suppliedSt.count >= 1
+    local passUnsupplied = unsuppliedSt ~= nil and unsuppliedSt.inSupply ~= true
+    local passIsolated = isolatedSt ~= nil and isolatedSt.inSupply ~= true
+    local passCount = type(endCount) == "number" and endCount >= 1
+    Spring.Echo(string.format("PHASE3 PROBE supply supplied-verdict f=%d %s (inSupply=%s count=%s endpointCount=%s)",
+      frame, passSupplied and "PASS" or "FAIL", tostring(suppliedSt and suppliedSt.inSupply),
+      tostring(suppliedSt and suppliedSt.count), tostring(endCount)))
+    Spring.Echo(string.format("PHASE3 PROBE supply unsupplied-verdict f=%d %s (far inSupply=%s)",
+      frame, passUnsupplied and "PASS" or "FAIL", tostring(unsuppliedSt and unsuppliedSt.inSupply)))
+    Spring.Echo(string.format("PHASE3 PROBE supply team-isolation-verdict f=%d %s (enemy inSupply=%s)",
+      frame, passIsolated and "PASS" or "FAIL", tostring(isolatedSt and isolatedSt.inSupply)))
+    Spring.Echo(string.format("PHASE3 PROBE supply endpoint-count-verdict f=%d %s (count=%s expect>=1)",
+      frame, passCount and "PASS" or "FAIL", tostring(endCount)))
+    supplyProbe.stage = "state-sampled"
+  end
+
+  if supplyProbe and supplyProbe.stage == "state-sampled" and frame >= 330 then
+    local api = GG.MedievalLogistics
+    local econ = GG and GG.MedievalEconomy
+    local a = supplyProbe.team
+    if econ and type(econ.Deposit) == "function" then
+      econ.Deposit(a, "wood", 200)
+      econ.Deposit(a, "iron", 300)
+    end
+    local ok = api.Research(a, "iron_swords")
+    local researched = api.IsResearched(a, "iron_swords") == true
+    local techMult = api.DamageMultiplier(a, "medieval_infantry")
+    local bonus = api.SupplyBonus(supplyProbe.supplied)
+    local passTech = researched and type(techMult) == "number" and math.abs(techMult - 1.25) < 0.001
+    local passBonus = type(bonus) == "number" and bonus > 0
+    Spring.Echo(string.format("PHASE3 PROBE supply damage-tech verdict f=%d %s (ok=%s researched=%s mult=%.3f)",
+      frame, passTech and "PASS" or "FAIL", tostring(ok), tostring(researched), tostring(techMult)))
+    Spring.Echo(string.format("PHASE3 PROBE supply damage-bonus verdict f=%d %s (SupplyBonus=%.3f expect>0)",
+      frame, passBonus and "PASS" or "FAIL", tostring(bonus)))
+    local combined = (type(techMult) == "number" and techMult or 1.0) * (1.0 + (type(bonus) == "number" and bonus or 0))
+    Spring.Echo(string.format("PHASE3 PROBE supply damage-stack f=%d team=%d tech=%.3f supply=%.3f combined=%.4f (UnitPreDamaged multiplies these two)",
+      frame, a, type(techMult) == "number" and techMult or -1, type(bonus) == "number" and bonus or -1, combined))
+    -- Real attack (soft evidence only): supplied + iron_swords attacker ordered
+    -- onto an enemy target; the logistics gadget then logs the actual scaled
+    -- damage lines ("PHASE3 DAMAGE"/"PHASE3 SUPPLY damage") in UnitPreDamaged.
+    local tx, tz = 6080, 6000
+    local ty = Spring.GetGroundHeight(tx, tz)
+    local target = Spring.CreateUnit(UnitDefNames["medieval_infantry"].id, tx, ty, tz, "south", supplyProbe.enemy)
+    if target and type(Spring.GiveOrderToUnit) == "function" and CMD and CMD.ATTACK then
+      pcall(Spring.GiveOrderToUnit, supplyProbe.supplied, CMD.ATTACK, { target }, {})
+      Spring.Echo(string.format("PHASE3 PROBE supply damage-attack-order f=%d attacker=%s target=%s (real UnitPreDamaged path; end-to-end evidence in PHASE3 DAMAGE/SUPPLY damage lines)",
+        frame, tostring(supplyProbe.supplied), tostring(target)))
+    else
+      Spring.Echo(string.format("PHASE3 PROBE supply damage-attack-order SKIPPED f=%d target=%s attackAPI=%s", frame, tostring(target), tostring(type(Spring.GiveOrderToUnit))))
+    end
+    supplyProbe.target = target
+    supplyProbe.techMult = techMult
+    supplyProbe.supplyBonusValue = bonus
+    supplyProbe.stage = "damage-sampled"
+  end
+
+  -- Restoration: destroy the endpoint's only road, then confirm supply drops
+  -- on a LATER frame. Spring defers FeatureDestroyed (and the logistics graph
+  -- update) past the current GameFrame, so the state is re-read a few frames
+  -- after the DestroyFeature call.
+  if supplyProbe and supplyProbe.stage == "damage-sampled" and frame >= 350 then
+    local removed = false
+    if type(Spring.DestroyFeature) == "function" then
+      local ok = pcall(Spring.DestroyFeature, supplyProbe.road)
+      removed = ok
+    end
+    Spring.Echo(string.format("PHASE3 PROBE supply road-removal f=%d road=%s team=%d destroyPcall=%s", frame, tostring(supplyProbe.road), supplyProbe.team, tostring(removed)))
+    supplyProbe.stage = "road-removed"
+  end
+
+  if supplyProbe and supplyProbe.stage == "road-removed" and frame >= 354 then
+    local api = GG.MedievalLogistics
+    local a = supplyProbe.team
+    local after = api.SupplyStateAt(a, 6050, 6000)
+    local pass = after ~= nil and after.inSupply ~= true
+    Spring.Echo(string.format("PHASE3 PROBE supply restoration-verdict f=%d %s (after road removal inSupply=%s count=%s)",
+      frame, pass and "PASS" or "FAIL", tostring(after and after.inSupply), tostring(after and after.count)))
+    supplyProbe = nil
+  end
+
+  if frame == 340 and spawned then
+    local gather = GG and GG.MedievalGather
+    local api = GG and GG.MedievalLogistics
+    local a = opposingTeams()
+    local vilDef = UnitDefNames and UnitDefNames["medieval_villager"]
+    local treeDef = FeatureDefNames and FeatureDefNames["medieval_tree"]
+    local roadDef = FeatureDefNames and FeatureDefNames["medieval_road"]
+    if not (gather and type(gather.AssignGather) == "function" and type(gather.GetJob) == "function") then
+      Spring.Echo("PHASE3 PROBE gather SKIPPED missing MedievalGather.AssignGather/GetJob")
+    elseif not (api and type(api.PointOnRoadNetwork) == "function") then
+      Spring.Echo("PHASE3 PROBE gather SKIPPED missing MedievalLogistics.PointOnRoadNetwork")
+    elseif not (a and vilDef and treeDef and roadDef) then
+      Spring.Echo("PHASE3 PROBE gather SKIPPED missing villager/tree/road defs")
+    else
+      -- Safe map region between the two settlements (confirmed unit-safe by the
+      -- Slice 5 building probe at (4200,4200) and Slice 6 at (4300,4200)),
+      -- laid out so a road-connected tree at 150 elmos beats a nearer (110 elmo)
+      -- off-network tree: 150 < 110 * PATH_COST_UNSUPPLIED (165).
+      -- Fund the villager's recruitment food cost first: gadget_medieval_recruitment
+      -- tears the unit down in UnitFinished when the team cannot afford it.
+      local econ = GG and GG.MedievalEconomy
+      if econ and type(econ.Deposit) == "function" then
+        econ.Deposit(a, "food", 150)
+      end
+      local ry = Spring.GetGroundHeight(4000, 4950)
+      local road = Spring.CreateFeature(roadDef.id, 4000, ry, 4950, 0, a)
+      local n1y = Spring.GetGroundHeight(4110, 4800)
+      local near = Spring.CreateFeature(treeDef.id, 4110, n1y, 4800, 0)
+      local n2y = Spring.GetGroundHeight(4000, 4950)
+      local far = Spring.CreateFeature(treeDef.id, 4000, n2y, 4950, 0)
+      local vy = Spring.GetGroundHeight(4000, 4800)
+      local villager = Spring.CreateUnit(vilDef.id, 4000, vy, 4800, "south", a)
+      if road and near and far and villager then
+        gatherProbe = { team = a, villager = villager, near = near, far = far, road = road }
+        Spring.Echo(string.format("PHASE3 PROBE gather setup f=%d team=%d villager=%s near=%s far=%s road=%s",
+          frame, a, tostring(villager), tostring(near), tostring(far), tostring(road)))
+      else
+        Spring.Echo(string.format("PHASE3 PROBE gather SPAWN-FAILED f=%d road=%s near=%s far=%s villager=%s",
+          frame, tostring(road), tostring(near), tostring(far), tostring(villager)))
+      end
+    end
+  end
+
+  if gatherProbe and frame >= 345 then
+    local gather = GG.MedievalGather
+    local remNear = gather.NodeRemaining(gatherProbe.near)
+    local remFar = gather.NodeRemaining(gatherProbe.far)
+    local ok = gather.AssignGather(gatherProbe.villager, nil)
+    local job = gather.GetJob(gatherProbe.villager)
+    local picked = job and job.nodeID
+    local pass = ok == true and picked == gatherProbe.far
+    Spring.Echo(string.format("PHASE3 PROBE gather selection-verdict f=%d %s (ok=%s picked=%s expect_far=%s near=%s remNear=%s remFar=%s; target selection only, no waypoint routing)",
+      frame, pass and "PASS" or "FAIL", tostring(ok), tostring(picked), tostring(gatherProbe.far), tostring(gatherProbe.near), tostring(remNear), tostring(remFar)))
+    gatherProbe = nil
   end
 
   if frame % 90 == 0 and spawned then

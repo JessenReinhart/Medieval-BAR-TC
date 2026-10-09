@@ -1,12 +1,13 @@
-# Handoff: Medieval-BAR-TC (Phase 3 Slice 7 supply bonuses + road-aware pathing landed; engine probe evidence still open)
+# Handoff: Medieval-BAR-TC (Phase 3 Slice 7 supply bonuses + road-aware pathing landed; engine probe evidence verified)
 
-Date: 2026-10-08
+Date: 2026-10-09
 Branch: `medieval-total-conversion`
-Last work: Phase 3 Slice 7 — supply bonuses and road-aware pathing. Finished non-building units
-within `SUPPLY_RADIUS = 96.0` of a **road-connected** supply endpoint gain an additive bonus
-(`0.10` per endpoint, capped at `0.50`), published per unit as rules params and applied to outgoing
-damage in `UnitPreDamaged`. Villager node/drop-off selection is now cost-based and prefers
-road-connected targets. Full suite: 297 passing.
+Last work: Phase 3 Slice 7 — supply bonuses and road-aware pathing. Finished mobile units
+(`def.canMove == true`) within `SUPPLY_RADIUS = 96.0` of a **road-connected** supply endpoint gain
+an additive bonus (`0.10` per endpoint, capped at `0.50`), published per unit as rules params and
+applied to outgoing damage in `UnitPreDamaged`. Villager node/drop-off selection is cost-based and
+prefers road-connected targets. Live-engine probe evidence landed (all verdicts `PASS`). Full suite:
+302 passing.
 
 Previous work: Phase 3 Slice 6 — road movement-speed enforcement. Eligible finished ground units on
 a same-team road run at `base * ROAD_SPEED_MULT (1.5)` through
@@ -17,7 +18,7 @@ Scope note: Slice 4 places roads by command, not by buildoptions. Roads are FEAT
 (`gamedata/featuredefs.lua`, `medieval_road`), so unitdef buildoptions cannot place them and
 `AllowUnitCreation` does not fire for them. Villager build options remain wall/tower only.
 Movement-speed enforcement (Slice 6), supply bonuses, and pathing integration (Slice 7) are
-implemented; Slice 7 still lacks live-engine probe evidence.
+implemented and verified (see `docs/slice7-probe-evidence.md`).
 
 ## What Works Right Now
 
@@ -95,7 +96,9 @@ implemented; Slice 7 still lacks live-engine probe evidence.
 11. **Phase 3 Slice 7 (Supply Bonuses and Road-Aware Pathing)** — implemented:
     - Pure supply policy in `scripts/medieval_logistics.lua`: `SUPPLY_RADIUS = 96.0`,
       `SUPPLY_BONUS_PER_ENDPOINT = 0.10`, `SUPPLY_BONUS_MAX = 0.50`, `supplyEndpointCount`,
-      `supplyBonus`, `supplyState`, `isInSupply`, `isSupplyEligibleUnitDef`. Only endpoints that are
+      `supplyBonus`, `supplyState`, `isInSupply`, `isSupplyEligibleUnitDef` (mobile units only:
+      `def.canMove == true`; the engine's derived `isBuilding` is false/nil for static buildings).
+      Only endpoints that are
       themselves road-connected (`BUILD_LINK_RADIUS = 64.0`) project supply, so road destruction
       drops the bonus immediately.
     - Gadget: finished non-building units tracked per team; a shared 15-frame scan recomputes state
@@ -112,13 +115,13 @@ implemented; Slice 7 still lacks live-engine probe evidence.
     - Fixed a latent `local`-ordering bug: `nearestDropoff` referenced `dropoffs`/`allowsResource`
       before their declarations, so both were nil globals and every delivery selection raised on
       `pairs(nil)`. The declarations are now hoisted above the function.
-    - 57 Slice 7 tests (`tests/test_phase3_slice7.py`); full suite: **297 passed**; Lua syntax clean
-      (44 files, 0 errors). Engine probe evidence still pending.
+    - 61 Slice 7 tests (`tests/test_phase3_slice7.py`); full suite: **302 passed**; Lua syntax clean
+      (44 files, 0 errors). Live-engine probe evidence landed: see `docs/slice7-probe-evidence.md`.
 
 ## How to Run the Slice 6 and Slice 7 Tests and Probe
 
 ```pwsh
-# Slice 7 (Phase 3) focused tests (57: pure supply policy + pathing cost + damage scaling + gather pathing)
+# Slice 7 (Phase 3) focused tests (61: pure supply policy + pathing cost + damage scaling + gather pathing)
 python -m pytest tests/test_phase3_slice7.py -q
 
 # Slice 6 (Phase 3) focused tests (26: pure speed policy + gadget tracking/apply/lifecycle)
@@ -127,7 +130,7 @@ python -m pytest tests/test_phase3_slice6.py -q
 # Slice 5 (Phase 3) focused tests (17)
 python -m pytest tests/test_phase3_slice5.py -q
 
-# Full suite (297 passing as of Slice 7)
+# Full suite (302 passing as of Slice 7)
 python -m pytest tests -q
 
 # Lua syntax check (44 files, expect 0 errors)
@@ -273,7 +276,8 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
 - **Pure policy** (`scripts/medieval_logistics.lua`, no engine calls): `speedMultiplier(onRoad)`
   (`ROAD_SPEED_MULT` or `1.0`), `targetSpeed(baseSpeed, onRoad)` (returns `baseSpeed` untouched when
   it is not a number or `<= 0`; otherwise `baseSpeed * speedMultiplier(onRoad == true)`), and
-  `isEligibleSpeedUnitDef(def)` (`def ~= nil and def.canMove == true and def.isBuilding ~= true`;
+  `isEligibleSpeedUnitDef(def)` (`def ~= nil and def.canMove == true`; every static def sets
+  `canMove = false` and the engine reports `isBuilding = false/nil` for them;
   villagers are builders but stay eligible).
 - **Tracking**: `speedMovers[teamID][unitID] = { base, onRoad, applied, source }`. Eligibility via
   the pure `isEligibleSpeedUnitDef`; units with an unknown base are never tracked (`reason=no_base`).
@@ -308,13 +312,13 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
   fallback. The velocity check is soft by design (`PASS(soft)`); the hard verdicts are the state and
   restore checks. No Lua errors occur inside the probe window.
 
-## What's Next: Phase 3 engine verification (pending)
+## What's Next: Phase 3 engine verification (done for Slice 7)
 
-- Supply bonuses and road-aware pathing are **implemented** (Slice 7) and proven by the Lua test
-  harness (`tests/test_phase3_slice7.py`, 57 tests; full suite 297). Unlike Slice 6, Slice 7 has
-  **no live-engine probe evidence**: no run has yet confirmed `medieval_supply_bonus` publication,
-  the `UnitPreDamaged` scaling, or gather drop-off selection inside Recoil. Add probe coverage
-  before claiming Phase 3 complete.
+- Supply bonuses and road-aware pathing are **implemented and verified in Recoil** (Slice 7). The Lua
+  harness now passes 61 focused tests (full suite 302), and the headless probe emits deterministic
+  `PASS` verdicts for supplied/unsupplied/team-isolated state, `iron_swords`+supply damage stacking
+  (real melee hit: `base=135.4 -> scaled=186.1 = 135.4 * 1.25 * 1.10`), road-removal restoration, and
+  cost-based gather target selection. See `docs/slice7-probe-evidence.md`.
 
 ## How to Resume in a New Session
 
