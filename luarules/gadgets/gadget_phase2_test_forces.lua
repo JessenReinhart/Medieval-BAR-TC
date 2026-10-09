@@ -31,6 +31,11 @@ local supplyProbe = nil
 local gatherProbe = nil
 -- Slice 8 (Phase 4 Slice 1) siege catapult probe state.
 local siegeProbe = nil
+-- Phase 4 Slice 2 damage-matrix probe state (siege 3x + melee 0.25x vs wall).
+local dmatrixMeleeProbe = nil
+local dmatrixSiegeDone = false
+local dmatrixMeleeSpawned = false
+local dmatrixMeleeVerdictDone = false
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -202,6 +207,12 @@ local function siegeLusParam(unitID, name)
   if not ok then return nil end
   return value
 end
+
+-- Phase 4 Slice 2 raw weapon base damage, documented in gamedata/weapondefs.lua
+-- (catapult 500, sword 150). These are the "baseline" values the damage matrix
+-- multiplies: siege x3.0 vs fortification, melee x0.25 vs fortification.
+local CATAPULT_BASE_DAMAGE = 500
+local SWORD_BASE_DAMAGE = 150
 
 function gadget:GameFrame(frame)
   if frame == 32 and #assignmentPending > 0 and GG and GG.MedievalGather then
@@ -1115,6 +1126,76 @@ function gadget:GameFrame(frame)
     Spring.Echo(string.format("PHASE4 PROBE catapult damage-verdict f=%d %s (dealt=%.1f expect>0 hp0=%s hp=%s)",
       frame, dealt > 0 and "PASS" or "FAIL", dealt, tostring(siegeProbe.hp0), tostring(hp)))
     siegeProbe.stage = "done"
+  end
+
+  -- ============ Phase 4 Slice 2: damage-type matrix (siege 3x, melee 0.25x) ============
+  -- Siege: reuse Slice 1's catapult hit on its wall (siegeProbe). Sample at f=470,
+  -- after the first rock lands (~f=386) and before the second launches (~f=511), so
+  -- exactly one 3x hit is measured (2500 -> ~1150). dealt >= 2.2x base proves 3x,
+  -- not the 1x a non-matrix engine would apply.
+  if siegeProbe and not dmatrixSiegeDone and frame >= 470 then
+    dmatrixSiegeDone = true
+    local hp = siegeTargetHealth(siegeProbe.target)
+    local dealt = 0
+    if type(siegeProbe.hp0) == "number" and type(hp) == "number" then
+      dealt = siegeProbe.hp0 - hp
+    end
+    local api = GG and GG.MedievalLogistics
+    local apiMult = (api and type(api.DamageTypeMultiplier) == "function")
+      and api.DamageTypeMultiplier("siege", "fortification") or 0
+    local base = CATAPULT_BASE_DAMAGE
+    local pass = (dealt >= 2.2 * base) and math.abs(apiMult - 3.0) < 0.001
+    Spring.Echo(string.format("PHASE4 DMATRIX siege-vs-wall %s f=%d dealt=%.1f base=%.1f mult=%.2f matrix=%.2f hp0=%s hp=%s",
+      pass and "PASS" or "FAIL", frame, dealt, base, dealt / base, apiMult,
+      tostring(siegeProbe.hp0), tostring(hp)))
+  end
+
+  -- Melee: spawn a fresh enemy wall in the proven z=5200 lane (cast of Slice 1's
+  -- wall, outside the catapult's 550 range) plus an adjacent infantry (melee),
+  -- then sample ~2 sword swings so dealt (~75) stays below the raw base 150.
+  if not dmatrixMeleeSpawned and frame == 480 and spawned then
+    dmatrixMeleeSpawned = true
+    local a, b = opposingTeams()
+    local infDef = UnitDefNames and UnitDefNames["medieval_infantry"]
+    local wallDef = UnitDefNames and UnitDefNames["medieval_wall"]
+    if not (a and b and infDef and wallDef) then
+      Spring.Echo("PHASE4 DMATRIX melee SKIPPED missing infantry/wall UnitDef or teams")
+    else
+      local wx, wz = 5850, 5200
+      local ix, iz = 5880, 5200
+      local wy = Spring.GetGroundHeight(wx, wz)
+      local iy = Spring.GetGroundHeight(ix, iz)
+      local wall = Spring.CreateUnit(wallDef.id, wx, wy, wz, "south", b)
+      local inf = Spring.CreateUnit(infDef.id, ix, iy, iz, "south", a)
+      if not (wall and inf) then
+        Spring.Echo(string.format("PHASE4 DMATRIX melee SPAWN-FAILED f=%d inf=%s wall=%s", frame, tostring(inf), tostring(wall)))
+      else
+        if type(Spring.GiveOrderToUnit) == "function" and CMD and CMD.ATTACK then
+          pcall(Spring.GiveOrderToUnit, inf, CMD.ATTACK, { wall }, {})
+        end
+        dmatrixMeleeProbe = { attacker = inf, target = wall, hp0 = siegeTargetHealth(wall) }
+        Spring.Echo(string.format("PHASE4 DMATRIX melee-setup f=%d infantry=%s wall=%s hp0=%s",
+          frame, tostring(inf), tostring(wall), tostring(dmatrixMeleeProbe.hp0)))
+      end
+    end
+  end
+
+  -- Melee verdict (f=540): reduced damage vs the sword's base 150.
+  if dmatrixMeleeProbe and not dmatrixMeleeVerdictDone and frame >= 540 then
+    dmatrixMeleeVerdictDone = true
+    local hp = siegeTargetHealth(dmatrixMeleeProbe.target)
+    local dealt = 0
+    if type(dmatrixMeleeProbe.hp0) == "number" and type(hp) == "number" then
+      dealt = dmatrixMeleeProbe.hp0 - hp
+    end
+    local api = GG and GG.MedievalLogistics
+    local apiMult = (api and type(api.DamageTypeMultiplier) == "function")
+      and api.DamageTypeMultiplier("melee", "fortification") or 0
+    local base = SWORD_BASE_DAMAGE
+    local pass = (dealt > 0) and (dealt < base) and math.abs(apiMult - 0.25) < 0.001
+    Spring.Echo(string.format("PHASE4 DMATRIX melee-vs-wall %s f=%d dealt=%.1f base=%.1f ratio=%.2f matrix=%.2f hp0=%s hp=%s",
+      pass and "PASS" or "FAIL", frame, dealt, base, dealt / base, apiMult,
+      tostring(dmatrixMeleeProbe.hp0), tostring(hp)))
   end
 
   if frame % 90 == 0 and spawned then

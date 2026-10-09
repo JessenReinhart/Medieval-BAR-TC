@@ -23,6 +23,7 @@ return {
       model_author = "Medieval-BAR-TC",
       resource_cost_wood = 10,
       resource_cost_stone = 40,
+      armor_class = "fortification",
     },
   },
 }

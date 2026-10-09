@@ -112,11 +112,53 @@ movementclass agreement, weapon table, weapondef range/reload/ballistics/damage/
 LUS compile and call-in exports, dead-zone enforcement, rules-param contract, art asset
 and manifest provenance, economy/upkeep/pop integration, license safety).
 
-### Slice 2 — Damage Types & Fortification Destruction
-- Damage-type matrix: `siege` vs `fortification` (walls/towers take heavy siege damage,
-  resist normal melee); melee vs standard units unchanged.
-- Walls/towers become meaningfully destructible by siege; block pathing as today.
-- Tests: damage matrix policy + gadget pre-damage scaling.
+### Slice 2 — Damage Types & Fortification Destruction (complete)
+- New pure-Lua module `scripts/medieval_damage_types.lua`: a weapon-class x
+  armor-class multiplier matrix. Weapon classes `siege` (catapult), `melee`
+  (sword/lance), `ranged` (longbow); armor classes `fortification`
+  (wall/tower), `building` (non-fort static buildings), `standard` (everything
+  else). Starting values: siege->fortification 3.0, siege->building 1.5,
+  siege->standard 1.0, melee->fortification 0.25, ranged->fortification 0.25,
+  melee/ranged->building 1.0, melee/ranged->standard 1.0. Exports
+  `classForUnitDef`, `classForFeatureDef`, `multiplier`.
+- Datadef tags: `gamedata/weapondefs.lua` adds `customparams.damage_class` to
+  catapult (siege), sword/lance (melee), longbow (ranged);
+  `units/medieval_wall.lua` and `units/medieval_tower.lua` add
+  `customparams.armor_class = "fortification"` (everything else defaults to
+  standard). No costs/stats otherwise changed.
+- `gadget_medieval_logistics.lua`: `UnitPreDamaged` applies the matrix after the
+  existing tech->supply scaling (base * tech * supply * matrix), emits a
+  deterministic `PHASE4 DMATRIX attacker=.. target=.. base=.. final=.. class=..->..`
+  line, and exposes `GG.MedievalLogistics.DamageTypeMultiplier(weaponClass,
+  armorClass)`. Walls/towers are UNITS (not features), so the unit path covers
+  them and no `FeaturePreDamaged` hook was added (the gadget has none).
+- Probe: `gadget_phase2_test_forces.lua` reuses Slice 1's catapult hit for the
+  siege 3x verdict (f=470) and attacks a fresh wall with an infantry for the
+  melee 0.25x verdict (f=480 setup / f=540 verdict), both reporting
+  `PHASE4 DMATRIX *-vs-wall PASS/FAIL`.
+
+#### Slice 2 test count & probe evidence
+
+```
+python tests/check_lua_syntax.py   -> Checked 47 lua files; 0 errors found.
+python -m pytest tests -q          -> 348 passed
+```
+
+Headless probe (`tools/launch/run_phase2_slice2_probe.py`) verbatim verdicts:
+
+```
+[t=00:00:20.746825][f=0000470] PHASE4 DMATRIX siege-vs-wall PASS f=470 dealt=1353.5 base=500.0 mult=2.71 matrix=3.00 hp0=2500 hp=1146.46667
+[t=00:00:23.083342][f=0000540] PHASE4 DMATRIX melee-vs-wall PASS f=540 dealt=84.6 base=150.0 ratio=0.56 matrix=0.25 hp0=2500 hp=2415.44897
+```
+
+The gadget's own per-hit echo confirms the 3.0x and 0.25x multipliers exactly
+(`base` is the post-tech/supply value, `final = base * matrix`), e.g.
+`class=siege->fortification base=451.2 final=1353.5` and
+`class=melee->fortification base=168.8 final=42.2`.
+
+`tests/test_phase4_slice2.py` contributes 18 tests (matrix completeness and exact
+values, classForUnitDef/FeatureDef, datadef tags, `DamageTypeMultiplier` API, and
+UnitPreDamaged wiring including tech*1.25 * supply*1.10 * matrix*0.25 stacking).
 
 ### Slice 3 — Production Chains: Blacksmith & Fletcher
 - `medieval_blacksmith` (exists as a unitdef shell; add crafting behavior) converts

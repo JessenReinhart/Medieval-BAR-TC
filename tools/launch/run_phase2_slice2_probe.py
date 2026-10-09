@@ -25,10 +25,14 @@ def run_probe():
     infolog = RUNTIME / "infolog.txt"
     if infolog.exists():
         text = infolog.read_text(encoding="utf-8", errors="replace")
-        # Filter relevant phase probe lines (Phase 2 recruitment, Phase 3, Phase 4).
-        relevant = [l for l in text.splitlines() if "PHASE2 PROBE" in l or "PHASE3 PROBE" in l or "PHASE4 PROBE" in l]
-        for line in relevant[:80]:
+        # Filter relevant phase probe lines (Phase 2 recruitment, Phase 3, Phase 4
+        # probe verdicts and the Phase 4 damage-matrix evidence).
+        relevant = [l for l in text.splitlines()
+                    if "PHASE2 PROBE" in l or "PHASE3 PROBE" in l
+                    or "PHASE4 PROBE" in l or "PHASE4 DMATRIX" in l]
+        for line in relevant:
             print(line)
+        print(f"[{len(relevant)} relevant probe lines]")
     else:
         print("No infolog generated")
 

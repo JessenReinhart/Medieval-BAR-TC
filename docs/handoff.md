@@ -1,15 +1,24 @@
-# Handoff: Medieval-BAR-TC (Phase 4 Slice 1 siege catapult landed; engine probe evidence verified)
+# Handoff: Medieval-BAR-TC (Phase 4 Slice 2 damage types & fortification destruction landed; engine probe evidence verified)
 
 Date: 2026-10-09
 Branch: `medieval-total-conversion`
-Last work: Phase 4 Slice 1 — siege warfare core. New `medieval_catapult` unit built from the 0 A.D.
-Hellenic lithobolos (982 verts / 556 tris, `objects3d/0ad/medieval_catapult.obj` +
-`unittextures/0ad/medieval_catapult.dds`), a slow heavy `catapult` weapon def (range 550,
-reloadtime 5.0, velocity 350, damage 500, AoE 48), a LUS with a 120-elmo aim dead zone, and a
-headless probe stage (frames 360-570) reporting six deterministic `PASS` verdicts. Full suite:
-330 passing.
+Last work: Phase 4 Slice 2 — damage-type matrix & fortification destruction, on top of Slice 1's
+catapult. New pure-Lua `scripts/medieval_damage_types.lua` maps weapon class (siege/melee/ranged)
+against armor class (fortification/building/standard): siege x3.0 vs fortification, siege x1.5 vs
+non-fort buildings, melee/ranged x0.25 vs fortification, 1.0 elsewhere. `gamedata/weapondefs.lua`
+tags `damage_class`; `units/medieval_wall.lua` + `units/medieval_tower.lua` tag
+`armor_class = "fortification"`. `gadget_medieval_logistics.lua` applies the matrix in
+`UnitPreDamaged` after tech->supply scaling (`base * tech * supply * matrix`), echoes
+`PHASE4 DMATRIX ...`, and exposes `GG.MedievalLogistics.DamageTypeMultiplier`. Walls/towers are
+UNITS, so no feature damage hook was added. Headless probe reports both Slice 2 verdicts `PASS`.
+Full suite: 348 passing.
 
-Previous work: Phase 3 Slice 7 — supply bonuses and road-aware pathing. Finished mobile units
+Previous work: Phase 4 Slice 1 — siege warfare core. New `medieval_catapult` unit built from the
+0 A.D. Hellenic lithobolos (982 verts / 556 tris), a slow heavy `catapult` weapon def (range 550,
+reloadtime 5.0, velocity 350, damage 500, AoE 48), a LUS with a 120-elmo aim dead zone, and a
+headless probe stage (frames 360-570) reporting six deterministic `PASS` verdicts.
+
+Earlier work: Phase 3 Slice 7 — supply bonuses and road-aware pathing. Finished mobile units
 (`def.canMove == true`) within `SUPPLY_RADIUS = 96.0` of a **road-connected** supply endpoint gain
 an additive bonus (`0.10` per endpoint, capped at `0.50`), published per unit as rules params and
 applied to outgoing damage in `UnitPreDamaged`. Villager node/drop-off selection is cost-based and
@@ -342,16 +351,19 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
   fallback. The velocity check is soft by design (`PASS(soft)`); the hard verdicts are the state and
   restore checks. No Lua errors occur inside the probe window.
 
-## What's Next: Phase 4 Slice 2 (Damage Types & Fortification Destruction)
+## What's Next: Phase 4 Slice 3 (Production Chains: Blacksmith & Fletcher)
 
-- Phase 4 Slice 1 (siege warfare core) is **implemented and verified in Recoil**: 28 focused tests
-  (full suite 330), Lua syntax clean (46 files, 0 errors), and six deterministic `PASS` verdicts from
-  the headless probe at frames 360-570. See `docs/phase-4.md`.
-- Slice 2 adds a `siege` vs `fortification` damage-type matrix so walls and towers take heavy siege
-  damage while resisting normal melee, without changing melee-vs-standard-unit behavior.
-- Probe note for Slice 2: `medieval_catapult` has a 5.0 s reload (150 frames) and the engine applies
-  a full initial reload at creation, so a spawned catapult's first shot lands ~142 frames later.
-  Budget probe windows accordingly, or pre-charge the reload.
+- Phase 4 Slice 2 (damage types & fortification destruction) is **implemented and verified in
+  Recoil**: 18 new tests (`tests/test_phase4_slice2.py`; full suite 348), Lua syntax clean (47
+  files, 0 errors), and two deterministic `PASS` verdicts from the headless probe:
+  `PHASE4 DMATRIX siege-vs-wall PASS` (dealt=1353.5, matrix=3.00) and
+  `PHASE4 DMATRIX melee-vs-wall PASS` (dealt=84.6, matrix=0.25). See `docs/phase-4.md`.
+- Slice 3 adds production chains: `medieval_blacksmith` converts Iron → weapon equipment and
+  `medieval_fletcher` converts Wood → bow equipment, gating high-tier recruitment on equipment
+  stock (not just food/pop).
+- Probe note for Slice 3+ (carried forward): `medieval_catapult` has a 5.0 s reload (150 frames)
+  and the engine applies a full initial reload at creation, so a spawned catapult's first shot
+  lands ~142 frames later. Budget slow-weapon probe windows accordingly.
 
 ## How to Resume in a New Session
 
@@ -360,13 +372,13 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
 git status
 python -m pytest tests -q
 
-# 2. Phase 4 Slice 1 focused tests
-python -m pytest tests/test_phase4_slice1.py -q
+# 2. Phase 4 focused tests
+python -m pytest tests/test_phase4_slice1.py tests/test_phase4_slice2.py -q
 
 # 3. Run the headless probe and inspect Phase 3 / Phase 4 output
 python tools/launch/run_phase2_slice2_probe.py
 Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE3"
-Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE4"
+Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE4 DMATRIX"
 
 # 4. Review roadmap
 cat docs/phase-4.md

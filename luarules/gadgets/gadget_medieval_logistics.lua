@@ -13,6 +13,7 @@ if not gadgetHandler:IsSyncedCode() then return end
 
 local logistics = VFS.Include("scripts/medieval_logistics.lua")
 local roadGraph = VFS.Include("scripts/medieval_road_graph.lua")
+local damageTypes = VFS.Include("scripts/medieval_damage_types.lua")
 
 local DEBUG_LOG = true
 
@@ -414,6 +415,28 @@ function gadget:UnitDestroyed(unitID, unitDefID, teamID, attackerID, attackerDef
   removeSupplyMover(unitID)
 end
 
+-- Damage-type matrix (Phase 4 Slice 2): read the attacker weapon's `damage_class`
+-- customparam (tagged in gamedata/weapondefs.lua) and the defender unit's
+-- `armor_class` customparam (tagged on wall/tower). Both are case-insensitive so
+-- the same reader works whether the engine exposes `customParams` or the source
+-- `customparams` spelling. Unknown ids/classes fall back to nil/"standard" so the
+-- matrix never hard-fails an unknown attacker or defender.
+local function weaponDamageClass(weaponDefID)
+  if not (WeaponDefs and weaponDefID) then return nil end
+  local wd = WeaponDefs[weaponDefID]
+  if not wd then return nil end
+  local cp = wd.customParams or wd.customparams
+  return cp and cp.damage_class
+end
+
+local function unitArmorClass(unitDefID)
+  local def = UnitDefs and UnitDefs[unitDefID]
+  if not def then return "standard" end
+  local cp = def.customParams or def.customparams
+  if cp and cp.armor_class then return cp.armor_class end
+  return damageTypes.classForUnitDef(def.name)
+end
+
 function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
   if not attackerID or not attackerDefID then
     return damage, 1.0
@@ -434,12 +457,23 @@ function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, w
   -- the damage path; the two bonuses stack multiplicatively.
   local supplyBonus = supplyBonusOf(attackerID)
   if supplyBonus > 0 then
-    local supplied = logistics.scaledDamage(outgoing, 1.0 + supplyBonus)
+    outgoing = logistics.scaledDamage(outgoing, 1.0 + supplyBonus)
     echo("PHASE3 SUPPLY damage attacker=%d defender=%d base=%.1f bonus=%.2f scaled=%.1f",
-      attackerID, unitID, damage, supplyBonus, supplied)
-    return supplied, 1.0
+      attackerID, unitID, damage, supplyBonus, outgoing)
   end
-  return outgoing, 1.0
+  -- Damage-type matrix (Phase 4 Slice 2): applied after tech and supply so the
+  -- three scale multiplicatively (base * tech * supply * matrix). A nil weapon
+  -- class yields a 1.0 matrix no-op, preserving pre-matrix behavior.
+  local weaponClass = weaponDamageClass(weaponDefID)
+  local armorClass = unitArmorClass(unitDefID)
+  local matrixMult = damageTypes.multiplier(weaponClass, armorClass)
+  local finalDamage = logistics.scaledDamage(outgoing, matrixMult)
+  local attackerName = attackerDef and attackerDef.name
+  local targetName = (UnitDefs and UnitDefs[unitDefID]) and UnitDefs[unitDefID].name
+  echo("PHASE4 DMATRIX attacker=%s target=%s base=%.1f final=%.1f class=%s->%s",
+    tostring(attackerName), tostring(targetName), outgoing, finalDamage,
+    tostring(weaponClass or "?"), tostring(armorClass or "?"))
+  return finalDamage, 1.0
 end
 
 function gadget:AllowCommand(unitID, unitDefID, teamID, cmdID, params, opts)
@@ -742,6 +776,10 @@ GG.MedievalLogistics = {
 
   HealthMultiplier = function(teamID, unitName)
     return logistics.healthMultiplier(unlocked[teamID], unitName)
+  end,
+
+  DamageTypeMultiplier = function(weaponClass, armorClass)
+    return damageTypes.multiplier(weaponClass, armorClass)
   end,
 
   RoadNetworkSummary = function(teamID)

@@ -20,6 +20,9 @@ return {
     craterBoost = 0,
     craterMult = 0,
     waterWeapon = true,
+    customparams = {
+      damage_class = "melee",
+    },
   },
   longbow = {
     name = "Longbow",
@@ -35,6 +38,9 @@ return {
     weaponVelocity = 400,
     myGravity = 0.5,
     heightBoostFactor = 1.2,
+    customparams = {
+      damage_class = "ranged",
+    },
   },
   lance = {
     name = "Heavy Lance",
@@ -49,6 +55,9 @@ return {
     craterBoost = 0,
     craterMult = 0,
     waterWeapon = true,
+    customparams = {
+      damage_class = "melee",
+    },
   },
   -- Phase 4 Slice 1 siege engine: slow, heavy, ballistic, with a dead zone
   -- (minRange) so the catapult cannot defend itself at melee distance.
@@ -88,5 +97,8 @@ return {
     noSelfDamage = true,
     craterBoost = 0,
     craterMult = 0,
+    customparams = {
+      damage_class = "siege",
+    },
   },
 }
