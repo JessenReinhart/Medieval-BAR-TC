@@ -61,6 +61,17 @@ local function popBlocked(teamID, defName)
   return not housing.canSupport(cur, cap, 1)
 end
 
+-- Equipment gate: high-tier units need gear in the team's equipment stock,
+-- published by gadget_production_chains.lua as GG.MedievalLogistics.equipmentStock.
+-- A missing stock table blocks every unit that carries a requirement.
+local function equipmentBlocked(teamID, defName)
+  if not recruit or not recruit.equipmentFor then return false end
+  if not recruit.equipmentFor(defName) then return false end
+  local api = GG and GG.MedievalLogistics
+  local stock = recruit.teamEquipmentStock and recruit.teamEquipmentStock(api, teamID) or nil
+  return not recruit.hasEquipment(stock, defName)
+end
+
 local chargedUnits = {}
 -- Last team_<id>_starving marker published per team; nil until the first tick.
 local starvingState = {}
@@ -76,6 +87,7 @@ function gadget:AllowUnitCreation(unitDefID, builderID, builderTeam, x, y, z, fa
   if not def then return true end
 
   if popBlocked(builderTeam, internalName(unitDefID)) then return false end
+  if equipmentBlocked(builderTeam, internalName(unitDefID)) then return false end
 
   if not GG or not GG.MedievalEconomy then return true end
   local costs = unitCosts(def)
@@ -111,6 +123,10 @@ function gadget:UnitFromFactory(unitID, unitDefID, unitTeam, factID, factDefID, 
   if chargedUnits[unitID] then return end
   local name = internalName(unitDefID)
   if popBlocked(unitTeam, name) then
+    Spring.DestroyUnit(unitID, true, true)
+    return
+  end
+  if equipmentBlocked(unitTeam, name) then
     Spring.DestroyUnit(unitID, true, true)
     return
   end
@@ -282,6 +298,7 @@ GG.MedievalRecruitment = {
     local def = UnitDefNames and UnitDefNames[defName]
     if not def then return false end
     if popBlocked(teamID, defName) then return false end
+    if equipmentBlocked(teamID, defName) then return false end
     local costs = unitCosts(def)
     if costs and GG and GG.MedievalEconomy and not GG.MedievalEconomy.CanAfford(teamID, costs) then
       return false

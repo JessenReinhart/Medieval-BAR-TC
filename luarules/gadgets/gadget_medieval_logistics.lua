@@ -14,6 +14,7 @@ if not gadgetHandler:IsSyncedCode() then return end
 local logistics = VFS.Include("scripts/medieval_logistics.lua")
 local roadGraph = VFS.Include("scripts/medieval_road_graph.lua")
 local damageTypes = VFS.Include("scripts/medieval_damage_types.lua")
+local recruit = VFS.Include("scripts/medieval_recruitment.lua")
 
 local DEBUG_LOG = true
 
@@ -709,7 +710,18 @@ supplyBonusOf = function(unitID)
 end
 
 GG = GG or {}
+-- gadget_production_chains.lua publishes equipmentStock[teamID][resource]; the
+-- table literal below replaces GG.MedievalLogistics wholesale, so carry any
+-- stock published before this gadget loaded (gadget load order is not
+-- guaranteed) across the reassignment.
+local priorEquipmentStock = nil
+if type(GG.MedievalLogistics) == "table" and type(GG.MedievalLogistics.equipmentStock) == "table" then
+  priorEquipmentStock = GG.MedievalLogistics.equipmentStock
+end
 GG.MedievalLogistics = {
+  -- Team equipment stock, seeded empty when production chains has not run yet.
+  equipmentStock = priorEquipmentStock or {},
+
   GetSpeedMultiplier = function(teamID, unitID)
     local u = Spring and Spring.GetUnitPosition and Spring.GetUnitPosition(unitID)
     if not u then return 1.0 end
@@ -896,5 +908,20 @@ GG.MedievalLogistics = {
 
   RoadRoutePreferred = function(openCost, roadCost)
     return logistics.roadRoutePreferred(openCost, roadCost)
+  end,
+
+  -- Phase-4 Slice 3: equipment-gated recruitment. equipmentStock is published by
+  -- gadget_production_chains.lua as equipmentStock[teamID][resource] = amount;
+  -- this API only reads it. Recruitment eligibility stays owned by
+  -- GG.MedievalRecruitment.CanRecruit (food/wood/stone/iron + pop + equipment),
+  -- so the delegation below keeps a single source of truth and falls back to
+  -- the pure equipment rule when the recruitment gadget is not loaded.
+  UnitCanRecruit = function(teamID, unitName)
+    local recruitment = GG and GG.MedievalRecruitment
+    if recruitment and recruitment.CanRecruit then
+      return recruitment.CanRecruit(teamID, unitName) and true or false
+    end
+    local stock = recruit.teamEquipmentStock(GG.MedievalLogistics, teamID)
+    return recruit.hasEquipment(stock, unitName)
   end,
 }

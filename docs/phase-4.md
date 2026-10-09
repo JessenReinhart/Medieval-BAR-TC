@@ -160,11 +160,62 @@ The gadget's own per-hit echo confirms the 3.0x and 0.25x multipliers exactly
 values, classForUnitDef/FeatureDef, datadef tags, `DamageTypeMultiplier` API, and
 UnitPreDamaged wiring including tech*1.25 * supply*1.10 * matrix*0.25 stacking).
 
-### Slice 3 — Production Chains: Blacksmith & Fletcher
-- `medieval_blacksmith` (exists as a unitdef shell; add crafting behavior) converts
-  Iron → weapon equipment; `medieval_fletcher` converts Wood → bow equipment.
-- High-tier military recruitment gated on equipment stock, not just food/pop.
-- Tests: crafting state machine + recruitment gating.
+### Slice 3 — Production Chains: Blacksmith & Fletcher (complete)
+- New gadget `luarules/gadgets/gadget_production_chains.lua`: `medieval_blacksmith`
+  converts Iron → sword equipment (`iron 5, wood 2`) and `medieval_fletcher`
+  converts Wood → bow equipment (`wood 5, iron 1`). The producing unit is resolved
+  from the unitdef `crafting` customparam, with the def name as fallback.
+- Crafting runs on a fixed 30-frame cadence, one transaction per crafter per tick,
+  paid through `GG.MedievalEconomy.Transact` so a concurrent spend cannot overdraw
+  the stockpile; the first unaffordable crafter stops that kind for the tick.
+  Kind order is a fixed list (not `pairs`) so craft order and echo output are
+  deterministic across engine hash orders.
+- Stock is published as `GG.MedievalLogistics.equipmentStock[teamID][kind]` (and
+  aliased via `CraftingStock(teamID, kind)`); `gadget_medieval_logistics.lua`
+  carries a pre-existing table across its `GG.MedievalLogistics` reassignment so
+  gadget load order cannot drop it.
+- High-tier recruitment is gated on equipment stock, not just food/pop:
+  `scripts/medieval_recruitment.lua` maps `medieval_cavalry`/`medieval_catapult`
+  → `sword` and `medieval_archer` → `bow`, and
+  `gadget_medieval_recruitment.lua` blocks creation through `AllowUnitCreation` /
+  destroys on `UnitFromFactory` when the stock is empty. `UnitCanRecruit` on the
+  logistics API delegates to `GG.MedievalRecruitment.CanRecruit` so eligibility
+  has a single source of truth.
+- Tests: `tests/test_phase4_slice3.py` (30 tests).
+
+#### Slice 3 test count & probe evidence
+
+```
+python tests/check_lua_syntax.py   -> Checked 49 lua files; 0 errors found.
+python -m pytest tests -q          -> 378 passed
+```
+
+Headless probe (`tools/launch/run_phase2_slice3_probe.py`) verbatim verdicts:
+
+```
+[t=00:00:25.216160][f=0000620] PHASE4 CRAFT setup f=620 team=0 blacksmith=23796 fletcher=10507 sword0=nil bow0=nil
+[t=00:00:25.216174][f=0000620] PHASE4 CRAFT gate-baseline f=620 cavalry-can-recruit=false (expect false at 0 sword stock)
+[t=00:00:33.218905][f=0000860] PHASE4 CRAFT stock f=860 team=0 sword=8 bow=8
+[t=00:00:33.218932][f=0000860] PHASE4 CRAFT sword-vs-verdict PASS f=860 stock=8 expect>0 blacksmith=23796
+[t=00:00:33.218943][f=0000860] PHASE4 CRAFT bow-vs-verdict PASS f=860 stock=8 expect>0 fletcher=10507
+[t=00:00:33.896406][f=0000880] PHASE4 CRAFT recruit-gate-verdict PASS f=880 before(sword=nil)=false after(sword=8)=true unit=medieval_cavalry
+```
+
+The probe spawns both crafters at f=620 in the isolated `(5200..5320, 6000)` region
+(after the Slice 1/2 stages, so no earlier verdict is perturbed), funds the team
+with iron/wood/food, and samples the live gate twice: once while sword stock is
+still unpublished (`nil`, gate `false` for `medieval_cavalry`) and once after
+crafting (`sword=8`, gate `true`). `sword0=nil` rather than `0` is the honest
+reading — the production gadget has published no entry for the team yet — and the
+gate reports it as blocked either way. The gadget's own per-craft echo shows the
+cadence filling both stocks in lockstep (`kind=bow stock=1` / `kind=sword stock=1`
+at f=630, then `+1` per kind every 30 frames through `stock=9` at f=870).
+
+Re-verified in the same run: all Slice 1 verdicts
+(`catapult spawn/aim/fire/self-damage/damage-verdict` f=360..570 PASS) and both
+Slice 2 matrix verdicts (`siege-vs-wall PASS dealt=1353.5 mult=2.71`,
+`melee-vs-wall PASS ratio=0.56 matrix=0.25`), so the new stage breaks no earlier
+slice.
 
 ### Slice 4 — Military Upgrades & Veteran Tiers
 - Tech-tree research unlocks advanced variants (crossbow, men-at-arms, knight).
@@ -183,17 +234,25 @@ UnitPreDamaged wiring including tech*1.25 * supply*1.10 * matrix*0.25 stacking).
 ## Verification conventions (unchanged from Phase 3)
 - `python -m pytest tests -q` (scoped; never bare `python -m pytest -q`).
 - `python tests/check_lua_syntax.py`.
-- `python tools/launch/run_phase2_slice2_probe.py` headless probe; per-slice deterministic
+- `python tools/launch/run_phase2_slice2_probe.py` (Slices 1–2) and
+  `python tools/launch/run_phase2_slice3_probe.py` (Slices 1–3, adds the
+  `PHASE4 CRAFT` lines) headless probes; per-slice deterministic
   `PASS` verdicts; evidence versioned under `docs/` (runtime `infolog.txt` is git-ignored).
 
 ## Probe run budget
 
-The headless sim runs well below realtime (~16 frames/s observed). Slice 1's first catapult shot
+The headless sim runs well below realtime (~16–28 frames/s observed). Slice 1's first catapult shot
 does not leave until ~f=502 because `reloadtime = 5.0` (150 frames) and the engine applies a full
-initial reload at creation. `tools/launch/startscript_phase2.txt` therefore quits at frame 720
+initial reload at creation. `tools/launch/startscript_phase2.txt` asks for a quit at frame 720
 (raised from 600) and `tools/launch/run_phase2_slice2_probe.py` allows 90 s of wall clock, so the
 f=570 damage verdict is reached inside a single run. Later slices with slow weapons must budget the
 same way.
+
+Slice 3 extends that budget: its stages run at f=620 (crafter spawn), f=860 (craft verdicts) and
+f=880 (recruit-gate verdict), completing at ~34 s of wall clock in the observed run. The
+`720:quitforce` debugcommand does not actually terminate the headless run in this engine build
+(frames continue past f=880), so `tools/launch/run_phase2_slice3_probe.py` allows 150 s and relies
+on the timeout plus the log tail rather than on a clean exit.
 
 ## Out of scope for Phase 4
 - Multiplayer balance pass (post-Phase 4).

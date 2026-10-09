@@ -17,6 +17,14 @@ local M = {
     -- Mirrors units/medieval_catapult.lua customparams resource_cost_*.
     medieval_catapult = { wood = 120, stone = 40, iron = 10 },
   },
+  -- Equipment gating: high-tier units need the matching gear in the team's
+  -- equipment stock before they can be trained. Stock is published by the
+  -- production-chains gadget as MedievalLogistics.equipmentStock.
+  EQUIPMENT = {
+    medieval_cavalry = "sword",
+    medieval_catapult = "sword",
+    medieval_archer = "bow",
+  },
 }
 
 function M.getCost(unitName)
@@ -31,6 +39,42 @@ function M.canAfford(stock, unitName, economy)
   local cost = M.getCost(unitName)
   if not cost or type(economy) ~= "table" or type(economy.canAffordCosts) ~= "function" then return false end
   return economy.canAffordCosts(stock, cost)
+end
+
+-- Equipment resource a unit must have in stock, or nil when it needs none.
+function M.equipmentFor(unitName)
+  if type(unitName) ~= "string" then return nil end
+  return M.EQUIPMENT[unitName]
+end
+
+-- True when the unit's equipment requirement is covered by an equipment stock
+-- table ({ [resource] = amount }). Units without a requirement always pass;
+-- a missing/non-table stock fails every unit that does have one.
+function M.hasEquipment(equipmentStock, unitName)
+  local required = M.equipmentFor(unitName)
+  if not required then return true end
+  if type(equipmentStock) ~= "table" then return false end
+  local amount = tonumber(equipmentStock[required])
+  if not amount or amount ~= amount then return false end
+  return amount > 0
+end
+
+-- Resolve a team's equipment stock from the logistics API surface. Accepts the
+-- documented table form (equipmentStock[teamID][resource]) plus a function form
+-- for producers that publish lazily. Returns nil when nothing is published.
+function M.teamEquipmentStock(api, teamID)
+  if type(api) ~= "table" then return nil end
+  local stock = api.equipmentStock
+  if type(stock) == "function" then
+    local resolved = stock(teamID)
+    if type(resolved) == "table" then return resolved end
+    return nil
+  end
+  if type(stock) ~= "table" then return nil end
+  local team = stock[teamID]
+  if type(team) == "table" then return team end
+  -- Fallback: a flat { [resource] = amount } table shared by every team.
+  return stock
 end
 
 -- Legacy Phase-2 flat-rate helper (1 food per military unit per tick).

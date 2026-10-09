@@ -36,6 +36,9 @@ local dmatrixMeleeProbe = nil
 local dmatrixSiegeDone = false
 local dmatrixMeleeSpawned = false
 local dmatrixMeleeVerdictDone = false
+-- Phase 4 Slice 3 production-chain probe state (blacksmith/fletcher crafting and
+-- the equipment-gated recruit check).
+local craftProbe = nil
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -206,6 +209,40 @@ local function siegeLusParam(unitID, name)
   local ok, value = pcall(Spring.GetUnitRulesParam, unitID, name)
   if not ok then return nil end
   return value
+end
+
+-- Phase 4 Slice 3 helper: read the equipment stock published by
+-- gadget_production_chains.lua as GG.MedievalLogistics.equipmentStock[team][kind].
+-- Returns nil when nothing has been published for that team, which the probe
+-- reports distinctly from a real 0 so a missing producer cannot look like an
+-- empty stock.
+local function equipmentStockOf(teamID, kind)
+  local api = GG and GG.MedievalLogistics
+  local stock = api and api.equipmentStock
+  if type(stock) ~= "table" then return nil end
+  local team = stock[teamID]
+  if type(team) ~= "table" then return nil end
+  local amount = tonumber(team[kind])
+  if not amount or amount ~= amount then return nil end
+  return amount
+end
+
+-- Phase 4 Slice 3 helper: read the real recruitment gate. CanRecruit covers pop
+-- cap, equipment stock and resource cost, so the probe observes the gate the
+-- game actually enforces; the logistics equipment-only rule is the fallback when
+-- the recruitment gadget is not loaded. nil means the gate is not observable.
+local function recruitGateAllows(teamID, defName)
+  local recruitment = GG and GG.MedievalRecruitment
+  if recruitment and type(recruitment.CanRecruit) == "function" then
+    local ok, allowed = pcall(recruitment.CanRecruit, teamID, defName)
+    if ok then return allowed and true or false end
+  end
+  local api = GG and GG.MedievalLogistics
+  if api and type(api.UnitCanRecruit) == "function" then
+    local ok, allowed = pcall(api.UnitCanRecruit, teamID, defName)
+    if ok then return allowed and true or false end
+  end
+  return nil
 end
 
 -- Phase 4 Slice 2 raw weapon base damage, documented in gamedata/weapondefs.lua
@@ -1196,6 +1233,90 @@ function gadget:GameFrame(frame)
     Spring.Echo(string.format("PHASE4 DMATRIX melee-vs-wall %s f=%d dealt=%.1f base=%.1f ratio=%.2f matrix=%.2f hp0=%s hp=%s",
       pass and "PASS" or "FAIL", frame, dealt, base, dealt / base, apiMult,
       tostring(dmatrixMeleeProbe.hp0), tostring(hp)))
+  end
+
+  -- ==================== Phase 4 Slice 3: production chains (blacksmith/fletcher) ====================
+  -- Spawns a blacksmith and a fletcher for the probe team in the isolated region
+  -- south of the Slice 1/2 lane (5200..5880, 5200), then lets the production-chains
+  -- gadget craft on its own 30-frame cadence: sword from the blacksmith, bow from
+  -- the fletcher, each paid out of the team's iron/wood by MedievalEconomy. The
+  -- team is funded first because the crafting transaction must succeed.
+  -- The recruit gate is sampled twice on the real gate
+  -- (GG.MedievalRecruitment.CanRecruit): once while sword stock is still 0 and
+  -- once after crafting has filled it, so the equipment gate must flip.
+  if frame == 620 and spawned and not craftProbe then
+    local a = opposingTeams()
+    local smithDef = UnitDefNames and UnitDefNames["medieval_blacksmith"]
+    local fletcherDef = UnitDefNames and UnitDefNames["medieval_fletcher"]
+    local api = GG and GG.MedievalLogistics
+    if not a then
+      Spring.Echo("PHASE4 CRAFT SKIPPED no probe team")
+    elseif not (smithDef and fletcherDef) then
+      Spring.Echo("PHASE4 CRAFT SKIPPED missing medieval_blacksmith/medieval_fletcher UnitDef")
+    elseif not (api and type(api.equipmentStock) == "table") then
+      Spring.Echo("PHASE4 CRAFT SKIPPED missing GG.MedievalLogistics.equipmentStock")
+    else
+      -- Fund the recipes (sword: iron 5 + wood 2; bow: wood 5 + iron 1 per craft)
+      -- and the blacksmith/fletcher build costs, then keep food positive so the
+      -- recruit gate's other clauses do not mask the equipment result.
+      local econ = GG and GG.MedievalEconomy
+      if econ and type(econ.Deposit) == "function" then
+        econ.Deposit(a, "iron", 200)
+        econ.Deposit(a, "wood", 200)
+        econ.Deposit(a, "food", 200)
+      end
+      local sx, sz = 5200, 6000
+      local fx, fz = 5320, 6000
+      local smith = Spring.CreateUnit(smithDef.id, sx, Spring.GetGroundHeight(sx, sz), sz, "south", a)
+      local fletcher = Spring.CreateUnit(fletcherDef.id, fx, Spring.GetGroundHeight(fx, fz), fz, "south", a)
+      local sword0 = equipmentStockOf(a, "sword")
+      local bow0 = equipmentStockOf(a, "bow")
+      local highTier0 = recruitGateAllows(a, "medieval_cavalry")
+      craftProbe = {
+        team = a, blacksmith = smith, fletcher = fletcher,
+        sword0 = sword0, bow0 = bow0,
+        -- nil when the gate is not observable; a boolean is the expected shape.
+        highTier0 = highTier0, stage = "spawned",
+      }
+      Spring.Echo(string.format("PHASE4 CRAFT setup f=%d team=%d blacksmith=%s fletcher=%s sword0=%s bow0=%s",
+        frame, a, tostring(smith), tostring(fletcher), tostring(sword0), tostring(bow0)))
+      Spring.Echo(string.format("PHASE4 CRAFT gate-baseline f=%d cavalry-can-recruit=%s (expect false at 0 sword stock)",
+        frame, tostring(highTier0)))
+    end
+  end
+
+  -- Craft verdicts at f=860: the crafting cadence is one transaction per crafter
+  -- per 30 frames, so 8 seconds is ~16 attempts, far more than the 2 sword / 1 bow
+  -- the recipes need. Stock is read back through the published table, which is the
+  -- same source the recruit gate consumes.
+  if craftProbe and craftProbe.stage == "spawned" and frame >= 860 then
+    craftProbe.stage = "crafted"
+    local sword = equipmentStockOf(craftProbe.team, "sword")
+    local bow = equipmentStockOf(craftProbe.team, "bow")
+    craftProbe.sword = sword
+    craftProbe.bow = bow
+    local swordPass = type(sword) == "number" and sword > 0
+    local bowPass = type(bow) == "number" and bow > 0
+    Spring.Echo(string.format("PHASE4 CRAFT stock f=%d team=%d sword=%s bow=%s",
+      frame, craftProbe.team, tostring(sword), tostring(bow)))
+    Spring.Echo(string.format("PHASE4 CRAFT sword-vs-verdict %s f=%d stock=%s expect>0 blacksmith=%s",
+      swordPass and "PASS" or "FAIL", frame, tostring(sword), tostring(craftProbe.blacksmith)))
+    Spring.Echo(string.format("PHASE4 CRAFT bow-vs-verdict %s f=%d stock=%s expect>0 fletcher=%s",
+      bowPass and "PASS" or "FAIL", frame, tostring(bow), tostring(craftProbe.fletcher)))
+  end
+
+  -- Recruit-gate verdict at f=880: a sword-gated high-tier unit (cavalry) must have
+  -- been blocked at 0 stock and allowed once the blacksmith filled it. Both samples
+  -- come from the live gate, not from a re-derived rule.
+  if craftProbe and craftProbe.stage == "crafted" and frame >= 880 then
+    craftProbe.stage = "done"
+    local allowed = recruitGateAllows(craftProbe.team, "medieval_cavalry")
+    local blockedBefore = craftProbe.highTier0 == false
+    local allowedAfter = allowed == true
+    local pass = blockedBefore and allowedAfter
+    Spring.Echo(string.format("PHASE4 CRAFT recruit-gate-verdict %s f=%d before(sword=%s)=%s after(sword=%s)=%s unit=medieval_cavalry",
+      pass and "PASS" or "FAIL", frame, tostring(craftProbe.sword0), tostring(craftProbe.highTier0),
+      tostring(craftProbe.sword), tostring(allowed)))
   end
 
   if frame % 90 == 0 and spawned then
