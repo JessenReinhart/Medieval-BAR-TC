@@ -4,7 +4,7 @@ A medieval total conversion prototype for the Recoil RTS engine, using BAR GPL c
 
 ## Current status
 
-Phase 1 is **complete**. Phase 2 Slice 1 is **complete**: synced Food/Wood/Stone/Iron economy, settlement buildings, villager gathering/delivery state machine, resource nodes, and housing/population management are implemented and verified in Recoil headless. See [Phase 1 status](docs/phase-1.md) and [Phase 2 status](docs/phase-2.md) for evidence and details.
+Phase 1 is **complete**. Phase 2 Slice 1 is **complete**: synced Food/Wood/Stone/Iron economy, settlement buildings, villager gathering/delivery state machine, resource nodes, and housing/population management are implemented and verified in Recoil headless. Phase 4 Slice 1 is **complete**: the `medieval_catapult` siege engine (0 A.D. lithobolos art, heavy ballistic `catapult` weapon, aim dead zone) fires and damages a target in the headless probe. See [Phase 1 status](docs/phase-1.md), [Phase 2 status](docs/phase-2.md), and [Phase 4 status](docs/phase-4.md) for evidence and details.
 
 ## Project structure
 

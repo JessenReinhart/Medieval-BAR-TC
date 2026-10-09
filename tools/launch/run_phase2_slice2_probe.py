@@ -14,17 +14,20 @@ def run_probe():
     ], capture_output=True)
     print(f"Launching Recoil engine: {ENGINE}...")
     cmd = [str(ENGINE), "--isolation", "--write-dir", str(RUNTIME), str(STARTSCRIPT)]
+    # The headless sim runs well below realtime (~16 frames/s here). The startscript's
+    # debugcommands quit at frame 600, which needs ~40s, so allow enough wall clock for
+    # the Phase 4 Slice 1 probe stages at frames 360-390 to be reached.
     try:
-        proc = subprocess.run(cmd, timeout=22, capture_output=True, text=True)
+        proc = subprocess.run(cmd, timeout=90, capture_output=True, text=True)
         print(f"Engine exited {proc.returncode}")
     except subprocess.TimeoutExpired:
         print("Engine timed out (expected for headless run)")
     infolog = RUNTIME / "infolog.txt"
     if infolog.exists():
         text = infolog.read_text(encoding="utf-8", errors="replace")
-        # Filter relevant Phase2 lines for recruitment events.
-        relevant = [l for l in text.splitlines() if "PHASE2" in l]
-        for line in relevant[:50]:
+        # Filter relevant phase probe lines (Phase 2 recruitment, Phase 3, Phase 4).
+        relevant = [l for l in text.splitlines() if "PHASE2 PROBE" in l or "PHASE3 PROBE" in l or "PHASE4 PROBE" in l]
+        for line in relevant[:80]:
             print(line)
     else:
         print("No infolog generated")

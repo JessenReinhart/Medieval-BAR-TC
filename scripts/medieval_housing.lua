@@ -51,6 +51,7 @@ function M.unitConsumesPop(defName)
     medieval_infantry = 1,
     medieval_archer = 1,
     medieval_cavalry = 1,
+    medieval_catapult = 1,
   }
   return popUnits[defName] or 0
 end

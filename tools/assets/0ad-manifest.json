@@ -18,6 +18,10 @@
       "bytes": 7383,
       "sha256": "e0a98b7a51337a66ee64cb7db98825d48d6fc5cc99017340fcd86021d4444786"
     },
+    "art/actors/units/hellenes/siege_rock.xml": {
+      "bytes": 965,
+      "sha256": "28c4b81f33a886054802a428778ff2647eb159872e3276ce91e79a891c18347a"
+    },
     "art/meshes/skeletal/horse_tessalian.dae.cached.pmd": {
       "bytes": 64594,
       "sha256": "3f37ec88960c0f876e34f594094c7e06bdb343f185d20e737c19040cef5829dd"
@@ -30,6 +34,10 @@
       "bytes": 43857,
       "sha256": "7171a8eb818083c5ac66e9a33e8f82edf27c81cc6f1e311331282b6526d37b59"
     },
+    "art/meshes/structural/hele_lithobolos.dae.cached.pmd": {
+      "bytes": 54736,
+      "sha256": "208df272006144592791085428529e6c1c6ac3901fee994850eb6b3245a4252c"
+    },
     "art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds": {
       "bytes": 87536,
       "sha256": "754a933ecb3315241dd76750b7cc8563d14388bdf8f7e294ce5030bf47c8a796"
@@ -41,6 +49,10 @@
     "art/textures/skins/skeletal/horse_brown.png.cached.dds": {
       "bytes": 174928,
       "sha256": "f9befbdc9fb1a79d61c0c66656505bff631e278dbdd625477776351d6e4fd1cb"
+    },
+    "art/textures/skins/structural/hele_siege.dds.cached.dds": {
+      "bytes": 43832,
+      "sha256": "af6c9b1af96ada869d1aebb194227c74a4660c20530606d8230c975e137ba2e5"
     },
     "art/variants/quadraped/horse/brown.xml": {
       "bytes": 396,
@@ -69,6 +81,20 @@
     "medieval_archer": {
       "actor": "art/actors/units/athenians/infantry_archer_a.xml",
       "bones_ignored": 46,
+      "bounds": {
+        "x": [
+          -7.714,
+          7.714
+        ],
+        "y": [
+          0.008,
+          30.806
+        ],
+        "z": [
+          -3.275,
+          3.319
+        ]
+      },
       "faces": 932,
       "mesh": "art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_archer.obj",
@@ -77,9 +103,48 @@
       "texture": "art/textures/skins/skeletal/hele/tunic_03_psiloi_01.png.cached.dds",
       "vertices": 668
     },
+    "medieval_catapult": {
+      "actor": "art/actors/units/hellenes/siege_rock.xml",
+      "bones_ignored": 8,
+      "bounds": {
+        "x": [
+          -27.023,
+          27.495
+        ],
+        "y": [
+          -1.543,
+          54.082
+        ],
+        "z": [
+          -79.638,
+          40.046
+        ]
+      },
+      "faces": 556,
+      "mesh": "art/meshes/structural/hele_lithobolos.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_catapult.obj",
+      "props_ignored": 2,
+      "tex1": "0ad/medieval_catapult.dds",
+      "texture": "art/textures/skins/structural/hele_siege.dds.cached.dds",
+      "vertices": 982
+    },
     "medieval_cavalry": {
       "actor": "art/actors/units/athenians/cavalry_swordsman_a_m.xml",
       "bones_ignored": 49,
+      "bounds": {
+        "x": [
+          -7.066,
+          7.066
+        ],
+        "y": [
+          -0.009,
+          44.433
+        ],
+        "z": [
+          -32.17,
+          19.527
+        ]
+      },
       "faces": 1682,
       "mesh": "art/meshes/skeletal/horse_tessalian.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_cavalry.obj",
@@ -91,6 +156,20 @@
     "medieval_infantry": {
       "actor": "art/actors/units/athenians/infantry_spearman_a.xml",
       "bones_ignored": 46,
+      "bounds": {
+        "x": [
+          -7.714,
+          7.714
+        ],
+        "y": [
+          0.008,
+          30.806
+        ],
+        "z": [
+          -3.455,
+          3.23
+        ]
+      },
       "faces": 932,
       "mesh": "art/meshes/skeletal/new/m_armor_tunic_short.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_infantry.obj",

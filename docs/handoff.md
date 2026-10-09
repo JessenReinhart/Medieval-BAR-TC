@@ -1,18 +1,19 @@
-# Handoff: Medieval-BAR-TC (Phase 3 Slice 7 supply bonuses + road-aware pathing landed; engine probe evidence verified)
+# Handoff: Medieval-BAR-TC (Phase 4 Slice 1 siege catapult landed; engine probe evidence verified)
 
 Date: 2026-10-09
 Branch: `medieval-total-conversion`
-Last work: Phase 3 Slice 7 — supply bonuses and road-aware pathing. Finished mobile units
+Last work: Phase 4 Slice 1 — siege warfare core. New `medieval_catapult` unit built from the 0 A.D.
+Hellenic lithobolos (982 verts / 556 tris, `objects3d/0ad/medieval_catapult.obj` +
+`unittextures/0ad/medieval_catapult.dds`), a slow heavy `catapult` weapon def (range 550,
+reloadtime 5.0, velocity 350, damage 500, AoE 48), a LUS with a 120-elmo aim dead zone, and a
+headless probe stage (frames 360-570) reporting six deterministic `PASS` verdicts. Full suite:
+330 passing.
+
+Previous work: Phase 3 Slice 7 — supply bonuses and road-aware pathing. Finished mobile units
 (`def.canMove == true`) within `SUPPLY_RADIUS = 96.0` of a **road-connected** supply endpoint gain
 an additive bonus (`0.10` per endpoint, capped at `0.50`), published per unit as rules params and
 applied to outgoing damage in `UnitPreDamaged`. Villager node/drop-off selection is cost-based and
-prefers road-connected targets. Live-engine probe evidence landed (all verdicts `PASS`). Full suite:
-302 passing.
-
-Previous work: Phase 3 Slice 6 — road movement-speed enforcement. Eligible finished ground units on
-a same-team road run at `base * ROAD_SPEED_MULT (1.5)` through
-`Spring.MoveCtrl.SetGroundMoveTypeData`, tracked per team and throttled to a 15-frame scan, with
-`GG.MedievalLogistics.GetSpeedState(unitID)`.
+prefers road-connected targets.
 
 Scope note: Slice 4 places roads by command, not by buildoptions. Roads are FEATURES
 (`gamedata/featuredefs.lua`, `medieval_road`), so unitdef buildoptions cannot place them and
@@ -118,6 +119,29 @@ implemented and verified (see `docs/slice7-probe-evidence.md`).
     - 61 Slice 7 tests (`tests/test_phase3_slice7.py`); full suite: **302 passed**; Lua syntax clean
       (44 files, 0 errors). Live-engine probe evidence landed: see `docs/slice7-probe-evidence.md`.
 
+12. **Phase 4 Slice 1 (Siege Warfare Core)** — implemented and verified:
+    - New `medieval_catapult` unitdef: `Catapult`, LAND, `movementclass = "TANK3"` (the repo's 3x3
+      vehicle move def; `BOT2` declares a 2x2 footprint and would contradict `footprintX/Z = 3`),
+      600 HP, `speed = 18`, `maxVelocity = 1.2`, costs wood 120 / stone 40 / iron 10.
+    - Art from the 0 A.D. Hellenic lithobolos: `objects3d/0ad/medieval_catapult.obj` (982 verts /
+      556 tris), `unittextures/0ad/medieval_catapult.dds`. `tools/assets/convert_0ad.py` now records
+      the full actor archive path per unit (the old `ACTOR_PREFIX` hard-coded Athenians) and stores
+      post-scale OBJ bounds in the manifest.
+    - `gamedata/weapondefs.lua` `catapult`: Cannon, range 550, `minRange = 120`, reloadtime 5.0,
+      velocity 350, `myGravity = 0.2`, `heightBoostFactor = 1.5`, damage 500, AoE 48 @ 0.5 edge,
+      `noSelfDamage = true`.
+    - `scripts/medieval_catapult.lua` LUS: `AimWeapon1`/`FireWeapon1`/`AimFromWeapon1`/`QueryWeapon1`
+      plus the unnumbered forms, all resolving to the single `base` piece, with a 120-elmo aim dead
+      zone and aim/fire rules params for the probe.
+    - Three engine-verified defects found and fixed (details in `docs/phase-4.md`): `minRange` is not
+      a Recoil tag (`Unknown tag "minrange"` — dead zone moved into the LUS); `myGravity = 0.6` gave
+      a ballistic reach of only `350^2/0.6 ~= 227` elmos against a 550 range, so the shot spawned
+      under the terrain and dealt zero damage; `maxAngleDif = 60` combined with an unconditional LUS
+      `return true` let the engine fire off-axis. `noSelfDamage` is required because the converted
+      mesh has no muzzle piece and the 48-elmo AoE would destroy the launcher on the first shot.
+    - 28 Slice 1 tests (`tests/test_phase4_slice1.py`); full suite: **330 passed**; Lua syntax clean
+      (46 files, 0 errors). Live-engine probe: six deterministic `PASS` verdicts at frames 360-570.
+
 ## How to Run the Slice 6 and Slice 7 Tests and Probe
 
 ```pwsh
@@ -130,10 +154,13 @@ python -m pytest tests/test_phase3_slice6.py -q
 # Slice 5 (Phase 3) focused tests (17)
 python -m pytest tests/test_phase3_slice5.py -q
 
-# Full suite (302 passing as of Slice 7)
+# Full suite (330 passing as of Phase 4 Slice 1)
 python -m pytest tests -q
 
-# Lua syntax check (44 files, expect 0 errors)
+# Phase 4 Slice 1 (siege catapult) focused tests (28)
+python -m pytest tests/test_phase4_slice1.py -q
+
+# Lua syntax check (46 files, expect 0 errors)
 python tests/check_lua_syntax.py
 
 # Headless probe (syncs source into the SDD, runs the pinned Recoil headless engine)
@@ -141,6 +168,9 @@ python tools/launch/run_phase2_slice2_probe.py
 
 # Inspect Phase 3 probe output (Slice 1 road/tech + Slice 2 damage + Slice 3 roadgraph + Slice 4 road-cmd + Slice 5 building-connectivity + Slice 6 road-speed)
 Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE3"
+
+# Inspect Phase 4 Slice 1 probe output (siege catapult spawn/aim/fire/damage verdicts)
+Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE4"
 ```
 
 Note: there is no dedicated Slice 4, Slice 5, or Slice 6 probe script; those probe steps live in
@@ -312,13 +342,16 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
   fallback. The velocity check is soft by design (`PASS(soft)`); the hard verdicts are the state and
   restore checks. No Lua errors occur inside the probe window.
 
-## What's Next: Phase 3 engine verification (done for Slice 7)
+## What's Next: Phase 4 Slice 2 (Damage Types & Fortification Destruction)
 
-- Supply bonuses and road-aware pathing are **implemented and verified in Recoil** (Slice 7). The Lua
-  harness now passes 61 focused tests (full suite 302), and the headless probe emits deterministic
-  `PASS` verdicts for supplied/unsupplied/team-isolated state, `iron_swords`+supply damage stacking
-  (real melee hit: `base=135.4 -> scaled=186.1 = 135.4 * 1.25 * 1.10`), road-removal restoration, and
-  cost-based gather target selection. See `docs/slice7-probe-evidence.md`.
+- Phase 4 Slice 1 (siege warfare core) is **implemented and verified in Recoil**: 28 focused tests
+  (full suite 330), Lua syntax clean (46 files, 0 errors), and six deterministic `PASS` verdicts from
+  the headless probe at frames 360-570. See `docs/phase-4.md`.
+- Slice 2 adds a `siege` vs `fortification` damage-type matrix so walls and towers take heavy siege
+  damage while resisting normal melee, without changing melee-vs-standard-unit behavior.
+- Probe note for Slice 2: `medieval_catapult` has a 5.0 s reload (150 frames) and the engine applies
+  a full initial reload at creation, so a spawned catapult's first shot lands ~142 frames later.
+  Budget probe windows accordingly, or pre-charge the reload.
 
 ## How to Resume in a New Session
 
@@ -327,14 +360,14 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
 git status
 python -m pytest tests -q
 
-# 2. Slice 6 / Slice 7 focused tests
-python -m pytest tests/test_phase3_slice6.py -q
-python -m pytest tests/test_phase3_slice7.py -q
+# 2. Phase 4 Slice 1 focused tests
+python -m pytest tests/test_phase4_slice1.py -q
 
-# 3. Run the headless probe and inspect Phase 3 output
+# 3. Run the headless probe and inspect Phase 3 / Phase 4 output
 python tools/launch/run_phase2_slice2_probe.py
 Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE3"
+Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE4"
 
 # 4. Review roadmap
-cat docs/phase-3.md
+cat docs/phase-4.md
 ```

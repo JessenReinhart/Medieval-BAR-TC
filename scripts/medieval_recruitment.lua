@@ -8,11 +8,14 @@ local M = {
     medieval_infantry = 2,
     medieval_archer = 2,
     medieval_cavalry = 3,
+    medieval_catapult = 3,        -- Phase 4 Slice 1: siege crew eats like heavy cavalry
   },
   COSTS = {
     medieval_infantry = { food = 30, wood = 20, stone = 10, iron = 5 },
     medieval_archer = { food = 25, wood = 30, stone = 5, iron = 2 },
     medieval_cavalry = { food = 50, wood = 20, stone = 20, iron = 25 },
+    -- Mirrors units/medieval_catapult.lua customparams resource_cost_*.
+    medieval_catapult = { wood = 120, stone = 40, iron = 10 },
   },
 }
 

@@ -19,24 +19,32 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARCHIVE = Path.home() / "AppData/Local/0 A.D. Empires Ascendant/binaries/data/mods/public/public.zip"
 MESH_PREFIX = "art/meshes/"
 SKIN_PREFIX = "art/textures/skins/"
-ACTOR_PREFIX = "art/actors/units/athenians/"
-# These baseTex variants come from the three named Athenian actor XMLs.
+# Per-unit source selection. `actor` is the exact archive path of the actor XML that
+# declares the mesh/baseTex pair, so every unit's provenance is verifiable in the
+# manifest. Each entry is checked against the actor text before conversion.
 UNITS = {
     "medieval_archer": {
-        "actor": "infantry_archer_a.xml",
+        "actor": "art/actors/units/athenians/infantry_archer_a.xml",
         "mesh": "skeletal/new/m_tunic_short.dae",
         "texture": "skeletal/hele/tunic_03_psiloi_01.png",
     },
     "medieval_infantry": {
-        "actor": "infantry_spearman_a.xml",
+        "actor": "art/actors/units/athenians/infantry_spearman_a.xml",
         "mesh": "skeletal/new/m_armor_tunic_short.dae",
         "texture": "skeletal/athen/linothorax_01_01.png",
     },
     "medieval_cavalry": {
-        "actor": "cavalry_swordsman_a_m.xml",
+        "actor": "art/actors/units/athenians/cavalry_swordsman_a_m.xml",
         "variant": "art/variants/quadraped/horse/brown.xml",
         "mesh": "skeletal/horse_tessalian.dae",
         "texture": "skeletal/horse_brown.png",
+    },
+    # Phase 4 Slice 1 siege engine: the Hellenic lithobolos (stone-throwing catapult).
+    # Static structural mesh; the actor's mechanical idle/attack PSAs are not exported.
+    "medieval_catapult": {
+        "actor": "art/actors/units/hellenes/siege_rock.xml",
+        "mesh": "structural/hele_lithobolos.dae",
+        "texture": "structural/hele_siege.dds",
     },
 }
 # 0 A.D. PMD is Y-up, matches Recoil's unit-space up axis. 0 A.D. model
@@ -203,7 +211,7 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
         license_bytes = source("art/LICENSE.txt")
         (output_docs / "0ad-art.txt").write_bytes(license_bytes)
         for unit, choice in UNITS.items():
-            actor_path = ACTOR_PREFIX + choice["actor"]
+            actor_path = choice["actor"]  # full archive path, recorded verbatim in the manifest
             actor = source(actor_path).decode("utf-8-sig")
             if f"<mesh>{choice['mesh']}</mesh>" not in actor:
                 raise ValueError(f"{actor_path} does not select requested mesh")
@@ -235,6 +243,11 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
                 "tex1": f"0ad/{texture_name}",
                 "vertices": len(mesh["positions"]), "faces": len(mesh["faces"]),
                 "bones_ignored": mesh["bone_count"], "props_ignored": mesh["prop_count"],
+                # Post-scale OBJ-space extents, so oversized/short sources are visible
+                # in provenance instead of being silently accepted.
+                "bounds": {axis: [round(min(p[i] for p in mesh["positions"]) * SCALE, 3),
+                                 round(max(p[i] for p in mesh["positions"]) * SCALE, 3)]
+                           for i, axis in enumerate("xyz")},
             }
     path = root / "tools/assets/0ad-manifest.json"
     path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8", newline="\n")

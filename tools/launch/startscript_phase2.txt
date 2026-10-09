@@ -51,6 +51,6 @@
 		deathmode=neverend;
 		medievaltest=0;
 		phase2test=1;
-		debugcommands=1:forcestart|600:quitforce;
+		debugcommands=1:forcestart|720:quitforce;
 	}
 }

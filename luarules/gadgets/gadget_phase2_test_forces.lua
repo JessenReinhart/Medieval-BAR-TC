@@ -29,6 +29,8 @@ local speedProbe = nil
 -- Slice 7 supply + road-aware pathing probe state.
 local supplyProbe = nil
 local gatherProbe = nil
+-- Slice 8 (Phase 4 Slice 1) siege catapult probe state.
+local siegeProbe = nil
 
 local function roadProbeSnapshot(teamID)
   local api = GG and GG.MedievalLogistics
@@ -180,6 +182,25 @@ local function spawnSettlement(teamID, cx, cz)
       assignmentPending[#assignmentPending + 1] = vid
     end
   end
+end
+
+-- Slice 8 helper: defensive health read so a missing/unsupported engine call can
+-- never nil-dereference the probe (returns nil instead of raising).
+local function siegeTargetHealth(unitID)
+  if type(Spring.GetUnitHealth) ~= "function" then return nil end
+  local ok, health = pcall(Spring.GetUnitHealth, unitID)
+  if not ok or type(health) ~= "number" then return nil end
+  return health
+end
+
+-- Read back a rules param published by scripts/medieval_catapult.lua. These are the
+-- authoritative aim/fire signals: only the LUS call-ins can set them, so a non-nil
+-- value proves the engine dispatched into the catapult's unit script.
+local function siegeLusParam(unitID, name)
+  if type(Spring.GetUnitRulesParam) ~= "function" then return nil end
+  local ok, value = pcall(Spring.GetUnitRulesParam, unitID, name)
+  if not ok then return nil end
+  return value
 end
 
 function gadget:GameFrame(frame)
@@ -985,6 +1006,115 @@ function gadget:GameFrame(frame)
     Spring.Echo(string.format("PHASE3 PROBE gather selection-verdict f=%d %s (ok=%s picked=%s expect_far=%s near=%s remNear=%s remFar=%s; target selection only, no waypoint routing)",
       frame, pass and "PASS" or "FAIL", tostring(ok), tostring(picked), tostring(gatherProbe.far), tostring(gatherProbe.near), tostring(remNear), tostring(remFar)))
     gatherProbe = nil
+  end
+
+  -- ===================== Slice 8: Phase 4 Slice 1 siege catapult =====================
+  -- Spawns a friendly medieval_catapult and an enemy medieval_wall 300 elmos east
+  -- (between minRange 120 and range 550), orders an attack, then samples the weapon
+  -- state and the target's health. Every stage is pcall-guarded and nil-checked.
+  if frame == 360 and spawned then
+    local a, b = opposingTeams()
+    local catDef = UnitDefNames and UnitDefNames["medieval_catapult"]
+    local wallDef = UnitDefNames and UnitDefNames["medieval_wall"]
+    if not (a and b) then
+      Spring.Echo("PHASE4 PROBE catapult SKIPPED no opposing teams")
+    elseif not catDef then
+      Spring.Echo("PHASE4 PROBE catapult SKIPPED missing medieval_catapult UnitDef")
+    elseif not wallDef then
+      Spring.Echo("PHASE4 PROBE catapult SKIPPED missing medieval_wall UnitDef")
+    else
+      -- gadget_medieval_recruitment charges the discrete cost at UnitFinished and
+      -- destroys the unit when the team cannot pay; fund it before spawning.
+      local econ = GG and GG.MedievalEconomy
+      if econ and type(econ.Deposit) == "function" then
+        econ.Deposit(a, "wood", 200)
+        econ.Deposit(a, "stone", 120)
+        econ.Deposit(a, "iron", 60)
+      end
+      local cx, cz = 5200, 5200
+      local tx, tz = 5500, 5200
+      local cy = Spring.GetGroundHeight(cx, cz)
+      local ty = Spring.GetGroundHeight(tx, tz)
+      -- Facing "east" pre-aligns the turret with the target 300 elmos east.
+      local cat = Spring.CreateUnit(catDef.id, cx, cy, cz, "east", a)
+      local wall = Spring.CreateUnit(wallDef.id, tx, ty, tz, "south", b)
+      if not (cat and wall) then
+        Spring.Echo(string.format("PHASE4 PROBE catapult SPAWN-FAILED f=%d catapult=%s target=%s",
+          frame, tostring(cat), tostring(wall)))
+      else
+        local hp0 = siegeTargetHealth(wall)
+        local ordered = false
+        if type(Spring.GiveOrderToUnit) == "function" and CMD and CMD.ATTACK then
+          ordered = pcall(Spring.GiveOrderToUnit, cat, CMD.ATTACK, { wall }, {}) and true or false
+        end
+        siegeProbe = { team = a, enemy = b, catapult = cat, target = wall,
+                       hp0 = hp0, stage = "ordered" }
+        Spring.Echo(string.format("PHASE4 PROBE catapult spawned f=%d team=%d id=%s target=%s enemy=%d hp0=%s dist=300",
+          frame, a, tostring(cat), tostring(wall), b, tostring(hp0)))
+        Spring.Echo(string.format("PHASE4 PROBE catapult spawn-verdict f=%d %s (id=%s target=%s hp0=%s)",
+          frame, (cat and wall and type(hp0) == "number" and hp0 > 0) and "PASS" or "FAIL",
+          tostring(cat), tostring(wall), tostring(hp0)))
+        Spring.Echo(string.format("PHASE4 PROBE catapult attack-order f=%d %s (giveOrderAPI=%s)",
+          frame, ordered and "PASS" or "FAIL", tostring(type(Spring.GiveOrderToUnit))))
+      end
+    end
+  end
+
+  -- Aim evidence at f=380: the LUS publishes its aim state as a unit rules param,
+  -- which is readable in synced code regardless of weapon-state API shape. The
+  -- "aiming" flag can only be set from script.AimWeapon1, so a 1 proves the engine
+  -- called into the catapult's unit script.
+  if siegeProbe and siegeProbe.stage == "ordered" and frame >= 380 then
+    local aiming = siegeLusParam(siegeProbe.catapult, "medieval_catapult_aiming")
+    siegeProbe.stage = "aimed"
+    siegeProbe.aiming = aiming
+    Spring.Echo(string.format("PHASE4 PROBE catapult aim f=%d lusAimingParam=%s selfHp=%s",
+      frame, tostring(aiming), tostring(siegeTargetHealth(siegeProbe.catapult))))
+    Spring.Echo(string.format("PHASE4 PROBE catapult aim-verdict f=%d %s (LUS AimWeapon1 ran, aiming=%s expect=1)",
+      frame, (tonumber(aiming) == 1) and "PASS" or "FAIL", tostring(aiming)))
+  end
+
+  -- Pre-fire health trace: confirms the catapult survives its own launch and
+  -- pins the frame at which the first shot actually leaves the engine.
+  if siegeProbe and siegeProbe.stage == "aimed" and frame >= 500 and not siegeProbe.preFireLogged then
+    siegeProbe.preFireLogged = true
+    Spring.Echo(string.format("PHASE4 PROBE catapult pre-fire f=%d selfHp=%s targetHp=%s",
+      frame, tostring(siegeTargetHealth(siegeProbe.catapult)),
+      tostring(siegeTargetHealth(siegeProbe.target))))
+  end
+
+  -- Fire evidence at f=540: the first shot leaves the engine at ~f=502 (5.0s
+  -- reload from spawn at f=360), so this samples after the shot and after the
+  -- 350-velocity rock has reached the wall 300 elmos away.
+  if siegeProbe and siegeProbe.stage == "aimed" and frame >= 540 then
+    local firedParam = siegeLusParam(siegeProbe.catapult, "medieval_catapult_fired")
+    local hp = siegeTargetHealth(siegeProbe.target)
+    local selfHp = siegeTargetHealth(siegeProbe.catapult)
+    local dealt = 0
+    if type(siegeProbe.hp0) == "number" and type(hp) == "number" then
+      dealt = siegeProbe.hp0 - hp
+    end
+    local fired = tonumber(firedParam) == 1
+    siegeProbe.stage = "fired"
+    Spring.Echo(string.format("PHASE4 PROBE catapult fire f=%d lusFiredParam=%s selfHp=%s targetHp=%s hp0=%s dealt=%.1f",
+      frame, tostring(firedParam), tostring(selfHp), tostring(hp), tostring(siegeProbe.hp0), dealt))
+    Spring.Echo(string.format("PHASE4 PROBE catapult fire-verdict f=%d %s (LUS FireWeapon1 ran, fired=%s)",
+      frame, fired and "PASS" or "FAIL", tostring(firedParam)))
+    -- The launcher must survive its own shot (noSelfDamage + no muzzle piece).
+    Spring.Echo(string.format("PHASE4 PROBE catapult self-damage-verdict f=%d %s (selfHp=%s)",
+      frame, (type(selfHp) == "number" and selfHp > 0) and "PASS" or "FAIL", tostring(selfHp)))
+  end
+
+  -- Damage evidence: the wall must have lost health to the catapult's rock.
+  if siegeProbe and siegeProbe.stage == "fired" and frame >= 570 then
+    local hp = siegeTargetHealth(siegeProbe.target)
+    local dealt = 0
+    if type(siegeProbe.hp0) == "number" and type(hp) == "number" then
+      dealt = siegeProbe.hp0 - hp
+    end
+    Spring.Echo(string.format("PHASE4 PROBE catapult damage-verdict f=%d %s (dealt=%.1f expect>0 hp0=%s hp=%s)",
+      frame, dealt > 0 and "PASS" or "FAIL", dealt, tostring(siegeProbe.hp0), tostring(hp)))
+    siegeProbe.stage = "done"
   end
 
   if frame % 90 == 0 and spawned then
