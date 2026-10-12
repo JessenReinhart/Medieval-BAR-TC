@@ -46,7 +46,91 @@ UNITS = {
         "mesh": "structural/hele_lithobolos.dae",
         "texture": "structural/hele_siege.dds",
     },
+    # Phase 7 Slice 3: dedicated infantry variants so the Villager, Spearman and
+    # King stop recycling the generic hoplite body. Celtic (Briton) actors are the
+    # closest authentic 0 A.D. analogue of a medieval levy, and each entry keeps a
+    # distinct mesh/texture pair so no two units render identically.
+    "medieval_villager": {
+        "actor": "art/actors/units/britons/citizen_male.xml",
+        "mesh": "skeletal/new/m_tunic_short.dae",
+        "texture": "skeletal/germ/tunic_pants_01_01.png",
+    },
+    "medieval_spearman": {
+        "actor": "art/actors/units/britons/infantry_spearman_a.xml",
+        "mesh": "skeletal/new/m_pants_tunic_long.dae",
+        "texture": "skeletal/celt/tunic_01_01.png",
+    },
+    "medieval_king": {
+        "actor": "art/actors/units/britons/hero_infantry_swordsman_cunobelin.xml",
+        "mesh": "skeletal/new/m_armor_pants_tunic_long.dae",
+        "texture": "skeletal/celt/druid_02.png",
+    },
 }
+# Phase 7 Slice 3: dedicated building meshes. The Briton (Celtic) structure set is
+# the authentic 0 A.D. match for timber-and-thatch medieval settlement buildings:
+# each actor declares one structural mesh plus one structural baseTex, so a single
+# static OBJ per building replaces the placeholder recycling of the infantry body.
+BUILDINGS = {
+    "medieval_town_center": {
+        "actor": "art/actors/structures/britons/civic_centre.xml",
+        "mesh": "structural/brit_civic_centre_struct1.dae",
+        "texture": "structural/brit_struct_1.png",
+    },
+    "medieval_house": {
+        "actor": "art/actors/structures/britons/house.xml",
+        "mesh": "structural/brit_house_01.dae",
+        "texture": "structural/brit_struct_1.png",
+    },
+    "medieval_barracks": {
+        "actor": "art/actors/structures/britons/barracks.xml",
+        "mesh": "structural/brit_barracks_struct.dae",
+        "texture": "structural/brit_struct.png",
+    },
+    "medieval_stables": {
+        "actor": "art/actors/structures/britons/stable.xml",
+        "mesh": "structural/brit_stable.dae",
+        "texture": "structural/brit_struct.png",
+    },
+    "medieval_granary": {
+        "actor": "art/actors/structures/britons/farmstead.xml",
+        "mesh": "structural/celt_farmstead.dae",
+        "texture": "structural/brit_struct_1.png",
+    },
+    "medieval_lumber_camp": {
+        "actor": "art/actors/structures/britons/storehouse.xml",
+        "mesh": "structural/brit_storehouse.dae",
+        "texture": "structural/brit_struct.png",
+    },
+    "medieval_market": {
+        "actor": "art/actors/structures/britons/market.xml",
+        "mesh": "structural/brit_market_struct_1.dae",
+        "texture": "structural/brit_struct_1.png",
+    },
+    "medieval_blacksmith": {
+        "actor": "art/actors/structures/britons/blacksmith.xml",
+        "mesh": "structural/brit_blacksmith.dae",
+        "texture": "structural/brit_struct.png",
+    },
+    "medieval_fletcher": {
+        "actor": "art/actors/structures/britons/range.xml",
+        "mesh": "structural/brit_range.dae",
+        "texture": "structural/brit_struct.png",
+    },
+    "medieval_tower": {
+        "actor": "art/actors/structures/britons/scout_tower.xml",
+        "mesh": "structural/brit_scout_tower_struct.dae",
+        "texture": "structural/brit_struct.png",
+    },
+    "medieval_wall": {
+        "actor": "art/actors/structures/britons/wall_medium.xml",
+        "mesh": "structural/brit_wall_medium.dae",
+        "texture": "structural/brit_struct.png",
+    },
+}
+MODELS = {**UNITS, **BUILDINGS}
+# Deterministic conversion order: units first, then buildings, both in declaration
+# order, so the manifest and the CLI report are stable across runs.
+_MODEL_ORDER = [(name, "unit") for name in UNITS] + [(name, "building") for name in BUILDINGS]
 # 0 A.D. PMD is Y-up, matches Recoil's unit-space up axis. 0 A.D. model
 # heights are ~3.85 (human) and ~5.55 (horse); 8 gives ~31 and ~44 units.
 SCALE = 8.0
@@ -200,7 +284,7 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
         "license": "CC-BY-SA-3.0, Wildfire Games; see licenses/0ad-art.txt",
         "transform": {"axes": "Y-up unchanged", "scale": SCALE, "translation": [0, 0, 0],
                       "uv": "v -> 1-v for OBJ", "pose": "PMD v4 bind-pose positions; no skinning"},
-        "entries": {}, "units": {},
+        "entries": {}, "units": {}, "buildings": {},
     }
     with zipfile.ZipFile(archive) as zf:
         def source(entry: str) -> bytes:
@@ -210,7 +294,8 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
 
         license_bytes = source("art/LICENSE.txt")
         (output_docs / "0ad-art.txt").write_bytes(license_bytes)
-        for unit, choice in UNITS.items():
+        for model, kind in _MODEL_ORDER:
+            choice = MODELS[model]
             actor_path = choice["actor"]  # full archive path, recorded verbatim in the manifest
             actor = source(actor_path).decode("utf-8-sig")
             if f"<mesh>{choice['mesh']}</mesh>" not in actor:
@@ -230,14 +315,14 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
             texture = source(texture_path)
             if texture[:4] != b"DDS ":
                 raise ValueError(f"{texture_path} is not DDS")
-            texture_name = unit + ".dds"
+            texture_name = model + ".dds"
             (output_textures / texture_name).write_bytes(texture)
-            obj_path = output_meshes / (unit + ".obj")
+            obj_path = output_meshes / (model + ".obj")
             obj_path.write_text(render_obj(mesh, texture_name), encoding="utf-8", newline="\n")
             # Recoil Assimp reads OBJ model-side metadata and resolves tex1 in unittextures/.
-            (output_meshes / (unit + ".lua")).write_text(
+            (output_meshes / (model + ".lua")).write_text(
                 f'return {{ tex1 = "0ad/{texture_name}" }}\n', encoding="utf-8", newline="\n")
-            manifest["units"][unit] = {
+            manifest["units" if kind == "unit" else "buildings"][model] = {
                 "actor": actor_path, "mesh": mesh_path, "texture": texture_path,
                 "obj": obj_path.relative_to(root).as_posix(),
                 "tex1": f"0ad/{texture_name}",
@@ -260,6 +345,7 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args()
     result = build(args.archive, args.root)
-    for name, unit in result["units"].items():
-        print(f"{name}: {unit['vertices']} vertices, {unit['faces']} triangles; {unit['obj']}")
+    for group in ("units", "buildings"):
+        for name, model in result[group].items():
+            print(f"{name}: {model['vertices']} vertices, {model['faces']} triangles; {model['obj']}")
     print("Manifest: tools/assets/0ad-manifest.json")

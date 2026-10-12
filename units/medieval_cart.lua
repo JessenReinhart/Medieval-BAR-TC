@@ -2,6 +2,9 @@ return {
   medieval_cart = {
     name = "Supply Cart",
     description = "Slow two-wheeled wagon that hauls bulk resources for the settlement. Unarmed civilian; it cannot gather, fight, or build.",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_cart.png",
+    iconType = "medieval_supply",
     category = "LAND",
     buildCostEnergy = 0,
     -- Mirrors customparams.resource_cost_wood, the convention used by the

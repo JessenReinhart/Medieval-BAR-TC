@@ -1,10 +1,331 @@
 {
   "archive": "C:\\Users\\LGSM228\\AppData\\Local\\0 A.D. Empires Ascendant\\binaries\\data\\mods\\public\\public.zip",
   "archive_sha256": "ccb24dedee399e6d2810ccb62b0b1b77a937999d9f1dedffbc189b3e359f2429",
+  "buildings": {
+    "medieval_barracks": {
+      "actor": "art/actors/structures/britons/barracks.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -93.546,
+          99.339
+        ],
+        "y": [
+          -46.558,
+          105.902
+        ],
+        "z": [
+          -84.15,
+          97.015
+        ]
+      },
+      "faces": 1249,
+      "mesh": "art/meshes/structural/brit_barracks_struct.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_barracks.obj",
+      "props_ignored": 2,
+      "tex1": "0ad/medieval_barracks.dds",
+      "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
+      "vertices": 2126
+    },
+    "medieval_blacksmith": {
+      "actor": "art/actors/structures/britons/blacksmith.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -76.01,
+          77.948
+        ],
+        "y": [
+          -55.222,
+          99.848
+        ],
+        "z": [
+          -77.086,
+          87.196
+        ]
+      },
+      "faces": 2922,
+      "mesh": "art/meshes/structural/brit_blacksmith.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_blacksmith.obj",
+      "props_ignored": 53,
+      "tex1": "0ad/medieval_blacksmith.dds",
+      "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
+      "vertices": 6590
+    },
+    "medieval_fletcher": {
+      "actor": "art/actors/structures/britons/range.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -88.552,
+          86.803
+        ],
+        "y": [
+          -48.581,
+          90.861
+        ],
+        "z": [
+          -79.528,
+          71.796
+        ]
+      },
+      "faces": 5702,
+      "mesh": "art/meshes/structural/brit_range.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_fletcher.obj",
+      "props_ignored": 3,
+      "tex1": "0ad/medieval_fletcher.dds",
+      "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
+      "vertices": 8687
+    },
+    "medieval_granary": {
+      "actor": "art/actors/structures/britons/farmstead.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -43.86,
+          43.586
+        ],
+        "y": [
+          -41.666,
+          76.764
+        ],
+        "z": [
+          -38.378,
+          40.584
+        ]
+      },
+      "faces": 576,
+      "mesh": "art/meshes/structural/celt_farmstead.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_granary.obj",
+      "props_ignored": 1,
+      "tex1": "0ad/medieval_granary.dds",
+      "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
+      "vertices": 1038
+    },
+    "medieval_house": {
+      "actor": "art/actors/structures/britons/house.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -45.753,
+          45.753
+        ],
+        "y": [
+          -40.321,
+          65.391
+        ],
+        "z": [
+          -59.28,
+          48.66
+        ]
+      },
+      "faces": 1073,
+      "mesh": "art/meshes/structural/brit_house_01.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_house.obj",
+      "props_ignored": 5,
+      "tex1": "0ad/medieval_house.dds",
+      "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
+      "vertices": 2195
+    },
+    "medieval_lumber_camp": {
+      "actor": "art/actors/structures/britons/storehouse.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -59.354,
+          56.151
+        ],
+        "y": [
+          -73.592,
+          96.616
+        ],
+        "z": [
+          -73.428,
+          69.981
+        ]
+      },
+      "faces": 2467,
+      "mesh": "art/meshes/structural/brit_storehouse.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_lumber_camp.obj",
+      "props_ignored": 2,
+      "tex1": "0ad/medieval_lumber_camp.dds",
+      "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
+      "vertices": 4744
+    },
+    "medieval_market": {
+      "actor": "art/actors/structures/britons/market.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -81.188,
+          84.022
+        ],
+        "y": [
+          -40.638,
+          91.699
+        ],
+        "z": [
+          -81.334,
+          84.057
+        ]
+      },
+      "faces": 1451,
+      "mesh": "art/meshes/structural/brit_market_struct_1.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_market.obj",
+      "props_ignored": 2,
+      "tex1": "0ad/medieval_market.dds",
+      "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
+      "vertices": 3223
+    },
+    "medieval_stables": {
+      "actor": "art/actors/structures/britons/stable.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -85.068,
+          84.152
+        ],
+        "y": [
+          -56.883,
+          96.772
+        ],
+        "z": [
+          -82.691,
+          70.218
+        ]
+      },
+      "faces": 4423,
+      "mesh": "art/meshes/structural/brit_stable.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_stables.obj",
+      "props_ignored": 6,
+      "tex1": "0ad/medieval_stables.dds",
+      "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
+      "vertices": 8689
+    },
+    "medieval_tower": {
+      "actor": "art/actors/structures/britons/scout_tower.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -34.972,
+          33.96
+        ],
+        "y": [
+          -53.687,
+          163.245
+        ],
+        "z": [
+          -42.42,
+          33.666
+        ]
+      },
+      "faces": 710,
+      "mesh": "art/meshes/structural/brit_scout_tower_struct.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_tower.obj",
+      "props_ignored": 4,
+      "tex1": "0ad/medieval_tower.dds",
+      "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
+      "vertices": 1080
+    },
+    "medieval_town_center": {
+      "actor": "art/actors/structures/britons/civic_centre.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -111.093,
+          111.968
+        ],
+        "y": [
+          -57.438,
+          94.364
+        ],
+        "z": [
+          -110.475,
+          116.077
+        ]
+      },
+      "faces": 2243,
+      "mesh": "art/meshes/structural/brit_civic_centre_struct1.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_town_center.obj",
+      "props_ignored": 4,
+      "tex1": "0ad/medieval_town_center.dds",
+      "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
+      "vertices": 3547
+    },
+    "medieval_wall": {
+      "actor": "art/actors/structures/britons/wall_medium.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -102.656,
+          99.704
+        ],
+        "y": [
+          -55.365,
+          101.588
+        ],
+        "z": [
+          -38.061,
+          37.792
+        ]
+      },
+      "faces": 1288,
+      "mesh": "art/meshes/structural/brit_wall_medium.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_wall.obj",
+      "props_ignored": 1,
+      "tex1": "0ad/medieval_wall.dds",
+      "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
+      "vertices": 2968
+    }
+  },
   "entries": {
     "art/LICENSE.txt": {
       "bytes": 1426,
       "sha256": "ef98babd771c206032e005f3d440a1e610df409d9a9191f03e64deaa4abefbd9"
+    },
+    "art/actors/structures/britons/barracks.xml": {
+      "bytes": 1943,
+      "sha256": "29f052d089077b2e5a4a653459195337eb257549aa0aa1654197cdfa47fcd69d"
+    },
+    "art/actors/structures/britons/blacksmith.xml": {
+      "bytes": 6367,
+      "sha256": "4381b34f00b8adb6c295d3057f0eff116dd19963c64b75482ef622ddccc61da7"
+    },
+    "art/actors/structures/britons/civic_centre.xml": {
+      "bytes": 2008,
+      "sha256": "7bd7824888fd707470a1fbf4bb899356bf7723e9cb3644bb45503e7e0f5319a8"
+    },
+    "art/actors/structures/britons/farmstead.xml": {
+      "bytes": 1382,
+      "sha256": "8dbf59ca4022a63843b9a58632893ad19224fed3b35d9d330784b4146e5cd6ee"
+    },
+    "art/actors/structures/britons/house.xml": {
+      "bytes": 2665,
+      "sha256": "b24e138827d3382619428e667c7a1ddcd849c7594fcfbe16246b732a56b16510"
+    },
+    "art/actors/structures/britons/market.xml": {
+      "bytes": 1477,
+      "sha256": "85753422f38b336f26b46ed1becef2a1f44c46d6d0b2cc37567b57919ea9e0fc"
+    },
+    "art/actors/structures/britons/range.xml": {
+      "bytes": 1253,
+      "sha256": "05dc10a6e3f784f66d29aa3e2f143dcde77f369cece5b8da0af8a34d65ee9a3a"
+    },
+    "art/actors/structures/britons/scout_tower.xml": {
+      "bytes": 1459,
+      "sha256": "941d50c6c8b54ed35a4ab86baf223fccd2eb039b4ec7c3115062ce6daeeb7491"
+    },
+    "art/actors/structures/britons/stable.xml": {
+      "bytes": 1904,
+      "sha256": "1606bdbfaa21c5916fd9c1691d06c5d593faa57a56ee4393fa69477cbba9d019"
+    },
+    "art/actors/structures/britons/storehouse.xml": {
+      "bytes": 1328,
+      "sha256": "d6fa3e8b177450fec56475913c2e9b3259a80c6553dc525311180042c291c25b"
+    },
+    "art/actors/structures/britons/wall_medium.xml": {
+      "bytes": 827,
+      "sha256": "3a250d16cf16404afe297b06db8945b3e55fcd3272aff565a6a06ac53804a75d"
     },
     "art/actors/units/athenians/cavalry_swordsman_a_m.xml": {
       "bytes": 1743,
@@ -18,6 +339,18 @@
       "bytes": 7383,
       "sha256": "e0a98b7a51337a66ee64cb7db98825d48d6fc5cc99017340fcd86021d4444786"
     },
+    "art/actors/units/britons/citizen_male.xml": {
+      "bytes": 2453,
+      "sha256": "e66de4f2567fa5a5470a186a708d1e9491813d28560fc5b02bb5628dd04130c0"
+    },
+    "art/actors/units/britons/hero_infantry_swordsman_cunobelin.xml": {
+      "bytes": 1319,
+      "sha256": "bfa9654c9f20525f085c0e15368c3a5cb7f34e6cde559d59f219088ce9672dca"
+    },
+    "art/actors/units/britons/infantry_spearman_a.xml": {
+      "bytes": 3797,
+      "sha256": "2ce73327eb1109ec367c0a2402004e7ca7f9be5fef9576bdd353152c46fcae58"
+    },
     "art/actors/units/hellenes/siege_rock.xml": {
       "bytes": 965,
       "sha256": "28c4b81f33a886054802a428778ff2647eb159872e3276ce91e79a891c18347a"
@@ -26,13 +359,65 @@
       "bytes": 64594,
       "sha256": "3f37ec88960c0f876e34f594094c7e06bdb343f185d20e737c19040cef5829dd"
     },
+    "art/meshes/skeletal/new/m_armor_pants_tunic_long.dae.cached.pmd": {
+      "bytes": 40745,
+      "sha256": "11b1512451318604515771e5a32229af5526f522da4bc01717d9cca5c07f073e"
+    },
     "art/meshes/skeletal/new/m_armor_tunic_short.dae.cached.pmd": {
       "bytes": 43857,
       "sha256": "4726621842ae159aae50a91672237ee30687bd38d32ff8eb2230fe7e108c037a"
     },
+    "art/meshes/skeletal/new/m_pants_tunic_long.dae.cached.pmd": {
+      "bytes": 40693,
+      "sha256": "63007d40172cd5e49a477bc7266c91ad99a73ecf19cea86f439c7c68e2744b8c"
+    },
     "art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd": {
       "bytes": 43857,
       "sha256": "7171a8eb818083c5ac66e9a33e8f82edf27c81cc6f1e311331282b6526d37b59"
+    },
+    "art/meshes/structural/brit_barracks_struct.dae.cached.pmd": {
+      "bytes": 135166,
+      "sha256": "ff95db39386512f7404efeedbf6a969f091a1ed00006908ff4d1e8f9d1df9d33"
+    },
+    "art/meshes/structural/brit_blacksmith.dae.cached.pmd": {
+      "bytes": 415298,
+      "sha256": "63582f78c616fc8912b6a2ebce111cdf26d7aa9bd35b81aad3ed9a2410c32080"
+    },
+    "art/meshes/structural/brit_civic_centre_struct1.dae.cached.pmd": {
+      "bytes": 226471,
+      "sha256": "47c01fdf03bd88d12b50caaa01314eb18ee79968208f16bc1e6fe3722faabba2"
+    },
+    "art/meshes/structural/brit_house_01.dae.cached.pmd": {
+      "bytes": 138369,
+      "sha256": "a49907dfae8c73907527787c6b22b2886fd7230a7e64b9ab6388dc3dd0e59425"
+    },
+    "art/meshes/structural/brit_market_struct_1.dae.cached.pmd": {
+      "bytes": 202193,
+      "sha256": "cba6bbdca1228edca73d9d212f0d000ee3317357fb83ea0daa72be61f3314d09"
+    },
+    "art/meshes/structural/brit_range.dae.cached.pmd": {
+      "bytes": 555587,
+      "sha256": "fc3d2b3fae2b0141538b2df276d050bf5c79007e0ffe2dac06ac03706373c3db"
+    },
+    "art/meshes/structural/brit_scout_tower_struct.dae.cached.pmd": {
+      "bytes": 69252,
+      "sha256": "69efa1bfc8c6fcebdba22b8a540818051469eefb07e8314ef8431df294d62c73"
+    },
+    "art/meshes/structural/brit_stable.dae.cached.pmd": {
+      "bytes": 548151,
+      "sha256": "9c922881a2ccbcce19b95d042146b958721b246bf8db7d27a020daddceb749e3"
+    },
+    "art/meshes/structural/brit_storehouse.dae.cached.pmd": {
+      "bytes": 299550,
+      "sha256": "373bf88e0f74dc50a1f6e65b3274c01616a8e5d1e2655bdfa69365c18ceb3a7f"
+    },
+    "art/meshes/structural/brit_wall_medium.dae.cached.pmd": {
+      "bytes": 185877,
+      "sha256": "ee1a1f6d6604032c5a3b54879075517cf04fb261078929fc0ab57554ebeab8ce"
+    },
+    "art/meshes/structural/celt_farmstead.dae.cached.pmd": {
+      "bytes": 65805,
+      "sha256": "de93ab21aec99a2ad22db1ed8be75dc2b4d872a01c4d84fb69a5e5c86d5e2b5c"
     },
     "art/meshes/structural/hele_lithobolos.dae.cached.pmd": {
       "bytes": 54736,
@@ -42,6 +427,18 @@
       "bytes": 87536,
       "sha256": "754a933ecb3315241dd76750b7cc8563d14388bdf8f7e294ce5030bf47c8a796"
     },
+    "art/textures/skins/skeletal/celt/druid_02.png.cached.dds": {
+      "bytes": 87536,
+      "sha256": "f647c2388525457c2ee1b156acda8195d8c15124e0b0e3f9cb56f376a861383a"
+    },
+    "art/textures/skins/skeletal/celt/tunic_01_01.png.cached.dds": {
+      "bytes": 87536,
+      "sha256": "377dbcbf300cf1de1e83ca188f5f71d640f2abdabc6fccc58047ada6af5ef8e3"
+    },
+    "art/textures/skins/skeletal/germ/tunic_pants_01_01.png.cached.dds": {
+      "bytes": 87536,
+      "sha256": "de0bc3096372a30346a377992c75a715ef4f1d29cf5c58ef466cddd70f6eb5af"
+    },
     "art/textures/skins/skeletal/hele/tunic_03_psiloi_01.png.cached.dds": {
       "bytes": 87536,
       "sha256": "33dd23e6feae2b61459ac4c9ff4d03615a3dc56729902b6c997f4a55d97829b7"
@@ -49,6 +446,14 @@
     "art/textures/skins/skeletal/horse_brown.png.cached.dds": {
       "bytes": 174928,
       "sha256": "f9befbdc9fb1a79d61c0c66656505bff631e278dbdd625477776351d6e4fd1cb"
+    },
+    "art/textures/skins/structural/brit_struct.png.cached.dds": {
+      "bytes": 1398256,
+      "sha256": "d9577cfb898f945dcd19417ec905ecc96f3119884a2ae73ed43f69bf78907b17"
+    },
+    "art/textures/skins/structural/brit_struct_1.png.cached.dds": {
+      "bytes": 174904,
+      "sha256": "6b064748e433e6e502cb98ce06c419e721bafb79e3c9598e8f8c3180e9595b59"
     },
     "art/textures/skins/structural/hele_siege.dds.cached.dds": {
       "bytes": 43832,
@@ -176,6 +581,81 @@
       "props_ignored": 53,
       "tex1": "0ad/medieval_infantry.dds",
       "texture": "art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds",
+      "vertices": 668
+    },
+    "medieval_king": {
+      "actor": "art/actors/units/britons/hero_infantry_swordsman_cunobelin.xml",
+      "bones_ignored": 46,
+      "bounds": {
+        "x": [
+          -7.714,
+          7.714
+        ],
+        "y": [
+          0.008,
+          30.806
+        ],
+        "z": [
+          -3.455,
+          2.887
+        ]
+      },
+      "faces": 864,
+      "mesh": "art/meshes/skeletal/new/m_armor_pants_tunic_long.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_king.obj",
+      "props_ignored": 53,
+      "tex1": "0ad/medieval_king.dds",
+      "texture": "art/textures/skins/skeletal/celt/druid_02.png.cached.dds",
+      "vertices": 616
+    },
+    "medieval_spearman": {
+      "actor": "art/actors/units/britons/infantry_spearman_a.xml",
+      "bones_ignored": 46,
+      "bounds": {
+        "x": [
+          -7.714,
+          7.714
+        ],
+        "y": [
+          0.008,
+          30.806
+        ],
+        "z": [
+          -3.275,
+          2.853
+        ]
+      },
+      "faces": 864,
+      "mesh": "art/meshes/skeletal/new/m_pants_tunic_long.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_spearman.obj",
+      "props_ignored": 53,
+      "tex1": "0ad/medieval_spearman.dds",
+      "texture": "art/textures/skins/skeletal/celt/tunic_01_01.png.cached.dds",
+      "vertices": 615
+    },
+    "medieval_villager": {
+      "actor": "art/actors/units/britons/citizen_male.xml",
+      "bones_ignored": 46,
+      "bounds": {
+        "x": [
+          -7.714,
+          7.714
+        ],
+        "y": [
+          0.008,
+          30.806
+        ],
+        "z": [
+          -3.275,
+          3.319
+        ]
+      },
+      "faces": 932,
+      "mesh": "art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_villager.obj",
+      "props_ignored": 53,
+      "tex1": "0ad/medieval_villager.dds",
+      "texture": "art/textures/skins/skeletal/germ/tunic_pants_01_01.png.cached.dds",
       "vertices": 668
     }
   }

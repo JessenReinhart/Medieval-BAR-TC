@@ -1,0 +1,107 @@
+{
+  "archive": "C:\\Users\\LGSM228\\AppData\\Local\\0 A.D. Empires Ascendant\\binaries\\data\\mods\\public\\public.zip",
+  "license": "CC-BY-SA-3.0 (Wildfire Games)",
+  "sounds": {
+    "sounds/economy/construction.ogg": {
+      "bytes": 36112,
+      "sha256": "5d90b44245600736947126569429978af222d753da0749494ac6e9e936386fe4",
+      "source": "audio/resource/construction/con_saw_01.ogg"
+    },
+    "sounds/economy/haul_cart.ogg": {
+      "bytes": 32491,
+      "sha256": "5b50c580805d6cc6dcbc3427dc3ce55da1524a3dd240c69cd430d4560943e361",
+      "source": "audio/actor/human/movement/Footsteps/Footstep_Gravel_Walking.ogg"
+    },
+    "sounds/economy/stone_mine.ogg": {
+      "bytes": 28038,
+      "sha256": "1e19d8cf38ea8abdff1b6c3a099f19d72e7f2361d828f88e92d2f58ba0888659",
+      "source": "audio/resource/mining/mine_metal_01.ogg"
+    },
+    "sounds/economy/wood_chop.ogg": {
+      "bytes": 39758,
+      "sha256": "4b65f37e87a22a275bb68ffa31296308f544f10fea2fd756de224fd24bae3604",
+      "source": "audio/resource/lumbering/lumber_tree_01.ogg"
+    },
+    "sounds/ui/alarm_under_attack.ogg": {
+      "bytes": 46018,
+      "sha256": "c2f408e10b92d16c220dd9eb68305389863e891be39a36a642b134b3d53760c7",
+      "source": "audio/interface/alarm/alarmattackcity_1.ogg"
+    },
+    "sounds/ui/building_complete.ogg": {
+      "bytes": 31921,
+      "sha256": "a4400097ad1aca109cbd5cc1f1b74c7d0eb13680ea1cf36aade876bdefa5b707",
+      "source": "audio/interface/complete/building/complete_civ_center.ogg"
+    },
+    "sounds/ui/unit_select.ogg": {
+      "bytes": 49582,
+      "sha256": "7cb0e63079dbe87016894365215581fc21e4c24b1577c247c1a794a07453f383",
+      "source": "audio/interface/ui/gamesetup_join.ogg"
+    },
+    "sounds/weapons/arrow_hit.ogg": {
+      "bytes": 25317,
+      "sha256": "05dcd9dedadbe8486e3905c53af4fcaf9fff6c27d8a7f0fec632c65adb708faf",
+      "source": "audio/attack/impact/arrow_01.ogg"
+    },
+    "sounds/weapons/bolt_hit.ogg": {
+      "bytes": 23853,
+      "sha256": "fbe9d45ec2fd5545990cf59542f0111f233bb760496e421e7eddf74378c7e120",
+      "source": "audio/attack/impact/arrow_metal_01.ogg"
+    },
+    "sounds/weapons/bow_shoot.ogg": {
+      "bytes": 78385,
+      "sha256": "e7a71c944b1705f30cb6ce644c13c9ae8b99a1120e316a85c37f8ba93e64759b",
+      "source": "audio/attack/weapon/bow_attack_01.ogg"
+    },
+    "sounds/weapons/catapult_hit.ogg": {
+      "bytes": 86774,
+      "sha256": "da892b8fec127341e6c212894d95a217addecf570abf7bf5d8d03f521bc6587b",
+      "source": "audio/attack/impact/siegeprojectilehit_01.ogg"
+    },
+    "sounds/weapons/catapult_shoot.ogg": {
+      "bytes": 51825,
+      "sha256": "8e6812b7d716629166a4f929dbe2e9139105dd291b8668e0ed6277992708fbb6",
+      "source": "audio/attack/siege/ballist_attack_01.ogg"
+    },
+    "sounds/weapons/crossbow_shoot.ogg": {
+      "bytes": 77606,
+      "sha256": "2b89ba16d0d2cb28e3b2a10ab6ea7dc1be8838c45c2f00b56a465b9d9919e379",
+      "source": "audio/attack/weapon/bow_attack_03.ogg"
+    },
+    "sounds/weapons/dagger_hit.ogg": {
+      "bytes": 28885,
+      "sha256": "ce56a59a5467c46ccb2a18c0c2be258c679fd110d2563c3d0e76482d121e7bb2",
+      "source": "audio/attack/impact/fleshstab_02.ogg"
+    },
+    "sounds/weapons/lance_charge.ogg": {
+      "bytes": 33794,
+      "sha256": "08af513c2721d69bd0b97147b8cd59c4d8f635cf4728367162424d898173540b",
+      "source": "audio/attack/weapon/sword_attack_03.ogg"
+    },
+    "sounds/weapons/lance_hit.ogg": {
+      "bytes": 16101,
+      "sha256": "20588c35a9ab472ee992564855ae9e1ef93bd5195f765e0396fabd7f1ae73c07",
+      "source": "audio/attack/impact/fleshimp_10.ogg"
+    },
+    "sounds/weapons/spear_hit.ogg": {
+      "bytes": 18399,
+      "sha256": "5669fe88ed1c3d676ae93ffc66882f569cc4759b0d3c9d59954cb1022a2e410b",
+      "source": "audio/attack/impact/shield_metal_01.ogg"
+    },
+    "sounds/weapons/spear_thrust.ogg": {
+      "bytes": 26901,
+      "sha256": "acf6107949b5c03639e4808148504b66fc3d076473dc3c5538fc58dce8108b31",
+      "source": "audio/attack/weapon/pike_attack_01.ogg"
+    },
+    "sounds/weapons/sword_hit.ogg": {
+      "bytes": 27210,
+      "sha256": "2c47da0590e865bcc3bcd1df38f0108606f3dc603c7fb89124e79320918ed244",
+      "source": "audio/attack/impact/fleshstab_01.ogg"
+    },
+    "sounds/weapons/sword_swing.ogg": {
+      "bytes": 36303,
+      "sha256": "2e48bc04cabfc642e22cc034b5903e0dcf865e36cce20d3ba7718e73770fa2b2",
+      "source": "audio/attack/weapon/sword_attack_01.ogg"
+    }
+  },
+  "source": "0 A.D. alpha 28 public.zip"
+}

@@ -4,6 +4,9 @@ return {
     -- medieval_cavalry def, which already renders as "Knight".
     name = "Chivalric Knight",
     description = "Veteran mounted heavy cavalry, sworn and lance-armed (upgraded cavalry tier)",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_knight.png",
+    iconType = "medieval_cavalry",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 300,
@@ -19,7 +22,7 @@ return {
     movementclass = "TANK3",
     footprintX = 3,
     footprintZ = 3,
-    maxDamage = 550,
+    maxDamage = 2900, -- Phase 6: 550 -> 2900; veteran knight must outlast base cavalry (2200 HP)
     maxVelocity = 2.2,
     acceleration = 0.7,
     brakeRate = 0.55,
@@ -53,10 +56,10 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
-        -- FX placeholder (no audio/CEG assets exist in this repo yet):
-        --   soundstart = "<cavalry charge sfx>", soundhit = "<lance impact sfx>",
-        --   explosionGenerator = "<charge impact CEG>"
-        -- Keep as comment until a sounds/ dir and CEG generator names exist.
+        soundStart = "lance_charge",
+        soundHit = "lance_hit",
+        -- Phase 7 Slice 2: impact FX for this weapon (mirrors weapondefs.lua).
+        explosionGenerator = "custom:melee_hit_fx",
       },
     },
   },

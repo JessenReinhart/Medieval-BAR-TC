@@ -40,9 +40,9 @@ GADGET_PATH = ROOT / "luarules" / "gadgets" / "gadget_medieval_skirmish_ai.lua"
 HOUSE_COST = {"wood": 60}
 ROAD_COST = {"wood": 5, "stone": 2}
 INFANTRY_COST = {"food": 30, "wood": 20, "stone": 10, "iron": 5}
-HOUSE_POP_BUFFER = 2
+HOUSE_POP_BUFFER = 3
 ATTACK_ARMY_MIN = 2
-GATHER_TARGETS = {"food": 100, "wood": 100, "stone": 50, "iron": 30}
+GATHER_TARGETS = {"food": 110, "wood": 100, "stone": 50, "iron": 30}
 DEFAULT_MAX_ROADS = 5
 DEFAULT_MAX_ARMY = 10
 
@@ -276,11 +276,11 @@ class TestSlice6BuildHouse(Slice6Base):
         self.assertTrue(self.m.shouldBuildHouse(10, 10, self._stock(wood=60)))
 
     def test_builds_inside_the_buffer(self):
-        # cap - pop == HOUSE_POP_BUFFER is inclusive.
-        self.assertTrue(self.m.shouldBuildHouse(8, 10, self._stock(wood=60)))
+        # cap - pop <= HOUSE_POP_BUFFER (now 3) is inclusive.
+        self.assertTrue(self.m.shouldBuildHouse(7, 10, self._stock(wood=60)))
 
     def test_does_not_build_above_the_buffer(self):
-        self.assertFalse(self.m.shouldBuildHouse(7, 10, self._stock(wood=60)))
+        self.assertFalse(self.m.shouldBuildHouse(6, 10, self._stock(wood=60)))
 
     def test_does_not_build_without_wood(self):
         self.assertFalse(self.m.shouldBuildHouse(10, 10, self._stock(wood=59)))
@@ -454,11 +454,11 @@ class TestSlice6GatherPriority(Slice6Base):
         )
 
     def test_picks_the_proportionally_scarcest(self):
-        # food 40/100 = 0.40 vs wood 39/100 = 0.39 -> wood, even though the
+        # food 45/110 = 0.409 vs wood 39/100 = 0.39 -> wood, even though the
         # absolute food number is larger than the stone/iron gaps.
         self.assertEqual(
             self.m.prioritizeGatherResource(
-                self._stock(food=40, wood=39, stone=50, iron=30)
+                self._stock(food=45, wood=39, stone=50, iron=30)
             ),
             "wood",
         )

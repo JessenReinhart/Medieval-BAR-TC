@@ -2,6 +2,9 @@ return {
   medieval_crossbow = {
     name = "Crossbowman",
     description = "Veteran ranged infantry firing armour-piercing bolts (upgraded archer tier)",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_crossbow.png",
+    iconType = "medieval_ranged",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 140,
@@ -15,7 +18,7 @@ return {
     movementclass = "BOT2",
     footprintX = 2,
     footprintZ = 2,
-    maxDamage = 160,
+    maxDamage = 1000, -- Phase 6: 160 -> 1000; crossbowmen must outlast base archers (750 HP)
     maxVelocity = 1.2,
     acceleration = 0.4,
     brakeRate = 0.4,
@@ -51,10 +54,12 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
-        -- FX placeholder (no audio/CEG assets exist in this repo yet):
-        --   soundstart = "<crossbow release sfx>", soundhit = "<bolt impact sfx>",
-        --   explosionGenerator = "<bolt hit CEG>"
-        -- Keep as comment until a sounds/ dir and CEG generator names exist.
+        soundStart = "crossbow_shoot",
+        soundHit = "bolt_hit",
+        -- Phase 7 Slice 2: the crossbow fires the shared "longbow" weapondef
+        -- (arrow impact FX), but a bolt should read as a sharper armour strike,
+        -- so it overrides the generator at the unit level.
+        explosionGenerator = "custom:bolt_hit_fx",
       },
     },
   },

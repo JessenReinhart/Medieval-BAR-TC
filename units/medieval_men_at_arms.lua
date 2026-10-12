@@ -4,6 +4,9 @@ return {
     -- medieval_infantry def, which already renders as "Man-at-Arms".
     name = "Veteran Man-at-Arms",
     description = "Veteran heavy melee infantry, drilled and plate-armoured (upgraded infantry tier)",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_men_at_arms.png",
+    iconType = "medieval_melee",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 150,
@@ -17,7 +20,7 @@ return {
     movementclass = "BOT2",
     footprintX = 2,
     footprintZ = 2,
-    maxDamage = 350,
+    maxDamage = 1600, -- Phase 6: 350 -> 1600; veteran tier must outlast base infantry (1200 HP)
     maxVelocity = 1.3,
     acceleration = 0.45,
     brakeRate = 0.45,
@@ -51,10 +54,10 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
-        -- FX placeholder (no audio/CEG assets exist in this repo yet):
-        --   soundstart = "<melee swing sfx>", soundhit = "<melee impact sfx>",
-        --   explosionGenerator = "<melee hit CEG>"
-        -- Keep as comment until a sounds/ dir and CEG generator names exist.
+        soundStart = "sword_swing",
+        soundHit = "sword_hit",
+        -- Phase 7 Slice 2: impact FX for this weapon (mirrors weapondefs.lua).
+        explosionGenerator = "custom:melee_hit_fx",
       },
     },
   },

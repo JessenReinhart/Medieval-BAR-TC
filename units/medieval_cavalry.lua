@@ -1,7 +1,10 @@
 return {
   medieval_cavalry = {
     name = "Knight",
-    description = "Mounted heavy cavalry built for fast charges (Phase 1 prototype placeholder)",
+    description = "Mounted heavy cavalry built for fast charges",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_cavalry.png",
+    iconType = "medieval_cavalry",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 220,
@@ -41,10 +44,10 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
-        -- FX placeholder (no audio/CEG assets exist in this repo yet):
-        --   soundstart = "<cavalry charge sfx>", soundhit = "<lance impact sfx>",
-        --   explosionGenerator = "<charge impact CEG>"
-        -- Keep as comment until a sounds/ dir and CEG generator names exist.
+        soundStart = "lance_charge",
+        soundHit = "lance_hit",
+        -- Phase 7 Slice 2: impact FX for this weapon (mirrors weapondefs.lua).
+        explosionGenerator = "custom:melee_hit_fx",
       },
     },
   },

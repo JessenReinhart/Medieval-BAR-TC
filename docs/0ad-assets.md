@@ -52,6 +52,8 @@ Output Manifest: `tools/assets/0ad-manifest.json`
    - `medieval_archer` -> Actor `art/actors/units/athenians/infantry_archer_a.xml` -> Mesh `art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd` + Texture `art/textures/skins/skeletal/hele/tunic_03_psiloi_01.png.cached.dds`
    - `medieval_infantry` -> Actor `art/actors/units/athenians/infantry_spearman_a.xml` -> Mesh `art/meshes/skeletal/new/m_armor_tunic_short.dae.cached.pmd` + Texture `art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds`
    - `medieval_cavalry` -> Actor `art/actors/units/athenians/cavalry_swordsman_a_m.xml` + Variant `art/variants/quadraped/horse/brown.xml` -> Mesh `art/meshes/skeletal/horse_tessalian.dae.cached.pmd` + Texture `art/textures/skins/skeletal/horse_brown.png.cached.dds`
+   - `medieval_villager`, `medieval_spearman`, `medieval_king` -> Briton (Celtic) actors `citizen_male.xml`, `infantry_spearman_a.xml`, `hero_infantry_swordsman_cunobelin.xml` (Phase 7 Slice 3).
+   - `medieval_town_center`, `medieval_house`, `medieval_barracks`, `medieval_stables`, `medieval_granary`, `medieval_lumber_camp`, `medieval_market`, `medieval_blacksmith`, `medieval_fletcher`, `medieval_tower`, `medieval_wall` -> Briton structural actors `art/actors/structures/britons/*.xml` (Phase 7 Slice 3). Structural meshes are single-piece, so one static OBJ per building is sufficient.
 3. Parses binary PMD strictly: validates `PSMD` header, payload length, finite float bounds, vertex blend weights, bone indices, and face index ranges. Trailing garbage or malformed offsets raise `PMDError`.
 4. Converts positions, normals, and UVs to Wavefront `.obj` static bind-pose geometry:
    - Uniform scaling factor: `8.0` (maps ~3.85m human to ~30.8 units and ~5.55m horse to ~44.4 units).

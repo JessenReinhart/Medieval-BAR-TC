@@ -1,0 +1,64 @@
+[GAME]
+{
+	HostIP=127.0.0.1;
+	MapName=Quicksilver Remake 1.24;
+	GameType=Medieval BAR Total Conversion 0.2.0-phase2;
+	StartPosType=0;
+	GameStartDelay=0;
+	IsHost=1;
+	AutohostPort=8452;
+	MyPlayerName=Player;
+	RecordDemo=0;
+	[ALLYTEAM0]
+	{
+		NumAllies=0;
+	}
+	[ALLYTEAM1]
+	{
+		NumAllies=0;
+	}
+	[TEAM0]
+	{
+		TeamLeader=0;
+		AllyTeam=0;
+		StartPosX=1800;
+		StartPosZ=2400;
+	}
+	[TEAM1]
+	{
+		TeamLeader=0;
+		AllyTeam=1;
+		StartPosX=4200;
+		StartPosZ=2400;
+	}
+	[PLAYER0]
+	{
+		Name=Player;
+		Team=0;
+		Spectator=0;
+		Ready=1;
+		StartPosReady=1;
+	}
+	[AI0]
+	{
+		Name=BotOpponent;
+		ShortName=NullAI;
+		Team=1;
+		Host=0;
+	}
+	[MODOPTIONS]
+	{
+		deathmode=neverend;
+		medievaltest=0;
+		phase2test=0;
+		skirmishai=1;
+		medievalvictory=1;
+		victorymode=tc_destruction;
+		medievalhud=1;
+		medievalmarket=1;
+		medievalgarrison=1;
+		medievaltactics=1;
+		medievalaudio=1;
+		medievalbuildicons=1;
+	}
+}

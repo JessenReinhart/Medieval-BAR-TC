@@ -44,6 +44,7 @@ LOGISTICS_PATH = SCRIPTS_DIR / "medieval_logistics.lua"
 HOUSING_PATH = SCRIPTS_DIR / "medieval_housing.lua"
 RECRUIT_GADGET_PATH = ROOT / "luarules" / "gadgets" / "gadget_medieval_recruitment.lua"
 LOGISTICS_GADGET_PATH = ROOT / "luarules" / "gadgets" / "gadget_medieval_logistics.lua"
+TACTICS_GADGET_PATH = ROOT / "luarules" / "gadgets" / "gadget_medieval_tactics.lua"
 
 # Veteran tier -> (unitdef file, internal def name, tech prereq, equipment kind)
 VETERAN_TIERS = (
@@ -344,6 +345,7 @@ class TestSlice4DamageStacking(unittest.TestCase):
         self.lua = LuaRuntime(unpack_returned_tuples=True)
         g = self.lua.globals()
         g.GADGET_SRC = LOGISTICS_GADGET_PATH.read_text(encoding="utf-8")
+        g.TACTICS_GADGET_SRC = TACTICS_GADGET_PATH.read_text(encoding="utf-8")
         g.ROOT_PATH = str(ROOT).replace("\\", "/")
         g.INFANTRY = INFANTRY
         g.ARCHER = ARCHER
@@ -477,7 +479,7 @@ class TestSlice4DamageStacking(unittest.TestCase):
             NEXT_FID = NEXT_FID + 1
             local fid = NEXT_FID
             FEATURES[fid] = { defID = defID, x = x, z = z, team = team or 0 }
-            gadget:FeatureCreated(fid, team or 0)
+            LOGISTICS_GADGET:FeatureCreated(fid, team or 0)
             return fid
           end,
           SetUnitRulesParam = RULES_PARAM_FN,
@@ -510,23 +512,32 @@ class TestSlice4DamageStacking(unittest.TestCase):
         function PlaceBuilding(id, defID, x, z, team)
           PlaceUnit(id, defID, x, z, team, 1)
         end
-        function FireInitialize() gadget:Initialize() end
+        function FireInitialize() LOGISTICS_GADGET:Initialize() TACTICS_GADGET:Initialize() end
         function FireUnitFinished(id, defID, team)
           local u = UNITS[id]
           if u then u.progress = 1 end
-          gadget:UnitFinished(id, defID or (u and u.defID), team or (u and u.team))
+          LOGISTICS_GADGET:UnitFinished(id, defID or (u and u.defID), team or (u and u.team))
         end
-        function FireGameFrame(frame) gadget:GameFrame(frame) end
+        function FireGameFrame(frame)
+          LOGISTICS_GADGET:GameFrame(frame)
+          TACTICS_GADGET:GameFrame(frame)
+        end
+        -- Damage flows through Slice 5's single UnitPreDamaged hook.
         function FireUnitPreDamaged(defender, damage, attacker, weaponDefID)
           local attackerDefID = attacker and UNITS[attacker] and UNITS[attacker].defID or nil
           local attackerTeam = attacker and UNITS[attacker] and UNITS[attacker].team or nil
-          return gadget:UnitPreDamaged(
+          return TACTICS_GADGET:UnitPreDamaged(
             defender, UNITS[defender] and UNITS[defender].defID, UNITS[defender] and UNITS[defender].team,
             damage, false, weaponDefID, nil, attacker, attackerDefID, attackerTeam)
         end
         function EchoLines() return ECHO_LINES end
 
+        gadget = {}
         assert(load(GADGET_SRC, "@gadget_medieval_logistics.lua", "t", _G))()
+        LOGISTICS_GADGET = gadget
+        gadget = {}
+        assert(load(TACTICS_GADGET_SRC, "@gadget_medieval_tactics.lua", "t", _G))()
+        TACTICS_GADGET = gadget
         """)
         self._g("FireInitialize")()
 
@@ -602,7 +613,7 @@ class TestSlice4DamageStacking(unittest.TestCase):
         damage, _ = self._g("FireUnitPreDamaged")(202, 100.0, 201, SWORD_WPN)
         self.assertAlmostEqual(damage, 100.0 * 1.15)
         echoes = list(self._g("EchoLines")().values())
-        self.assertTrue(any("tech_mult=1.15" in e for e in echoes), echoes)
+        self.assertTrue(any("tech=1.150" in e for e in echoes), echoes)
 
     def test_crossbow_tech_damage(self):
         self._research(0, "crossbow_tech")
@@ -693,11 +704,12 @@ class TestSlice4DamageStacking(unittest.TestCase):
         self._supply_setup(301, MEN_AT_ARMS)
         self._finish_unit(302, ARCHER, 1, 5400.0, 5400.0)
         self._g("FireUnitPreDamaged")(302, 100.0, 301, SWORD_WPN)
-        # The supply scan publishes its own factor, so the two bonuses stay
-        # independently observable on the damage path.
+        # Both factors are reported by Slice 5's single "PHASE5 DAMAGE" line, so the
+        # tech and supply bonuses stay independently observable on the damage path.
         echoes = [e for e in self._g("EchoLines")().values()]
-        self.assertTrue(any("PHASE3 SUPPLY damage" in e for e in echoes))
-        self.assertTrue(any("tech_mult=1.15" in e for e in echoes))
+        damage_line = next(e for e in echoes if e.startswith("PHASE5 DAMAGE"))
+        self.assertIn("tech=1.150", damage_line)
+        self.assertIn("supply=1.100", damage_line)
 
 
 class TestSlice4RecruitmentGate(unittest.TestCase):

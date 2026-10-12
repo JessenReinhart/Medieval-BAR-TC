@@ -1,7 +1,10 @@
 return {
   medieval_archer = {
     name = "Longbowman",
-    description = "Ranged infantry firing ballistic arrows (Phase 1 prototype placeholder)",
+    description = "Ranged infantry firing ballistic arrows",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_archer.png",
+    iconType = "medieval_ranged",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 90,
@@ -41,10 +44,10 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
-        -- FX placeholder (no audio/CEG assets exist in this repo yet):
-        --   soundstart = "<arrow release sfx>", soundhit = "<arrow impact sfx>",
-        --   explosionGenerator = "<arrow hit CEG>"
-        -- Keep as comment until a sounds/ dir and CEG generator names exist.
+        soundStart = "bow_shoot",
+        soundHit = "arrow_hit",
+        -- Phase 7 Slice 2: dust + splinter impact where the arrow lands.
+        explosionGenerator = "custom:arrow_hit_fx",
       },
     },
   },

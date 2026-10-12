@@ -1,7 +1,10 @@
 return {
   medieval_infantry = {
     name = "Man-at-Arms",
-    description = "Heavy melee infantry equipped with sword and shield (Phase 1 prototype placeholder)",
+    description = "Heavy melee infantry equipped with sword and shield",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_infantry.png",
+    iconType = "medieval_melee",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 100,
@@ -41,10 +44,10 @@ return {
         mainDir = {0,0,1},
         maxAngleDif = 300,
         onlyTargetCategory = "LAND",
-        -- FX placeholder (no audio/CEG assets exist in this repo yet):
-        --   soundstart = "<melee swing sfx>", soundhit = "<melee impact sfx>",
-        --   explosionGenerator = "<melee hit CEG>"
-        -- Keep as comment until a sounds/ dir and CEG generator names exist.
+        soundStart = "sword_swing",
+        soundHit = "sword_hit",
+        -- Phase 7 Slice 2: impact FX for this weapon (mirrors weapondefs.lua).
+        explosionGenerator = "custom:melee_hit_fx",
       },
     },
   },

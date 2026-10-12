@@ -19,7 +19,9 @@ local M = {
   INFANTRY_COST = { food = 30, wood = 20, stone = 10, iron = 5 },
 
   -- Decision thresholds.
-  HOUSE_POP_BUFFER = 2, -- build a house when (cap - pop) <= this
+  HOUSE_POP_BUFFER = 3, -- build a house when (cap - pop) <= this
+  -- Phase 6 Slice 4: old 2 -> 3 (build housing one pop earlier so recruitment
+  -- never blocks on a nearly-full pop cap).
   ATTACK_ARMY_MIN = 2,  -- attack when the field army reaches this size
 
   -- Optional-argument defaults.
@@ -29,7 +31,10 @@ local M = {
 
   -- Gathering: the resource furthest below its target proportion is harvested
   -- first; GATHER_ORDER breaks ties so the choice is deterministic.
-  GATHER_TARGETS = { food = 100, wood = 100, stone = 50, iron = 30 },
+  -- Phase 6 Slice 4: food target 100 -> 110. Food is the only standing drain
+  -- (recruit cost + per-tick upkeep), so weighting it higher banks food early
+  -- and keeps the settlement from stalling on food.
+  GATHER_TARGETS = { food = 110, wood = 100, stone = 50, iron = 30 },
   GATHER_ORDER = { "food", "wood", "stone", "iron" },
 
   -- AI thinks once per second (30 sim frames) rather than every frame.
@@ -47,7 +52,8 @@ local M = {
   RECRUIT_COST = { food = 30, wood = 20, stone = 10, iron = 5 },
 
   -- Legacy alias retained for callers of the earlier threshold name.
-  HOUSE_POP_THRESHOLD = 2,
+  -- Phase 6 Slice 4: old 2 -> 3 (lock-step with HOUSE_POP_BUFFER).
+  HOUSE_POP_THRESHOLD = 3,
   MAX_ROADS = 5,
   ARMY_TARGET = 10,
 }
@@ -69,6 +75,33 @@ M.MILITARY_SET = {}
 for _, name in ipairs(MILITARY_DEFS) do
   M.MILITARY_SET[name] = true
 end
+
+-- Phase 6 Slice 4 reactive recruit: classify each military def into a
+-- tactical role, then train the unit that counters the opponent's majority
+-- role. Upgraded tiers collapse onto their base unit's role. The roster has
+-- no dedicated spearman def, so the armoured veteran `medieval_men_at_arms`
+-- fills the anti-cavalry slot (Infantry counters Cavalry closes the loop that
+-- the doc's "Spearman counters Cavalry" edge would otherwise leave open).
+M.ROLE_OF = {
+  medieval_infantry = "melee",
+  medieval_men_at_arms = "melee",
+  medieval_archer = "ranged",
+  medieval_crossbow = "ranged",
+  medieval_cavalry = "cavalry",
+  medieval_knight = "cavalry",
+  medieval_catapult = "siege",
+}
+
+-- The recruit def to train in reaction to each opponent-majority role.
+M.COUNTER_RECRUIT = {
+  melee   = "medieval_archer",      -- ranged kites melee before contact
+  ranged  = "medieval_cavalry",     -- cavalry speed + charge overruns ranged
+  cavalry = "medieval_men_at_arms", -- armoured veteran infantry braces the charge
+  siege   = "medieval_cavalry",     -- fast cavalry closes on siege before it fires
+}
+
+-- Deterministic tie-break order for majorityRole when two roles are equal.
+M.ROLE_ORDER = { "melee", "ranged", "cavalry", "siege" }
 
 local floor = math.floor
 local huge = math.huge
@@ -242,6 +275,66 @@ function M.prioritizeGatherResource(stock)
     end
   end
   return best
+end
+
+-- Reactive recruit helpers ---------------------------------------------------
+
+-- Sum opponent unit counts per tactical role. `counts` is a def-name -> count
+-- map; non-military names, non-numeric and negative values are ignored. A
+-- non-table (or empty) `counts` yields an empty table (conservative).
+function M.countRoles(counts)
+  local out = {}
+  if type(counts) ~= "table" then return out end
+  for name, amount in pairs(counts) do
+    if M.isMilitaryName(name) then
+      local role = M.ROLE_OF[name]
+      if role then
+        local n = tonumber(amount)
+        if n == nil or n < 0 then n = 0 end
+        out[role] = (out[role] or 0) + n
+      end
+    end
+  end
+  return out
+end
+
+-- Each role's share of the opponent field army, in ROLE_ORDER. Empty/malformed
+-- input returns an empty table (conservative).
+function M.computeRatios(counts)
+  local totals = M.countRoles(counts)
+  local grand = 0
+  for _, role in ipairs(M.ROLE_ORDER) do
+    grand = grand + (totals[role] or 0)
+  end
+  local ratios = {}
+  if grand > 0 then
+    for _, role in ipairs(M.ROLE_ORDER) do
+      ratios[role] = (totals[role] or 0) / grand
+    end
+  end
+  return ratios
+end
+
+-- The opponent's majority role, ties broken by ROLE_ORDER. nil for empty or
+-- malformed input (conservative).
+function M.majorityRole(counts)
+  local totals = M.countRoles(counts)
+  local best, bestTotal
+  for _, role in ipairs(M.ROLE_ORDER) do
+    local total = totals[role] or 0
+    if total > 0 and (bestTotal == nil or total > bestTotal) then
+      best, bestTotal = role, total
+    end
+  end
+  return best
+end
+
+-- The recruit def that counters the opponent's majority unit type; nil when
+-- the opponent has no tracked military (conservative).
+function M.counterRecruit(counts)
+  local role = M.majorityRole(counts)
+  if not role then return nil end
+  return M.COUNTER_RECRUIT[role]
 end
 
 -- Villager dispatch: busy villagers do nothing; idle ones close the housing

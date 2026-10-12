@@ -2,6 +2,9 @@ return {
   medieval_barracks = {
     name = "Barracks",
     description = "Trains melee infantry and archers for the settlement's defense.",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_barracks.png",
+    iconType = "medieval_military_building",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 150,
@@ -19,7 +22,7 @@ return {
     sightDistance = 400,
     mass = 800,
     upright = true,
-    objectName = "0ad/medieval_infantry.obj",
+    objectName = "0ad/medieval_barracks.obj",
     side = "MEDIEVAL",
     buildoptions = {
       "medieval_infantry",

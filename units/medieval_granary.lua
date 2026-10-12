@@ -2,6 +2,9 @@ return {
   medieval_granary = {
     name = "Granary",
     description = "Stores harvested crops; a dedicated food drop-off point.",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_granary.png",
+    iconType = "medieval_economy_building",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 50,
@@ -18,7 +21,7 @@ return {
     sightDistance = 300,
     mass = 300,
     upright = true,
-    objectName = "0ad/medieval_infantry.obj",
+    objectName = "0ad/medieval_granary.obj",
     side = "MEDIEVAL",
     customparams = {
       model_author = "Medieval-BAR-TC",

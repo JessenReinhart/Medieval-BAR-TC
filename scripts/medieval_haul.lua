@@ -26,12 +26,16 @@ local M = {
   -- Deterministic order used both for hub tie-breaking and for choosing which of
   -- several deficit resources hauls first. Only wood and iron have sink hubs
   -- (blacksmith/fletcher consume them); food and stone have sources but no sinks.
+  -- Order is the tie-break rank: earlier entries win a source/sink contest. The
+  -- Phase 5 Slice 3 market is appended LAST so every pre-existing rank (and the
+  -- tests pinning town_center == 1) is unchanged.
   HUB_NAMES = {
     "medieval_town_center",
     "medieval_granary",
     "medieval_lumber_camp",
     "medieval_blacksmith",
     "medieval_fletcher",
+    "medieval_market",
   },
 
   -- Resources are iterated in this fixed order when scanning for a deficit, so
@@ -71,6 +75,15 @@ M.HUB_PROFILES = {
     specific = {},
     -- production chains: bow = { wood = 5, iron = 1 }
     demand = { wood = true, iron = true },
+  },
+  -- Phase 5 Slice 3: a market is a generic storehouse for all four resources, so
+  -- an existing cart can service a market<->market trade route without the
+  -- hauling gadget learning a second movement layer. It is never a sink, so it
+  -- can only ever be a haul SOURCE, never a deficit target.
+  medieval_market = {
+    supply = { food = true, wood = true, stone = true, iron = true },
+    specific = {},
+    demand = {},
   },
 }
 

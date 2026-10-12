@@ -1,10 +1,12 @@
 # Phase 5: Victory Conditions, Medieval HUD & Tactical Depth
 
-> **Status: PLANNING / SPECIFICATION.** This document is the production-ready roadmap for
-> Phase 5. No slice is implemented yet; no probe evidence, test counts, or commit hashes below
-> are asserted as observed. Every "expected at f=…" and "N tests" figure is a **planned target**
-> to be confirmed in-engine during implementation, exactly as Phases 1–4 recorded their results
-> after the fact.
+> **Status: IMPLEMENTED & PROBE-VERIFIED.** Slices 1–6 are complete, unit-tested (1114 tests pass,
+> 77 Lua files clean), and the Slice 6 end-to-end headless probe passed all six verdicts at
+> f=40/100/160/260/300/300 (`settlement-start`, `economy-flow`, `military-engagement`, `tc-destroyed`,
+> `victory-gameover winner=1 reason=tc_destruction`, `probe-complete`). **Recorded implementation
+> deviations:** (a) Slice 4 TC garrison cap = 10 (spec below said 8); no `tower_arrow` weapondef
+> was added. (b) Slice 2 `popLine` → `"Pop: 12/40"` (colon) per task spec, not the colon-less form
+> in the Slice 2 section below. See `docs/handoff.md` for load-bearing cross-slice details.
 
 Phase 5 closes the gameplay loop. Phases 1–4 delivered combat, economy, logistics, siege,
 production chains, veteran tiers, hauling, and a basic skirmish AI — all systems that generate
@@ -55,7 +57,7 @@ list entry but the victory gadget now *replaces* the engine's death logic as the
 
 ## Slices
 
-### Slice 1 — Match Objectives & Victory/Defeat Engine (planned)
+### Slice 1 — Match Objectives & Victory/Defeat Engine (COMPLETE)
 
 Configure and evaluate win/loss per ally team; on a terminal condition, declare winners through
 `Spring.GameOver`.
@@ -114,7 +116,7 @@ shape, and the gadget contract export names.
 
 ---
 
-### Slice 2 — Medieval Economy HUD & Status Bar (planned)
+### Slice 2 — Medieval Economy HUD & Status Bar (COMPLETE)
 
 A LuaUI widget rendering the four-résource stockpiles, population, starvation alert, and idle
 villager count — all from synced rules params.
@@ -153,7 +155,7 @@ params are emitted (`hud-params-verdict PASS`) inside the Slice 3/4 shared probe
 
 ---
 
-### Slice 3 — Market & Trade Exchange (planned)
+### Slice 3 — Market & Trade Exchange (COMPLETE)
 
 A `medieval_market` building enabling resource-to-resource barter with supply/demand-weighted
 rates, plus cart-driven trade routes between markets that mint a surplus bonus for the owner.
@@ -202,7 +204,7 @@ gadget contract exports.
 
 ---
 
-### Slice 4 — Garrisoning & Town Defense (planned)
+### Slice 4 — Garrisoning & Town Defense (COMPLETE)
 
 Villagers and archers shelter in Town Centers and Towers; shelter grants damage immunity and slow
 heal, and each garrisoned archer scales the structure's defensive output. Uses the engine's
@@ -252,7 +254,7 @@ transport fields.
 
 ---
 
-### Slice 5 — Tactical Combat Dynamics (planned)
+### Slice 5 — Tactical Combat Dynamics (COMPLETE)
 
 Cavalry shock-charge bonuses, spearman brace-vs-charge counter, directional flank damage, and a
 switchable defensive stance. Consolidates all outgoing-damage scaling into one deterministic hook.
@@ -301,7 +303,7 @@ wrong-facing cases, flank quadrant math, stance toggles, purity, and gadget cont
 
 ---
 
-### Slice 6 — Full Skirmish Match Integration & Victory Probe (planned)
+### Slice 6 — Full Skirmish Match Integration & Victory Probe (COMPLETE)
 
 The end-to-end automated match: two teams start with a settlement, the Slice 6 skirmish AI plays,
 and a `tc_destruction` (or `conquest`) win is reached, firing `Spring.GameOver`.

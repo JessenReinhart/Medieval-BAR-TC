@@ -19,6 +19,7 @@ WEAPONDEFS_PATH = ROOT / "gamedata" / "weapondefs.lua"
 WALL_PATH = ROOT / "units" / "medieval_wall.lua"
 TOWER_PATH = ROOT / "units" / "medieval_tower.lua"
 GADGET_PATH = ROOT / "luarules" / "gadgets" / "gadget_medieval_logistics.lua"
+TACTICS_GADGET_PATH = ROOT / "luarules" / "gadgets" / "gadget_medieval_tactics.lua"
 
 # UnitDef / WeaponDef ids used by the gadget harness stubs.
 INFANTRY, CATAPULT, ARCHER = 1, 2, 3
@@ -118,6 +119,7 @@ class TestSlice2GadgetWiring(unittest.TestCase):
     def setUp(self):
         self.lua = LuaRuntime(unpack_returned_tuples=True)
         self.lua.globals().GADGET_SRC = GADGET_PATH.read_text(encoding="utf-8")
+        self.lua.globals().TACTICS_GADGET_SRC = TACTICS_GADGET_PATH.read_text(encoding="utf-8")
         self.lua.globals().ROOT_PATH = str(ROOT).replace("\\", "/")
         self.lua.globals().INFANTRY = INFANTRY
         self.lua.globals().CATAPULT = CATAPULT
@@ -241,7 +243,7 @@ class TestSlice2GadgetWiring(unittest.TestCase):
             NEXT_FID = NEXT_FID + 1
             local fid = NEXT_FID
             FEATURES[fid] = { defID = defID, x = x, z = z, team = team or 0 }
-            gadget:FeatureCreated(fid, team or 0)
+            LOGISTICS_GADGET:FeatureCreated(fid, team or 0)
             return fid
           end,
           SetUnitRulesParam = RULES_PARAM_FN,
@@ -274,27 +276,36 @@ class TestSlice2GadgetWiring(unittest.TestCase):
           PlaceUnit(id, defID, x, z, team, 1)
         end
         function RemoveUnit(id) UNITS[id] = nil end
-        function FireInitialize() gadget:Initialize() end
+        function FireInitialize() LOGISTICS_GADGET:Initialize() TACTICS_GADGET:Initialize() end
         function FireUnitFinished(id, defID, team)
           local u = UNITS[id]
           if u then u.progress = 1 end
-          gadget:UnitFinished(id, defID or (u and u.defID), team or (u and u.team))
+          LOGISTICS_GADGET:UnitFinished(id, defID or (u and u.defID), team or (u and u.team))
         end
         function FireUnitDestroyed(id, defID, team)
           local u = UNITS[id]
-          gadget:UnitDestroyed(id, defID or (u and u.defID), team or (u and u.team))
+          LOGISTICS_GADGET:UnitDestroyed(id, defID or (u and u.defID), team or (u and u.team))
           UNITS[id] = nil
         end
-        function FireGameFrame(frame) gadget:GameFrame(frame) end
+        function FireGameFrame(frame)
+          LOGISTICS_GADGET:GameFrame(frame)
+          TACTICS_GADGET:GameFrame(frame)
+        end
+        -- Damage flows through Slice 5's single UnitPreDamaged hook.
         function FireUnitPreDamaged(defender, damage, attacker, weaponDefID)
           local attackerDefID = attacker and UNITS[attacker] and UNITS[attacker].defID or nil
           local attackerTeam = attacker and UNITS[attacker] and UNITS[attacker].team or nil
-          return gadget:UnitPreDamaged(
+          return TACTICS_GADGET:UnitPreDamaged(
             defender, UNITS[defender] and UNITS[defender].defID, UNITS[defender] and UNITS[defender].team,
             damage, false, weaponDefID, nil, attacker, attackerDefID, attackerTeam)
         end
 
+        gadget = {}
         assert(load(GADGET_SRC, "@gadget_medieval_logistics.lua", "t", _G))()
+        LOGISTICS_GADGET = gadget
+        gadget = {}
+        assert(load(TACTICS_GADGET_SRC, "@gadget_medieval_tactics.lua", "t", _G))()
+        TACTICS_GADGET = gadget
         """)
 
     def _g(self, name):

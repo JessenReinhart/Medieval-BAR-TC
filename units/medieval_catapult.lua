@@ -2,6 +2,9 @@ return {
   medieval_catapult = {
     name = "Catapult",
     description = "Siege engine firing heavy stones at long range",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_catapult.png",
+    iconType = "medieval_siege",
     category = "LAND",
     buildCostEnergy = 0,
     buildCostMetal = 170,
@@ -46,10 +49,10 @@ return {
         -- points off-axis, and the rock then lands nowhere near the target.
         maxAngleDif = 360,
         onlyTargetCategory = "LAND",
-        -- FX placeholder (no audio/CEG assets exist in this repo yet):
-        --   soundstart = "<catapult release sfx>", soundhit = "<stone impact sfx>",
-        --   explosionGenerator = "<stone hit CEG>"
-        -- Keep as comment until a sounds/ dir and CEG generator names exist.
+        soundStart = "catapult_shoot",
+        soundHit = "catapult_hit",
+        -- Phase 7 Slice 2: heavy stone impact with crater debris and dust.
+        explosionGenerator = "custom:stone_hit_fx",
       },
     },
   },

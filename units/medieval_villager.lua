@@ -2,11 +2,17 @@ return {
   medieval_villager = {
     name = "Villager",
     description = "Hardworking peasant; harvests timber, stone, iron, and crops, and builds settlement structures.",
+    -- Phase 7 Slice 5: dedicated build-menu picture and radar/minimap icon.
+    buildpic = "medieval_villager.png",
+    iconType = "medieval_builder",
     category = "LAND",
     buildCostEnergy = 0,
-    buildCostMetal = 50,
+    -- Phase 6 Slice 1: buildCostMetal 50->40, mirroring resource_cost_food (below).
+    buildCostMetal = 40,
     builder = true,
-    buildTime = 25,
+    -- Phase 6 Slice 1: buildTime 25->20; a solo town center trains 4 villagers in
+    -- 4x20 = 80 frames, inside the 90-frame opening (25 left it at 100 frames).
+    buildTime = 20,
     canMove = true,
     canAttack = false,
     canFight = false,
@@ -27,7 +33,7 @@ return {
     speed = 28,
     mass = 120,
     upright = true,
-    objectName = "0ad/medieval_infantry.obj",
+    objectName = "0ad/medieval_villager.obj",
     script = "medieval_villager.lua",
     side = "MEDIEVAL",
     buildoptions = {
@@ -37,6 +43,7 @@ return {
       "medieval_barracks",
       "medieval_stables",
       "medieval_blacksmith",
+      "medieval_market",
       "medieval_wall",
       "medieval_tower",
     },
@@ -45,7 +52,9 @@ return {
       unitgroup = "builder",
       carry_capacity = 10,
       harvest_rate = 2,
-      resource_cost_food = 50,
+      -- Phase 6 Slice 1: resource_cost_food 50->40; 4 villagers cost 160 food,
+      -- leaving a 40-food reserve against the 200 starting pool (no starvation).
+      resource_cost_food = 40,
       resource_cost_wood = 0,
       resource_cost_stone = 0,
       resource_cost_iron = 0,

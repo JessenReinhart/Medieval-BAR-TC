@@ -416,72 +416,13 @@ function gadget:UnitDestroyed(unitID, unitDefID, teamID, attackerID, attackerDef
   removeSupplyMover(unitID)
 end
 
--- Damage-type matrix (Phase 4 Slice 2): read the attacker weapon's `damage_class`
--- customparam (tagged in gamedata/weapondefs.lua) and the defender unit's
--- `armor_class` customparam (tagged on wall/tower). Both are case-insensitive so
--- the same reader works whether the engine exposes `customParams` or the source
--- `customparams` spelling. Unknown ids/classes fall back to nil/"standard" so the
--- matrix never hard-fails an unknown attacker or defender.
-local function weaponDamageClass(weaponDefID)
-  if not (WeaponDefs and weaponDefID) then return nil end
-  local wd = WeaponDefs[weaponDefID]
-  if not wd then return nil end
-  local cp = wd.customParams or wd.customparams
-  return cp and cp.damage_class
-end
-
-local function unitArmorClass(unitDefID)
-  local def = UnitDefs and UnitDefs[unitDefID]
-  if not def then return "standard" end
-  local cp = def.customParams or def.customparams
-  if cp and cp.armor_class then return cp.armor_class end
-  return damageTypes.classForUnitDef(def.name)
-end
-
-function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
-  if not attackerID or not attackerDefID then
-    return damage, 1.0
-  end
-  local attackerDef = UnitDefs and UnitDefs[attackerDefID]
-  if not attackerDef or not attackerDef.name or not string.find(attackerDef.name, "^medieval_") then
-    return damage, 1.0
-  end
-  local outgoing = damage
-  -- Tech damage bonuses: every researched tech that lists this attacker's def
-  -- in `damage_mult` contributes its factor, folded multiplicatively by
-  -- logistics.damageMultiplier. This covers iron_swords (+25% infantry) as well
-  -- as the military unlock techs (veteran_infantry, crossbow_tech, chivalry),
-  -- which each boost their base and advanced unit.
-  local techMult = logistics.damageMultiplier(unlocked[attackerTeam], attackerDef.name)
-  if techMult > 1.0 then
-    local newDamage = logistics.scaledDamage(damage, techMult)
-    echo("PHASE3 DAMAGE attacker=%d defender=%d base=%.1f tech_mult=%.2f scaled=%.1f",
-      attackerID, unitID, damage, techMult, newDamage)
-    outgoing = newDamage
-  end
-  -- Supply bonus (Slice 7): a supplied attacker deals more damage. The value is
-  -- read from the throttled supply scan, so no per-hit distance math runs on
-  -- the damage path; the two bonuses stack multiplicatively.
-  local supplyBonus = supplyBonusOf(attackerID)
-  if supplyBonus > 0 then
-    outgoing = logistics.scaledDamage(outgoing, 1.0 + supplyBonus)
-    echo("PHASE3 SUPPLY damage attacker=%d defender=%d base=%.1f bonus=%.2f scaled=%.1f",
-      attackerID, unitID, damage, supplyBonus, outgoing)
-  end
-  -- Damage-type matrix (Phase 4 Slice 2): applied after tech and supply so the
-  -- three scale multiplicatively (base * tech * supply * matrix). A nil weapon
-  -- class yields a 1.0 matrix no-op, preserving pre-matrix behavior.
-  local weaponClass = weaponDamageClass(weaponDefID)
-  local armorClass = unitArmorClass(unitDefID)
-  local matrixMult = damageTypes.multiplier(weaponClass, armorClass)
-  local finalDamage = logistics.scaledDamage(outgoing, matrixMult)
-  local attackerName = attackerDef and attackerDef.name
-  local targetName = (UnitDefs and UnitDefs[unitDefID]) and UnitDefs[unitDefID].name
-  echo("PHASE4 DMATRIX attacker=%s target=%s base=%.1f final=%.1f class=%s->%s",
-    tostring(attackerName), tostring(targetName), outgoing, finalDamage,
-    tostring(weaponClass or "?"), tostring(armorClass or "?"))
-  return finalDamage, 1.0
-end
+-- Damage pipeline consolidation (docs/phase-5.md architectural goal 2): this
+-- gadget no longer implements UnitPreDamaged and no longer scales outgoing
+-- damage. Slice 5 owns the single authoritative UnitPreDamaged hook
+-- (luarules/gadgets/gadget_medieval_tactics.lua), which reads the tech and
+-- supply multipliers from this gadget's GG.MedievalLogistics export surface and
+-- composes the full deterministic chain (tech * supply * matrix * garrison *
+-- tactics) in one place. Keeping it here would double-apply tech/supply/matrix.
 
 function gadget:AllowCommand(unitID, unitDefID, teamID, cmdID, params, opts)
   if cmdID ~= CMD_BUILD_ROAD then return true end

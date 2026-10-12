@@ -93,21 +93,25 @@ class TestLogisticsRoadQueueValidation(unittest.TestCase):
 
 
 class TestLogisticsGadgetWiring(unittest.TestCase):
+    """Damage wiring now lives in Slice 5's single authoritative hook."""
+
     @classmethod
     def setUpClass(cls):
         cls.src = GADGET_PATH.read_text(encoding="utf-8")
 
-    def test_unit_predamaged_callin(self):
-        self.assertIn("UnitPreDamaged", self.src)
-        self.assertRegex(self.src, r"function gadget:UnitPreDamaged")
+    def test_logistics_no_longer_hooks_damage(self):
+        # docs/phase-5.md goal 2: Slice 5 (gadget_medieval_tactics.lua) owns the
+        # single UnitPreDamaged hook; the logistics gadget only publishes the
+        # tech multiplier for it to consume.
+        self.assertNotIn("function gadget:UnitPreDamaged", self.src)
 
-    def test_phase3_damage_log(self):
-        self.assertIn("PHASE3 DAMAGE", self.src)
+    def test_logistics_still_exports_the_tech_multiplier(self):
+        self.assertIn("DamageMultiplier", self.src)
 
-    def test_scaled_damage_wired(self):
-        # Tech damage is folded from the registry multiplier (which covers
-        # iron_swords 1.25 plus the military unlock techs) instead of a literal.
-        self.assertIn("logistics.scaledDamage(damage, techMult)", self.src)
+    def test_logistics_still_consumes_the_pure_module(self):
+        # The tech/supply multipliers still come from the pure logistics module,
+        # so Slice 5's hook can read them through GG.MedievalLogistics.
+        self.assertIn('VFS.Include("scripts/medieval_logistics.lua")', self.src)
 
 
 if __name__ == "__main__":
