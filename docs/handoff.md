@@ -1,9 +1,8 @@
-# Handoff: Medieval-BAR-TC (Phase 4 Slices 1–5 complete; Slice 6 next)
+# Handoff: Medieval-BAR-TC (Phase 4 Slices 1–6 complete)
 
-Date: 2026-10-09
+Date: 2026-10-12
 Branch: `medieval-total-conversion`
-Status: Phase 4 Slices 1–5 complete; Slice 6 (Basic Medieval Skirmish AI) next. 492 tests pass,
-56 Lua files clean.
+Status: Phase 4 Slices 1–6 complete. 582 tests pass, 59 Lua files clean.
 
 ### Phase 4 Status by Slice
 
@@ -29,13 +28,17 @@ Status: Phase 4 Slices 1–5 complete; Slice 6 (Basic Medieval Skirmish AI) next
    - Headless probe PASS (f=1124–1200): `road-speed-verdict PASS` (`onroad=0.08 offroad=0.05 applied=22.50 expect=22.50 base=15.00 source=mutator`), `route-verdict PASS` (`from=medieval_lumber_camp to=medieval_blacksmith kind=wood amount=25`), `delivery-verdict PASS` (`before=0 after=25 amount=25 delivered=1`).
    - Probe fix: wood is pinned at `HAUL_WOOD_TARGET = 50` (mid-band) because production consumes ~2 wood/frame above the haul layer; the previous pin at 26 was read as 24 and missed the `HAUL_STEP = 25` floor.
    - 51 tests in `tests/test_phase4_slice5.py`.
-6. **Slice 6 — Basic Medieval Skirmish AI (NEXT)**:
-   - Full automated skirmish match probe planned.
+6. **Slice 6 — Basic Medieval Skirmish AI (COMPLETE)**:
+   - Pure-Lua policy `scripts/medieval_skirmish_ai.lua` (villager dispatch, house expansion, road stubs, recruitment, army march orders).
+   - Synced gadget `luarules/gadgets/gadget_medieval_skirmish_ai.lua` (layer 5, modoption `skirmishai=1`, 30-frame cadence, `GG.MedievalSkirmishAI` API).
+   - Dedicated probe gadget `luarules/gadgets/gadget_phase4_slice6_skirmish_probe.lua`, startscript `tools/launch/startscript_slice6.txt`, runner `tools/launch/run_phase2_slice6_probe.py`.
+   - All five headless verdicts PASS: harvest, road, house, recruit, attack (f=60–180).
+   - 90 tests in `tests/test_phase4_slice6.py`.
 
 ### Test & Syntax Counts
 
-- `python tests/check_lua_syntax.py` -> 56 lua files, 0 errors.
-- `python -m pytest tests -q` -> 492 passed in 1.15s.
+- `python tests/check_lua_syntax.py` -> 59 lua files, 0 errors.
+- `python -m pytest tests -q` -> 582 passed in 1.96s.
 
 Previous work: Phase 4 Slice 1 — siege warfare core. New `medieval_catapult` unit built from the
 0 A.D. Hellenic lithobolos (982 verts / 556 tris), a slow heavy `catapult` weapon def (range 550,

@@ -329,9 +329,51 @@ above the haul layer, so a pin at 26 was read back as 24 and fell below the `HAU
 floor, which stalled `route-verdict` and `delivery-verdict`. Pinning mid-band keeps at least
 25 headroom after that consumption drift, so both verdicts settle deterministically.
 
-### Slice 6 — Basic Medieval Skirmish AI
-- Lua skirmish AI: place houses, harvest, connect endpoints with roads, train military,
-  attack. Automated match probe produces PASS/FAIL evidence.
+### Slice 6 — Basic Medieval Skirmish AI (complete)
+- Pure-Lua skirmish AI policy module `scripts/medieval_skirmish_ai.lua`:
+  evaluates villager task dispatch (`decideVillagerAction`), house expansion (`shouldBuildHouse`),
+  road network stubs (`shouldBuildRoad`, `selectCandidateRoadPos`), military training (`shouldRecruit`),
+  and army march orders (`shouldAttack`). Pure Lua 5.1/LuaJIT, no engine calls.
+- Synced AI gadget `luarules/gadgets/gadget_medieval_skirmish_ai.lua`:
+  layer 5, gated on modoption `skirmishai=1` (inert during generic phase2 runs), runs on a 30-frame
+  cadence (`CADENCE_FRAMES = 30`). Tracks villagers, houses, town centers, barracks, and field armies
+  per team; interfaces cleanly with `GG.MedievalEconomy`, `GG.MedievalHousing`, `GG.MedievalGather`,
+  `GG.MedievalRecruitment`, and `GG.MedievalLogistics`. Exposes `GG.MedievalSkirmishAI` (`EnableTeam`,
+  `DisableTeam`, `IsEnabled`, `GetStats`, `RunTurn`).
+- Headless match probe gadget `luarules/gadgets/gadget_phase4_slice6_skirmish_probe.lua`, dedicated
+  startscript `tools/launch/startscript_slice6.txt`, and runner `tools/launch/run_phase2_slice6_probe.py`.
+- Automated match probe verifies all five skirmish behaviors:
+  1. `harvest-verdict PASS`: AI villagers actively assigned to nearby resource nodes.
+  2. `road-verdict PASS`: AI constructs road stubs via `GG.MedievalLogistics.PlaceRoad`.
+  3. `house-verdict PASS`: AI expands settlement housing footprint near town center.
+  4. `recruit-verdict PASS`: AI trains infantry from barracks with economy debit.
+  5. `attack-verdict PASS`: AI marshals military and issues `CMD.FIGHT` orders to enemy base.
+- Tests: `tests/test_phase4_slice6.py` (90 tests; full suite 582 passed).
+
+#### Slice 6 test count & probe evidence
+
+```
+python tests/check_lua_syntax.py   -> Checked 59 lua files; 0 errors found.
+python -m pytest tests -q          -> 582 passed in 1.96s
+python tools/launch/run_phase2_slice6_probe.py:
+
+[t=00:00:03.140350][f=0000020] PHASE4 SKIRMISH probe setup starting at frame 20
+[t=00:00:03.142532][f=0000020] PHASE4 SKIRMISH probe setup completed at frame 20
+[t=00:00:04.473972][f=0000060] PHASE4 SKIRMISH harvest-verdict PASS f=60 team=1 gathers=4
+[t=00:00:05.474976][f=0000090] PHASE4 SKIRMISH road-verdict PASS f=90 team=1 roads=2
+[t=00:00:06.473128][f=0000120] PHASE4 SKIRMISH house-verdict PASS f=120 team=1 houses=1
+[t=00:00:07.472730][f=0000150] PHASE4 SKIRMISH recruit-verdict PASS f=150 team=1 recruited=5
+[t=00:00:08.474458][f=0000180] PHASE4 SKIRMISH attack-verdict PASS f=180 team=1 attacks=20
+[t=00:00:08.474468][f=0000180] PHASE4 SKIRMISH probe all stages evaluated at f=180
+
+--- SUMMARY ---
+harvest: PASS
+road: PASS
+house: PASS
+recruit: PASS
+attack: PASS
+SLICE 6 SKIRMISH AI PROBE: ALL VERDICTS PASSED
+```
 
 ## Verification conventions (unchanged from Phase 3)
 - `python -m pytest tests -q` (scoped; never bare `python -m pytest -q`).
