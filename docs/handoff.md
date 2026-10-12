@@ -1,8 +1,9 @@
-# Handoff: Medieval-BAR-TC (Phase 4 Slices 1–4 complete; Slice 5 in-progress savepoint)
+# Handoff: Medieval-BAR-TC (Phase 4 Slices 1–5 complete; Slice 6 next)
 
 Date: 2026-10-09
 Branch: `medieval-total-conversion`
-Status: Wrapped up for the day; 492 tests pass, 56 Lua files clean; all committed and pushed.
+Status: Phase 4 Slices 1–5 complete; Slice 6 (Basic Medieval Skirmish AI) next. 492 tests pass,
+56 Lua files clean.
 
 ### Phase 4 Status by Slice
 
@@ -20,13 +21,13 @@ Status: Wrapped up for the day; 492 tests pass, 56 Lua files clean; all committe
    - Tech tree registry in `scripts/medieval_logistics.lua`: `veteran_infantry`, `crossbow_tech`, `chivalry`.
    - Tech prerequisite gating on recruitment + multiplicative damage scaling stacking with supply bonus.
    - Headless probe PASS (f=920–1030). 63 tests in `tests/test_phase4_slice4.py`.
-5. **Slice 5 — Transport & Hauler Units (IN-PROGRESS SAVEPOINT)**:
+5. **Slice 5 — Transport & Hauler Units (COMPLETE)**:
    - Civilian hauler `medieval_cart` (`units/medieval_cart.lua`, LUS `scripts/medieval_cart.lua`, pop 0, non-military).
    - Pure-Lua hauler policy `scripts/medieval_haul.lua` (storage hub discovery, resource ordering, route selection pairing surplus to deficit).
-   - Synced gadget `luarules/gadgets/gadget_medieval_hauling.lua` (cart tracking, road-speed mutator enforcement, live haul jobs, `GG.MedievalEconomy.Transact` settlement).
+   - Synced gadget `luarules/gadgets/gadget_medieval_hauling.lua` (cart/hub tracking, road-speed mutator enforcement, live haul jobs, `GG.MedievalEconomy.Transact` settlement, `HaulSummary`/`HaulRoute`/`HaulHubStock` on `GG.MedievalLogistics`).
    - Probe runner `tools/launch/run_phase2_slice5_probe.py` and probe stage in `luarules/gadgets/gadget_phase2_test_forces.lua` (f=1060–1260).
-   - VERIFIED: road-speed mutator PASS (`onroad=0.08`, `offroad=0.05`, 1.50x target).
-   - REMAINING: live hub deficit trigger window in probe needs fine-tuning so `route-verdict` and `delivery-verdict` complete cleanly.
+   - Headless probe PASS (f=1124–1200): `road-speed-verdict PASS` (`onroad=0.08 offroad=0.05 applied=22.50 expect=22.50 base=15.00 source=mutator`), `route-verdict PASS` (`from=medieval_lumber_camp to=medieval_blacksmith kind=wood amount=25`), `delivery-verdict PASS` (`before=0 after=25 amount=25 delivered=1`).
+   - Probe fix: wood is pinned at `HAUL_WOOD_TARGET = 50` (mid-band) because production consumes ~2 wood/frame above the haul layer; the previous pin at 26 was read as 24 and missed the `HAUL_STEP = 25` floor.
    - 51 tests in `tests/test_phase4_slice5.py`.
 6. **Slice 6 — Basic Medieval Skirmish AI (NEXT)**:
    - Full automated skirmish match probe planned.

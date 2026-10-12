@@ -61,7 +61,9 @@ local HAUL_OFFROAD_END_X, HAUL_OFFROAD_END_Z = 3700, 4260
 local HAUL_ONROAD_X, HAUL_ONROAD_Z = 3620, 4900
 local HAUL_ONROAD_END_X, HAUL_ONROAD_END_Z = 3620, 4700
 local HAUL_HUB_OFFSET = 48 -- elmos; inside the hauling gadget's 64-elmo arrival radius
-local HAUL_WOOD_TARGET = 26 -- bottom of the policy's deficit band [HAUL_STEP=25, DEFICIT_THRESHOLD=80)
+local HAUL_WOOD_TARGET = 50 -- middle of the deficit band [25, 80); production consumes
+  -- ~2 wood/frame above the haul layer, so pinning at 26 was read as 24 and missed
+  -- the HAUL_STEP=25 floor. 50 keeps >=25 headroom after that consumption drift.
 local HAUL_CUSHION_WOOD = 300 -- above DEFICIT_THRESHOLD: holds the policy idle during Phase A
 local HAUL_LEG_FRAMES = 30 -- both speed legs are sampled this long after their move order
 

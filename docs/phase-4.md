@@ -287,7 +287,7 @@ matrix verdicts (`siege-vs-wall PASS`, `melee-vs-wall PASS`) and all Slice 3
 crafting verdicts (`sword-vs-verdict`, `bow-vs-verdict`, `recruit-gate-verdict`
 f=620..880 PASS), so the new stage breaks no earlier slice.
 
-### Slice 5 — Transport & Hauler Units (in-progress)
+### Slice 5 — Transport & Hauler Units (complete)
 - Civilian hauler unit `medieval_cart` (`units/medieval_cart.lua`, LUS `scripts/medieval_cart.lua`):
   health 220, slow base off-road speed (0.50 elmos/s), `carry_capacity = 400`, `unit_role = "hauler"`,
   pop cost 0 in `scripts/medieval_housing.lua`, explicit exclusion from military recruitment in `scripts/medieval_recruitment.lua`.
@@ -301,24 +301,33 @@ f=620..880 PASS), so the new stage breaks no earlier slice.
   and settles transfers via `GG.MedievalEconomy.Transact`. Exposes `HaulSummary`, `HaulRoute`,
   and `HaulHubStock` on `GG.MedievalLogistics`.
 - Headless probe runner `tools/launch/run_phase2_slice5_probe.py` and probe stage in
-  `luarules/gadgets/gadget_phase2_test_forces.lua` (f=1060–1260):
-  verifies cart off-road vs on-road velocity multiplier (PASS: onroad=0.08, offroad=0.05, 1.50× target);
-  active haul routing and delivery settlement across simulated storage hubs is under tuning.
+  `luarules/gadgets/gadget_phase2_test_forces.lua` (f=1060–1260): all three HAUL verdicts PASS
+  (road-speed, route, delivery) — see evidence below.
 - Tests: `tests/test_phase4_slice5.py` (51 tests).
 
-#### Slice 5 test count & current probe status
+#### Slice 5 test count & probe evidence
 
 ```
 python tests/check_lua_syntax.py   -> Checked 56 lua files; 0 errors found.
 python -m pytest tests -q          -> 492 passed
 ```
 
-Verified probe verdict:
+Probe verdicts (`tools/runtime/infolog.txt`), all PASS:
 ```
-[t=00:00:40.660868][f=0001124] PHASE4 HAUL road-speed-verdict PASS f=1124 onroad=0.08 offroad=0.05 (onRoad=true offRoad=false applied=22.50 expect=22.50 base=15.00 source=mutator state-ok=true applied-ok=true)
+[f=0001124] PHASE4 HAUL road-speed-verdict PASS onroad=0.08 offroad=0.05 applied=22.50 expect=22.50 base=15.00 source=mutator
+[f=0001140] PHASE4 HAUL route-verdict PASS from=medieval_lumber_camp to=medieval_blacksmith kind=wood amount=25
+[f=0001200] PHASE4 HAUL delivery-verdict PASS before=0 after=25 amount=25 delivered=1
 ```
 
-Remaining for completion: tune live hub deficit triggering window so `route-verdict` and `delivery-verdict` complete cleanly in the probe.
+The road-speed verdict confirms the mutator path specifically: `applied=22.50` against
+`base=15.00` is exactly the 1.50× road multiplier, with `source=mutator` ruling out a
+coincidental base-speed change.
+
+Probe fix worth keeping: the probe now pins wood at `HAUL_WOOD_TARGET = 50` (middle of the
+deficit band `[25, 80)`) instead of the previous `26`. Production consumes roughly 2 wood/frame
+above the haul layer, so a pin at 26 was read back as 24 and fell below the `HAUL_STEP = 25`
+floor, which stalled `route-verdict` and `delivery-verdict`. Pinning mid-band keeps at least
+25 headroom after that consumption drift, so both verdicts settle deterministically.
 
 ### Slice 6 — Basic Medieval Skirmish AI
 - Lua skirmish AI: place houses, harvest, connect endpoints with roads, train military,

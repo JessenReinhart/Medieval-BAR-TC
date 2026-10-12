@@ -304,7 +304,7 @@ local function runTeamHaul(teamID)
       local def = defID and UnitDefs and UnitDefs[defID]
       local cp = def and (def.customParams or def.customparams)
       local cap = cp and cp.carry_capacity
-      local route = haul.chooseHaulRoute(teamID, unitID, nil, nil, haul.clampCapacity(cap))
+      local route = haul.chooseHaulRoute(teamID, unitID, hubs[teamID], stocks, haul.clampCapacity(cap))
       if route then
         jobs[unitID] = { teamID = teamID, phase = "to_source", route = route }
         stats[teamID].routesAssigned = stats[teamID].routesAssigned + 1
