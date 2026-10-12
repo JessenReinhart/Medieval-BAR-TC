@@ -378,19 +378,22 @@ reviewed `Transact` path and harness tests; exact engine resource deltas are not
   fallback. The velocity check is soft by design (`PASS(soft)`); the hard verdicts are the state and
   restore checks. No Lua errors occur inside the probe window.
 
-## What's Next: Phase 4 Slice 3 (Production Chains: Blacksmith & Fletcher)
+## What's Next: Phase 5 (Victory Conditions, Medieval HUD & Tactical Depth)
 
-- Phase 4 Slice 2 (damage types & fortification destruction) is **implemented and verified in
-  Recoil**: 18 new tests (`tests/test_phase4_slice2.py`; full suite 348), Lua syntax clean (47
-  files, 0 errors), and two deterministic `PASS` verdicts from the headless probe:
-  `PHASE4 DMATRIX siege-vs-wall PASS` (dealt=1353.5, matrix=3.00) and
-  `PHASE4 DMATRIX melee-vs-wall PASS` (dealt=84.6, matrix=0.25). See `docs/phase-4.md`.
-- Slice 3 adds production chains: `medieval_blacksmith` converts Iron → weapon equipment and
-  `medieval_fletcher` converts Wood → bow equipment, gating high-tier recruitment on equipment
-  stock (not just food/pop).
-- Probe note for Slice 3+ (carried forward): `medieval_catapult` has a 5.0 s reload (150 frames)
-  and the engine applies a full initial reload at creation, so a spawned catapult's first shot
-  lands ~142 frames later. Budget slow-weapon probe windows accordingly.
+- Phase 4 is complete (Slices 1–6). Phase 5 is **planned, not implemented**: see
+  `docs/phase-5.md` for the full 6-slice specification.
+- Slice 1 — Victory/defeat engine (`scripts/medieval_victory.lua` +
+  `luarules/gadgets/gadget_medieval_victory.lua` → `Spring.GameOver`): conquest, TC-destruction,
+  regicide (new `medieval_king`), surrender.
+- Slice 2 — Medieval HUD widget (`LuaUI/Widgets/gui_medieval_hud.lua`) rendering Food/Wood/Stone/Iron,
+  Pop/Cap, starvation, idle villagers from synced rules params (`gadget_medieval_hud.lua`).
+- Slice 3 — `medieval_market` building, elastic barter rates, cart trade routes
+  (`scripts/medieval_market.lua` + `gadget_medieval_market.lua`).
+- Slice 4 — Town Center / Tower garrison shelter, heal, archer-scaled defensive output
+  (`scripts/medieval_garrison.lua` + `gadget_medieval_garrison.lua`).
+- Slice 5 — Cavalry charge, spearman brace, flank damage, defensive stance, single damage pipeline
+  (`scripts/medieval_tactics.lua` + `gadget_medieval_tactics.lua`).
+- Slice 6 — End-to-end automated skirmish match probe from settlement start to `GameOver` verdict.
 
 ## How to Resume in a New Session
 
@@ -407,6 +410,7 @@ python tools/launch/run_phase2_slice2_probe.py
 Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE3"
 Select-String -Path tools/runtime/infolog.txt -Pattern "PHASE4 DMATRIX"
 
-# 4. Review roadmap
-cat docs/phase-4.md
+# 4. Review roadmap (Phase 5 planning is next)
+cat docs/phase-5.md
+cat docs/handoff.md
 ```
