@@ -421,7 +421,7 @@ def parse_pmd(data: bytes) -> dict:
     return {"positions": vertices, "normals": normals, "uvs": uvs,
             "faces": faces, "bone_count": bone_count, "uv_sets": uv_count,
             "prop_count": prop_count, "prop_points": prop_points,
-            "bones": bone_transforms}
+            "bones": bone_transforms, "blends": blends}
 
 
 def render_obj(mesh, texture_name: str, scale: float = SCALE) -> str:
@@ -530,6 +530,130 @@ def _piece_name(attachpoint: str, mesh_path: str) -> str:
     # props, so those are named after their own mesh instead of being folded
     # together into one piece.
     return _sanitize(_mesh_basename(mesh_path))
+
+
+# --- Bone splitting ------------------------------------------------------------ #
+# A 0 A.D. skeletal mesh is one PSMD hull whose vertices carry up to four weighted
+# bone influences. Exporting it as a single OBJ piece gives the LUS scripts nothing
+# to animate, so the hull is partitioned per dominant bone: every triangle goes to
+# the bone its vertices vote for, and each resulting piece becomes a named OBJ
+# ``o`` block that Recoil exposes to ``piece "thigh_l"``-style lookups.
+
+SKELETON_PREFIX = "art/skeletons/"
+SKELETON_HORSE = SKELETON_PREFIX + "horse.xml"
+SKELETON_BIPED = SKELETON_PREFIX + "biped.xml"
+SKELETON_BOVIDAE = SKELETON_PREFIX + "bovidae_skeleton.xml"
+# SVertexBlend stores four u8 indices followed by four float weights; index 255 is
+# the "no influence" sentinel.
+BLEND_NONE = 255
+
+
+def _normalise_bone_name(raw: str) -> str:
+    """Lowercase a skeleton bone name and unify its side marker to ``_l``/``_r``."""
+    name = raw.replace("_L", "_l").replace("_R", "_r")
+    return name.lower()
+
+
+def parse_skeleton(zf: zipfile.ZipFile, xml_path: str) -> list:
+    """Read ``art/skeletons/<name>.xml`` and return its bone names in document order."""
+    document = ET.fromstring(zf.read(xml_path).decode("utf-8-sig"))
+    standard = next((node for node in document.iter() if _strip_ns(node.tag) == "standard_skeleton"), None)
+    if standard is None:
+        raise ValueError(f"{xml_path} has no <standard_skeleton>")
+    names = []
+    for bone in standard.iter("bone"):
+        raw = bone.get("name")
+        if not raw:
+            raise ValueError(f"{xml_path} has an unnamed <bone>")
+        names.append(_normalise_bone_name(raw))
+    if not names:
+        raise ValueError(f"{xml_path} declares no bones")
+    return names
+
+
+def _primary_bones(mesh: dict) -> list:
+    """Index of the heaviest bone influence per vertex, or ``BLEND_NONE``."""
+    primaries = []
+    for blend in mesh["blends"]:
+        weights = struct.unpack_from("<4f", blend, 4)
+        best_bone, best_weight = BLEND_NONE, -1.0
+        for slot in range(4):
+            bone = blend[slot]
+            if bone == BLEND_NONE:
+                continue
+            if weights[slot] > best_weight:
+                best_bone, best_weight = bone, weights[slot]
+        primaries.append(best_bone)
+    return primaries
+
+
+def _dominant_bone(face, primaries) -> int:
+    """Bone owning a triangle: majority vote over its vertices, ties to the lowest."""
+    votes = {}
+    for vertex in face:
+        bone = primaries[vertex]
+        if bone == BLEND_NONE:
+            continue
+        votes[bone] = votes.get(bone, 0) + 1
+    if not votes:
+        return BLEND_NONE
+    return max(votes, key=lambda bone: (votes[bone], -bone))
+
+
+def split_skinned_mesh(mesh: dict, bone_names: list) -> list:
+    """Partition a parsed PMD into one piece per dominant bone.
+
+    Returns ``[{"name": "base", **mesh}]`` unchanged when the hull is unskinned or
+    carries no blend data. Faces whose vertices name no bone at all stay together
+    in a ``base`` piece, which is also the anchor the LUS scripts expect, so a
+    split model keeps both its named parts and its root piece.
+    """
+    if mesh.get("bone_count", 0) <= 1 or not mesh.get("blends"):
+        return [{"name": "base", **mesh}]
+    primaries = _primary_bones(mesh)
+    faces_by_bone = {}
+    for face in mesh["faces"]:
+        faces_by_bone.setdefault(_dominant_bone(face, primaries), []).append(face)
+    pieces = []
+    for bone in sorted(faces_by_bone):
+        bone_faces = faces_by_bone[bone]
+        if bone == BLEND_NONE:
+            piece_name = "base"
+        elif bone < len(bone_names):
+            piece_name = bone_names[bone]
+        else:
+            piece_name = f"bone_{bone}"
+        piece_name = _sanitize(piece_name)
+        remap = {}
+        positions, normals, uvs, indices = [], [], [], []
+        for face in bone_faces:
+            triangle = []
+            for vertex in face:
+                if vertex not in remap:
+                    remap[vertex] = len(positions)
+                    positions.append(mesh["positions"][vertex])
+                    normals.append(mesh["normals"][vertex])
+                    uvs.append(mesh["uvs"][vertex])
+                triangle.append(remap[vertex])
+            indices.append(tuple(triangle))
+        pieces.append({"name": piece_name, "positions": positions, "normals": normals,
+                       "uvs": uvs, "faces": indices})
+    return pieces or [{"name": "base", **mesh}]
+
+
+def _skeleton_for(actor_path: str, want_mesh: str) -> str:
+    """Skeleton XML governing a model, or ``""`` when it is a static hull.
+
+    Horse is tested first because every horse mesh also lives under ``skeletal/``.
+    """
+    haystack = f"{actor_path} {want_mesh}".lower()
+    if "horse" in haystack:
+        return SKELETON_HORSE
+    if "skeletal" in haystack:
+        return SKELETON_BIPED
+    if any(token in haystack for token in ("bovidae", "cattle", "cow", "bull")):
+        return SKELETON_BOVIDAE
+    return ""
 
 
 class _MergeContext:
@@ -687,7 +811,17 @@ def resolve_model_pieces(zf: zipfile.ZipFile, actor_path: str, want_mesh: str) -
     if root_pmd is None:
         raise ValueError(f"{actor_path} has no variant selecting mesh {want_mesh}")
     ctx = _MergeContext()
-    ctx.add("base", root_pmd, _mat_identity(), root_path)
+    # A skinned hull is split per dominant bone so the LUS scripts get real pieces
+    # to animate; a static hull (or one whose skeleton is unavailable) stays whole.
+    pieces = None
+    skeleton = _skeleton_for(actor_path, want_mesh)
+    if skeleton:
+        try:
+            pieces = split_skinned_mesh(root_pmd, parse_skeleton(zf, skeleton))
+        except (KeyError, ValueError) as exc:
+            ctx.warn(f"{skeleton} unavailable for {root_path}: {exc}")
+    for piece in pieces or [{"name": "base", **root_pmd}]:
+        ctx.add(piece["name"], piece, _mat_identity(), root_path)
     for variant in variants:
         meshes = _variant_meshes(variant)
         if meshes and want_mesh not in meshes:

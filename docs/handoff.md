@@ -1,8 +1,8 @@
 # Handoff: Medieval-BAR-TC (Phases 1–7 complete)
 
-Date: 2026-10-12
+Date: 2026-10-13
 Branch: `medieval-total-conversion`
-Status: Phases 1–7 complete. **1494 tests pass** (Phase 6 baseline + Phase 7 + slice-9 rendering fixes), 79 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
+Status: Phases 1–7 complete. **1515 tests pass** (Phase 6 baseline + Phase 7 + slice-9 rendering fixes + slice-10 skeletal articulation), 79 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
 
 ### Phase 5 Status by Slice
 
@@ -629,6 +629,91 @@ Full integration verification (this session, 2026-10-13):
 - GUI smoke test → `spring.exe` running; `infolog.txt` shows no `.obj`/`.dds`/`.tex1`/
   `.lua` load failures and no `props`/`piece`/`tex2`/`teamcolor` warnings (only the
   pre-existing missing-COB and `feature_s11n` noise recorded above).
+
+### Phase 7 Slice 10 — Skeletal Articulation: Bone-Split Meshes + Whole-Body LUS Rigs (2026-10-13)
+
+Skeletal hulls were previously exported as one static OBJ piece, so the LUS rigs could
+only rotate the whole model. Slice 10 consumes the 0 A.D. PMD vertex blend weights to
+split each skinned mesh along its bones, and drives the resulting parts as a real
+whole-body rig.
+
+**Bone splitting in `tools/assets/convert_0ad.py`**
+
+- `parse_pmd` now returns the raw `SVertexBlend` payloads as `blends` — one 20-byte
+  record per vertex (4 bone indices + 4 float weights) — so per-vertex influences
+  survive parsing instead of being discarded. Indices are bounds-checked against
+  `bone_count` (`>= bone_count` raises `PMDError`); the `255` "no bone" sentinel is
+  preserved.
+- `parse_skeleton(zf, xml_path)` reads `art/skeletons/<name>.xml` from `public.zip`,
+  locates `<standard_skeleton>`, and returns bone names in document order, lowercased
+  with the side marker normalised to `_l`/`_r`. Standard skeletons used:
+  `biped.xml` (46 bones), `horse.xml` (49 bones), `bovidae_skeleton.xml`.
+- `_primary_bones` / `_dominant_bone` resolve the highest-weight influence per face;
+  `split_skinned_mesh` partitions the hull into one named piece per dominant bone, with
+  faces re-indexed 0-based inside each piece. Vertices naming no bone stay in a `base`
+  piece, so a split model keeps both its named parts and the root piece the LUS scripts
+  anchor on. Unskinned hulls (`bone_count <= 1` or no blends) return `base` unchanged.
+- `_skeleton_for(actor_path, want_mesh)` routes an actor to its skeleton — `horse`
+  tested first (every horse mesh also lives under `skeletal/`), then `skeletal/` →
+  `biped.xml`, then `bovidae`/`cattle`/`cow`/`bull` → `bovidae_skeleton.xml`; static
+  hulls return `""`.
+- `resolve_model_pieces` routes skeletal actors through the splitter and static hulls
+  straight to a single `base` piece.
+
+**Articulated multi-piece OBJ models** (regenerated `objects3d/0ad/*.obj` +
+`tools/assets/0ad-manifest.json`, `props_ignored = 0` everywhere):
+
+| Model | Pieces | Skeleton |
+| --- | --- | --- |
+| `medieval_villager` | 23 | `biped.xml` |
+| `medieval_spearman` | 25 | `biped.xml` |
+| `medieval_infantry` | 28 | `biped.xml` |
+| `medieval_archer` | 28 | `biped.xml` |
+| `medieval_king` | 28 | `biped.xml` |
+| `medieval_cavalry` (horse + rider) | 43 | `horse.xml` |
+
+Piece names come straight from the skeleton, so the LUS scripts address real anatomy
+rather than merged blobs: bipeds expose `hip`, `spine`, `chest`, `neck`, `head`,
+`shoulder_l/r`, `arm_l/r`, `forearm_l/r`, `hand_l/r`, `finger_l/r`, `fingertip_l/r`,
+`thigh_l/r`, `leg_l/r` (shin), `foot_l/r`, plus resolved props (`helmet`, `weapon`,
+`shield`, quivers, greaves, `cape_hd_hoplite`). Cavalry exposes the quadruped chain
+`spine`/`spine1`/`spine2`, `neck`/`neck1`/`neck2`, `head`, `l/r_ear`,
+`l/r_shoulder`, `l/r_upperarm`, `l/r_arm`, `l/r_forearm`, `l/r_hand`, `l/r_femur`,
+`l/r_thigh`, `l/r_leg`, `l/r_shin`, `l/r_hoof`, `l/r_hoof_back`, `belly`,
+`tail2..tail7`, plus a mounted `rider` piece with its own `helmet`/`weapon`.
+Buildings remain static contexts: single `base` hull plus prop merges.
+
+**Whole-body LUS rigs (`scripts/medieval_*.lua`)**
+
+- Humanoid walk/attack rigs (`medieval_infantry`, `medieval_archer`,
+  `medieval_villager`, `medieval_cavalry` rider) animate the split pieces: contact and
+  passing poses turn `thigh_l/r`, `leg_l/r`, `foot_l/r`, counter-swing `arm_l/r` /
+  `forearm_l/r`, and lean `chest` / twist `spine` over a `Move` bob on `hip`. Walk
+  cycles run under `script.StartMoving`/`StopMoving` with `SIG_MOVE` masking; combat
+  thrust and aim pitch under `SIG_ATTACK` via `script.AimWeapon*` / `script.FireWeapon*`.
+- `medieval_cavalry` drives a quadruped 4-beat gait: the `GALLOP` table holds four
+  beats per stride (`pitch`/`roll`/`lift`/`bob`/`neck`/`tail`) — beat 1 puts diagonal
+  pair A forward (left hind femur with right shoulder), beat 3 the mirrored pair B, and
+  the even beats are the airborne suspension where the hooves gather under the hull.
+  The hull bobs on `root`, with `spine`, `neck`, tail chain and `rider` following.
+- Every bone reference goes through `optPiece()` and falls back to `base`, so a model
+  that failed to split still animates instead of erroring.
+
+**Tests** — `tests/test_phase7_slice10_articulation.py` (**21 tests**): `parse_pmd`
+blend payloads (`blends` length == positions, 20-byte records, weight range, index
+bounds, sentinel tracking, static meshes with `bone_count == 0`); `parse_skeleton`
+(46 bones for `biped.xml`, 49 for `horse.xml`, document order preserved, side-marker
+normalisation, rejection of a missing standard skeleton and an absent entry, horse
+skeleton selection, unskinned fallback); `split_skinned_mesh` (named pieces, hull
+partition, per-piece geometry, sentinel influences, dominant-bone face assignment,
+unweighted faces → `base`, unknown bone-index sanitisation); `resolve_model_pieces`
+routing (skeletal actor, cavalry actor, static hull kept whole).
+
+Verification (this session, 2026-10-13):
+
+- `python tests/check_lua_syntax.py` → `Checked 79 lua files; 0 errors found.`
+- `python -m pytest tests -q` → **1515 passed** in ~7s.
+- `python -m pytest tests/test_phase7_slice10_articulation.py -q` → **21 passed**.
 
 **Next:** Phase 7 is the final planned phase in `docs/phase-7.md`; the roadmap is complete
 through Phase 7. Any further work is a new phase (balance/content or map authoring) and

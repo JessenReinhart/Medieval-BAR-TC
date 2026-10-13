@@ -1,16 +1,18 @@
 -- Lua Unit Script (LUS) for Medieval Cavalry (Fast Melee / Charge)
--- Uses 0ad model geometry (objects3d/0ad/medieval_cavalry.obj, single piece "base")
+-- Uses 0ad model geometry (objects3d/0ad/medieval_cavalry.obj, 43 per-bone pieces)
 --
 -- Phase 7 Slice 4 -- procedural piece animation & motion dynamics.
--- The converted mesh is a single hull, so optPiece() degrades to the root "base"
--- piece and safeCall() makes every transform best-effort.
+-- Phase 7 Slice 10 -- articulated quadruped horse plus mounted rider: a bone
+--   chain (root / spine / neck / head / tail, fore and hind limb chains) driven
+--   in a diagonal canter, with the rider animated on the saddle bone.
+-- The exporter emits the bones but no "base" hull, so optPiece() binds each chain
+-- to the emitted piece (the root falls back to spine) and safeCall() makes every
+-- transform best-effort: this script also survives a single-hull mesh.
 --
 -- Threading contract (luarules/gadgets/unit_script.lua):
 --   StartMoving / StopMoving are NOT thread-wrapped (spawn the loop with
 --   StartThread); Create / Killed / AimWeapon / FireWeapon ARE thread-wrapped,
 --   so Killed may Sleep in its body to hold the collapse.
-
-local base = piece "base"
 
 local function optPiece(name)
 	local ok, p = pcall(piece, name)
@@ -18,7 +20,41 @@ local function optPiece(name)
 	return nil
 end
 
-local torso = optPiece("torso") or base
+-- Root hull. The converted OBJ is articulated (per-bone pieces, no "base" hull),
+-- so probe the bones the exporter actually emits, then the engine root name.
+local base = optPiece("base") or optPiece("hip") or optPiece("root") or optPiece("spine")
+if not base then
+	base = optPiece("$$$___magic___$$$.")  -- Recoil model root; nil if not exposed
+end
+
+-- Rigged horse skeleton, reconciled with the pieces the exporter actually emits
+-- (objects3d/0ad/medieval_cavalry.obj: spine/spine1/spine2, neck/neck1/neck2,
+-- head, shoulder/upperarm/arm/forearm/hand chains, femur/thigh/leg/shin/foot/
+-- hoof chains, tail2..tail7, rider, helmet, weapon). Every bone falls back to the
+-- resolved root hull when the mesh does not carry it, so an unknown bone name can
+-- never raise from a transform.
+local root = optPiece("root") or optPiece("spine") or base
+local spine = optPiece("spine") or base
+local neck = optPiece("neck") or base
+local head = optPiece("head") or base
+local tail = optPiece("tail_base") or optPiece("tail2") or optPiece("tail") or base
+local l_femur = optPiece("l_femur") or optPiece("l_thigh") or base
+local l_thigh = optPiece("l_thigh") or base
+local l_leg = optPiece("l_leg") or optPiece("l_shin") or base
+local l_shin = optPiece("l_shin") or base
+local l_hoof = optPiece("l_hoof") or base
+local r_femur = optPiece("r_femur") or optPiece("r_thigh") or base
+local r_thigh = optPiece("r_thigh") or base  -- this exporter emits no r_thigh
+local r_leg = optPiece("r_leg") or optPiece("r_shin") or base
+local r_shin = optPiece("r_shin") or base
+local r_hoof = optPiece("r_hoof") or base
+local l_shoulder = optPiece("l_shoulder") or optPiece("l_arm") or base
+local l_forearm = optPiece("l_forearm") or base
+local r_shoulder = optPiece("r_shoulder") or optPiece("r_arm") or base
+local r_forearm = optPiece("r_forearm") or base
+-- The rider rides the saddle bone; rigs that spell that bone "torso" keep the
+-- same mounted motion instead of dropping it to the hull.
+local rider = optPiece("rider") or optPiece("torso") or base
 local weapon = optPiece("weapon") or base
 
 local function safeCall(fn, ...)
@@ -28,32 +64,72 @@ end
 
 local SIG_MOVE, SIG_ATTACK, SIG_DEATH = 1, 2, 4
 
--- Gallop: a deeper, slower rock than the infantry stride, plus a lift on the
--- beat where the horse is airborne.
-local GALLOP = {
-	{ pitch = 0.09, roll = 0.06, lift = 2.0 },
-	{ pitch = 0.0, roll = 0.0, lift = 0.6 },
-	{ pitch = -0.07, roll = -0.06, lift = 0.0 },
-	{ pitch = 0.0, roll = 0.0, lift = 0.6 },
+-- == Rest pose: every bone back to zero =====================================
+local REST_PIECES = {
+	base, root, spine, neck, head, tail,
+	l_femur, l_thigh, l_leg, l_shin, l_hoof,
+	r_femur, r_thigh, r_leg, r_shin, r_hoof,
+	l_shoulder, l_forearm, r_shoulder, r_forearm,
+	rider, weapon,
 }
 
 local function restPose()
-	safeCall(Turn, torso, x_axis, 0, 6)
-	safeCall(Turn, torso, z_axis, 0, 6)
-	safeCall(Move, torso, y_axis, 0, 6)
-	safeCall(Turn, base, x_axis, 0, 6)
-	safeCall(Turn, base, z_axis, 0, 6)
-	safeCall(Move, base, y_axis, 0, 6)
-	safeCall(Move, weapon, z_axis, 0, 6)  -- retract the weapon after a swing
+	for i = 1, #REST_PIECES do
+		local p = REST_PIECES[i]
+		safeCall(Turn, p, x_axis, 0, 6)
+		safeCall(Turn, p, y_axis, 0, 6)
+		safeCall(Turn, p, z_axis, 0, 6)
+		safeCall(Move, p, y_axis, 0, 6)
+		safeCall(Move, p, z_axis, 0, 6)
+	end
 end
 
-local function clampLean(pitch)
-	local lean = pitch or 0
-	if type(lean) ~= "number" then return 0 end
-	if lean > 0.3 then return 0.3 end
-	if lean < -0.3 then return -0.3 end
-	return lean
+local function clampAngle(value, limit)
+	if type(value) ~= "number" then return 0 end
+	if value > limit then return limit end
+	if value < -limit then return -limit end
+	return value
 end
+
+local function clampPitch(pitch)
+	return clampAngle(pitch, 0.3)
+end
+
+local function clampHeading(heading)
+	return clampAngle(heading, 1.2)
+end
+
+-- == Locomotion: diagonal canter ============================================
+-- Four beats per stride. Beat 1 is diagonal pair A leading (left hind femur
+-- forward with the right shoulder), beat 3 is the swapped diagonal pair B; the
+-- even beats are the airborne suspension where the hooves gather under the hull.
+-- `lift` is the hull's hoof clearance, `bob` the vertical travel of the body.
+local GALLOP = {
+	{
+		-- pair A leads: left hind + right fore forward, right hind + left fore back
+		pitch = 0.10, roll = 0.05, lift = 2.2, bob = 0.2, neck = 0.12, tail = 0.16,
+		l_femur = 0.45, r_shoulder = 0.40, r_femur = -0.35, l_shoulder = -0.30,
+		l_shin = 0.30, r_forearm = 0.28, r_shin = 0.16, l_forearm = 0.14,
+	},
+	{
+		-- suspension: hull airborne, all four limbs fold under the body
+		pitch = 0.02, roll = 0.0, lift = 1.0, bob = 0.6, neck = 0.03, tail = 0.0,
+		l_femur = 0.05, r_shoulder = 0.05, r_femur = 0.05, l_shoulder = 0.05,
+		l_shin = 0.36, r_forearm = 0.32, r_shin = 0.36, l_forearm = 0.32,
+	},
+	{
+		-- pair B leads: right hind + left fore forward, left hind + right fore back
+		pitch = -0.08, roll = -0.05, lift = 2.2, bob = 0.2, neck = -0.10, tail = -0.16,
+		l_femur = -0.35, r_shoulder = -0.30, r_femur = 0.45, l_shoulder = 0.40,
+		l_shin = 0.16, r_forearm = 0.14, r_shin = 0.30, l_forearm = 0.28,
+	},
+	{
+		-- second suspension beat, mirrored
+		pitch = 0.02, roll = 0.0, lift = 1.0, bob = 0.6, neck = 0.03, tail = 0.0,
+		l_femur = 0.05, r_shoulder = 0.05, r_femur = 0.05, l_shoulder = 0.05,
+		l_shin = 0.36, r_forearm = 0.32, r_shin = 0.36, l_forearm = 0.32,
+	},
+}
 
 function script.Create()
 	restPose()
@@ -74,7 +150,6 @@ local function say(msg)
 	end)
 end
 
--- == Locomotion: gallop rock, roll and airborne lift ========================
 function script.StartMoving()
 	Signal(SIG_MOVE)
 	StartThread(function()
@@ -82,11 +157,32 @@ function script.StartMoving()
 		local phase = 1
 		while true do
 			local beat = GALLOP[phase]
-			safeCall(Turn, torso, x_axis, beat.pitch, 6)
-			safeCall(Turn, torso, z_axis, beat.roll, 6)
-			safeCall(Move, torso, y_axis, beat.lift, 10)
+			-- Hull and spine: pitch/roll over the diagonal, then bob with the beat.
+			safeCall(Turn, root, x_axis, beat.pitch, 8)
+			safeCall(Turn, root, z_axis, beat.roll, 8)
+			safeCall(Move, root, y_axis, beat.lift + beat.bob, 12)
+			safeCall(Turn, spine, x_axis, beat.pitch * 0.5, 8)
+			safeCall(Turn, spine, z_axis, beat.roll * 0.5, 8)
+			safeCall(Move, spine, y_axis, beat.bob * 0.4, 12)
+			-- Neck and tail counter-swing to balance the canter.
+			safeCall(Turn, neck, x_axis, beat.neck, 8)
+			safeCall(Turn, head, x_axis, -beat.neck * 0.5, 8)
+			safeCall(Turn, tail, z_axis, beat.tail, 10)
+			-- Diagonal pairs.
+			safeCall(Turn, l_femur, x_axis, beat.l_femur, 10)
+			safeCall(Turn, r_femur, x_axis, beat.r_femur, 10)
+			safeCall(Turn, r_shoulder, x_axis, beat.r_shoulder, 10)
+			safeCall(Turn, l_shoulder, x_axis, beat.l_shoulder, 10)
+			-- Hocks and forearms fold so each hoof clears the ground.
+			safeCall(Turn, l_leg, x_axis, beat.l_shin, 10)
+			safeCall(Turn, r_leg, x_axis, beat.r_shin, 10)
+			safeCall(Turn, r_forearm, x_axis, beat.r_forearm, 10)
+			safeCall(Turn, l_forearm, x_axis, beat.l_forearm, 10)
+			-- The rider posts with the hull and stays upright against the pitch.
+			safeCall(Move, rider, y_axis, beat.bob * 0.5, 12)
+			safeCall(Turn, rider, x_axis, -beat.pitch * 0.6, 8)
 			phase = phase % #GALLOP + 1
-			Sleep(160)
+			Sleep(150)
 		end
 	end)
 end
@@ -96,15 +192,19 @@ function script.StopMoving()
 	restPose()
 end
 
--- == Combat: lowered lance on the aim line, couched thrust on fire ==========
+-- == Combat: rear the horse and slash with the sword ========================
 function script.AimWeapon1(heading, pitch)
 	if aimEchoes < 5 then
 		aimEchoes = aimEchoes + 1
 		say(string.format("LUS AIM cavalry w1 heading=%.1f pitch=%.1f", heading or 0, pitch or 0))
 	end
-	-- A couched lance sits low: bias the torso forward rather than onto the
-	-- raw aim pitch.
-	safeCall(Turn, torso, x_axis, clampLean(pitch) * 0.4 + 0.08, 5)
+	-- Slew the whole animal onto the aim line, then let the neck and the rider
+	-- follow the target; the couched torso stays low rather than on the raw pitch.
+	local yaw = clampHeading(heading)
+	safeCall(Turn, root, y_axis, yaw * 0.35, 6)
+	safeCall(Turn, neck, y_axis, yaw * 0.20, 6)
+	safeCall(Turn, rider, y_axis, yaw * 0.45, 6)
+	safeCall(Turn, rider, x_axis, clampPitch(pitch) * 0.4 + 0.08, 5)
 	return true
 end
 
@@ -116,15 +216,33 @@ function script.FireWeapon1()
 	Signal(SIG_ATTACK)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
-		-- Gather, drive the lance through, then settle back into the saddle.
+		-- Rear: the hull pitches up, weight rocks onto the hocks and the front
+		-- pair leaves the ground.
+		safeCall(Turn, root, x_axis, -0.30, 8)
+		safeCall(Move, root, y_axis, 1.4, 10)
+		safeCall(Turn, l_shoulder, x_axis, -0.55, 9)
+		safeCall(Turn, r_shoulder, x_axis, -0.55, 9)
+		safeCall(Turn, l_forearm, x_axis, -0.35, 9)
+		safeCall(Turn, r_forearm, x_axis, -0.35, 9)
+		safeCall(Turn, l_femur, x_axis, 0.18, 9)
+		safeCall(Turn, r_femur, x_axis, 0.18, 9)
+		safeCall(Turn, neck, x_axis, 0.20, 8)
+		-- Rider gathers the sword arm back over the shoulder.
 		safeCall(Move, weapon, z_axis, -1.2, 12)
-		safeCall(Turn, torso, x_axis, -0.10, 10)
-		Sleep(100)
+		safeCall(Turn, rider, y_axis, -0.22, 8)
+		safeCall(Turn, rider, x_axis, -0.10, 8)
+		Sleep(110)
+		-- Slash: the blade sweeps down and across as the forelegs come back down.
 		safeCall(Move, weapon, z_axis, 3.0, 24)
-		safeCall(Turn, torso, x_axis, 0.26, 24)
+		safeCall(Turn, rider, y_axis, 0.34, 22)
+		safeCall(Turn, rider, x_axis, 0.26, 22)
+		safeCall(Turn, root, x_axis, 0.06, 12)
+		safeCall(Move, root, y_axis, -0.2, 12)
+		safeCall(Turn, l_shoulder, x_axis, 0.12, 12)
+		safeCall(Turn, r_shoulder, x_axis, 0.12, 12)
 		Sleep(120)
-		safeCall(Turn, base, x_axis, -0.12, 10)
-		Sleep(80)
+		safeCall(Turn, root, x_axis, -0.10, 10)
+		Sleep(90)
 		restPose()
 	end)
 end
@@ -142,7 +260,11 @@ function script.AimWeapon(weaponNum, heading, pitch)
 		aimEchoes = aimEchoes + 1
 		say(string.format("LUS AIM cavalry w%d [unnum] heading=%.1f pitch=%.1f", weaponNum or 0, heading or 0, pitch or 0))
 	end
-	safeCall(Turn, torso, x_axis, clampLean(pitch) * 0.4 + 0.08, 5)
+	local yaw = clampHeading(heading)
+	safeCall(Turn, root, y_axis, yaw * 0.35, 6)
+	safeCall(Turn, neck, y_axis, yaw * 0.20, 6)
+	safeCall(Turn, rider, y_axis, yaw * 0.45, 6)
+	safeCall(Turn, rider, x_axis, clampPitch(pitch) * 0.4 + 0.08, 5)
 	return true
 end
 
@@ -154,32 +276,50 @@ function script.FireWeapon(weaponNum)
 	Signal(SIG_ATTACK)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
+		safeCall(Turn, root, x_axis, -0.30, 8)
+		safeCall(Move, root, y_axis, 1.4, 10)
+		safeCall(Turn, l_shoulder, x_axis, -0.55, 9)
+		safeCall(Turn, r_shoulder, x_axis, -0.55, 9)
+		safeCall(Turn, l_forearm, x_axis, -0.35, 9)
+		safeCall(Turn, r_forearm, x_axis, -0.35, 9)
 		safeCall(Move, weapon, z_axis, -1.2, 12)
-		safeCall(Turn, torso, x_axis, -0.10, 10)
-		Sleep(100)
+		safeCall(Turn, rider, y_axis, -0.22, 8)
+		Sleep(110)
 		safeCall(Move, weapon, z_axis, 3.0, 24)
-		safeCall(Turn, torso, x_axis, 0.26, 24)
+		safeCall(Turn, rider, y_axis, 0.34, 22)
+		safeCall(Turn, rider, x_axis, 0.26, 22)
+		safeCall(Turn, root, x_axis, 0.06, 12)
+		safeCall(Move, root, y_axis, -0.2, 12)
 		Sleep(120)
-		safeCall(Turn, base, x_axis, -0.12, 10)
-		Sleep(80)
 		restPose()
 	end)
 end
 
--- == Defeat: horse breaks down and the rider rolls off ======================
+-- == Defeat: the horse breaks down and the rider is thrown ==================
 function script.Killed(recentDamage, maxHealth)
 	Signal(SIG_MOVE)
 	Signal(SIG_ATTACK)
 	Signal(SIG_DEATH)
 	SetSignalMask(SIG_DEATH)
-	-- Rear up first, then go over sideways onto the ground.
-	safeCall(Turn, base, x_axis, -0.35, 4)
-	safeCall(Turn, torso, x_axis, -0.35, 4)
-	Sleep(180)
-	safeCall(Turn, base, z_axis, 1.5, 3)
-	safeCall(Turn, torso, z_axis, 1.6, 3)
-	safeCall(Move, base, y_axis, -3.0, 2)
-	safeCall(Move, torso, y_axis, -3.0, 2)
-	Sleep(380)
+	-- Rear one last time, then go over sideways onto the flank.
+	safeCall(Turn, root, x_axis, -0.35, 4)
+	safeCall(Turn, neck, x_axis, -0.30, 4)
+	safeCall(Move, root, y_axis, 0.8, 4)
+	Sleep(170)
+	safeCall(Turn, root, z_axis, 1.55, 3)
+	safeCall(Move, root, y_axis, -2.6, 2)
+	-- Legs sprawl: the near pair folds under the body, the far pair kicks out.
+	safeCall(Turn, l_femur, z_axis, 0.55, 4)
+	safeCall(Turn, r_femur, z_axis, -0.45, 4)
+	safeCall(Turn, l_shoulder, z_axis, 0.50, 4)
+	safeCall(Turn, r_shoulder, z_axis, -0.40, 4)
+	safeCall(Turn, spine, z_axis, 0.25, 5)
+	safeCall(Turn, tail, z_axis, -0.35, 5)
+	-- The rider is thrown clear of the saddle.
+	safeCall(Turn, rider, z_axis, 0.90, 4)
+	safeCall(Move, rider, y_axis, -0.6, 4)
+	Sleep(240)
+	safeCall(Turn, head, x_axis, 0.40, 5)
+	Sleep(120)
 	return 1
 end

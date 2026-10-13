@@ -24,7 +24,8 @@ Covers:
    - Every animation script exposes mandatory engine call-ins: Create, StartMoving,
      StopMoving, Killed, plus weapon call-ins (AimWeapon, FireWeapon, QueryWeapon)
      for armed units.
-   - Every model's OBJ defines the anchor piece 'base' required by LUS piece contracts.
+   - The converted OBJ hulls are articulated (per-bone pieces, no 'base' anchor); the
+     LUS scripts resolve the root hull through optPiece() probes.
    - Multi-piece OBJ piece names match the LUS optPiece() probing contracts.
 """
 
@@ -283,9 +284,24 @@ class TestTextureLoading:
 
     def test_lus_optpiece_pattern_matches_multipiece_obj_names(self):
         """Scripts reference named pieces via optPiece/piece probes matching the OBJ contract."""
+        # The converted 0 A.D. hulls are articulated (per-bone pieces, no `base`
+        # anchor), and a rigged mesh authored later may expose any of these bones.
+        # On top of the humanoid and siege piece names this covers both rig
+        # vocabularies the LUS scripts address: the biped skeleton (`chest`, `hip`,
+        # `thigh_l`, `foot_r`, ...) and the quadruped horse skeleton (`root`,
+        # `spine`, `neck`, `tail`, the fore/hind limb chains and the `rider`).
         expected_piece_names = {
             "base", "torso", "head", "weapon", "shield", "arm", "wheel", "axle",
             "tray", "l_leg", "r_leg", "l_arm", "r_arm",
+            "chest", "hip", "helmet",
+            "thigh_l", "thigh_r", "leg_l", "leg_r",
+            "arm_l", "arm_r", "forearm_l", "forearm_r",
+            "foot_l", "foot_r", "l_foot", "r_foot",
+            "greave_07_l", "greave_07_r",
+            "root", "spine", "neck", "tail", "tail_base", "tail2", "rider",
+            "l_femur", "r_femur", "l_thigh", "r_thigh", "l_shin", "r_shin",
+            "l_hoof", "r_hoof",
+            "l_shoulder", "r_shoulder", "l_forearm", "r_forearm",
         }
         import re
         for script_file in sorted(SCRIPTS_DIR.glob("medieval_*.lua")):

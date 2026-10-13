@@ -7,16 +7,16 @@ pure LUS and stay backward-compatible with the single-piece converted meshes:
    (`Create`, `StartMoving`, `StopMoving`, `Killed`, plus `AimWeapon1` /
    `FireWeapon1` on the armed units).
 2. Piece access is defensive: optional sub-pieces are resolved through
-   `optPiece()` (a `pcall(piece, name)` probe) and fall back to the root `base`
-   piece, and every `Turn` / `Move` / `Spin` / `StopSpin` goes through
+   `optPiece()` (a `pcall(piece, name)` probe) and fall back to the resolved root
+   hull, and every `Turn` / `Move` / `Spin` / `StopSpin` goes through
    `safeCall()` so a missing engine call-in cannot break a call-in.
 3. The threading contract of `luarules/gadgets/unit_script.lua` is respected:
    `StartMoving` / `StopMoving` are not thread-wrapped, so the cadence loops are
    spawned with `StartThread`, while `Killed` (which *is* wrapped) holds the
    death tumble with `Sleep`.
 4. Behaviour is exercised for real in a Lua sandbox that stubs the piece
-   animation call-ins: the scripts run on a single-piece mesh (only `base`
-   available) without error, animate the root piece, advance their cadence
+   animation call-ins: the scripts run when only the root hull is available
+   without error, animate the root piece, advance their cadence
    loops across frames, and use real sub-pieces when the mesh provides them.
 5. Per-unit motion is distinct: melee thrust, bow draw/release, cavalry gallop,
    catapult arm swing-and-stop, villager labour swing, cart axle rumble.
@@ -336,12 +336,54 @@ class Slice4SourceContractMixin:
         for callin in callins:
             self.assertIn(callin, self.source, f"{self.script_name} missing {callin}")
 
-    def test_root_base_piece_is_declared(self):
-        # Both `piece "base"` and `piece('base')` are valid LUS spellings.
+    def _obj_piece_names(self):
+        """Piece names the unit's converted OBJ declares, or None if not found."""
+        unit = self.spec["unit"]
+        candidates = []
+        unitdef = (UNITS_DIR / f"{unit}.lua").read_text(encoding="utf-8")
+        match = re.search(r"""objectName\s*=\s*['"]([^'"]+)['"]""", unitdef)
+        if match:
+            obj = ROOT / "objects3d" / match.group(1)
+            if obj.exists():
+                candidates.append(obj)
+        if not candidates:
+            candidates = sorted((ROOT / "objects3d").rglob(f"{unit}.obj"))
+        if not candidates:
+            return None
+        return {
+            line[2:].strip()
+            for line in candidates[0].read_text(encoding="utf-8", errors="ignore").splitlines()
+            if line.startswith("o ")
+        }
+
+    def test_root_base_piece_resolution_matches_the_obj(self):
+        # A converted OBJ that really carries a `base` hull may declare it
+        # directly. An articulated OBJ (per-bone pieces, no `base`) must probe the
+        # root hull instead, because `piece("base")` raises for an unknown name.
+        pieces = self._obj_piece_names()
+        if pieces is None or "base" in pieces:
+            # Both `piece "base"` and `piece('base')` are valid LUS spellings.
+            self.assertRegex(
+                self.source,
+                r"""(?<!opt)piece\s*(?:\(\s*['"]base['"]\s*\)|['"]base['"])""",
+                f"{self.script_name} must declare the root base piece",
+            )
+            return
         self.assertRegex(
             self.source,
-            r"""piece\s*(?:\(\s*['"]base['"]\s*\)|['"]base['"])""",
-            f"{self.script_name} must declare the root base piece",
+            r"""local base = optPiece\(['"]base['"]\)\s*or\s*optPiece\(['"]hip['"]\)"""
+            r"""\s*or\s*optPiece\(['"]root['"]\)\s*or\s*optPiece\(['"]spine['"]\)""",
+            f"{self.script_name} must resolve the articulated root hull via optPiece",
+        )
+        self.assertRegex(
+            self.source,
+            r"""optPiece\(['"]\$\$\$___magic___\$\$\$\.['"]\)""",
+            f"{self.script_name} must probe the engine model root as a fallback",
+        )
+        self.assertNotRegex(
+            self.source,
+            r"""(?<!opt)piece\s*(?:\(\s*['"]base['"]\s*\)|['"]base['"])""",
+            f"{self.script_name} must not require a hard 'base' piece",
         )
 
     def test_optional_pieces_are_probed_not_required(self):

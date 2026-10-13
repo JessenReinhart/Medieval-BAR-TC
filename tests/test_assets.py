@@ -21,6 +21,7 @@ import struct
 import pytest
 
 from tools.assets.convert_0ad import (
+    BUILDINGS,
     Cursor,
     PMDError,
     parse_pmd,
@@ -204,14 +205,17 @@ def test_extracted_0ad_assets_exist_and_conform():
         v_coords = []
         face_count = 0
         has_base_obj = False
+        piece_groups: list[str] = []
 
         for line in obj_text.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             parts = line.split()
-            if parts[0] == "o" and parts[1] == "base":
-                has_base_obj = True
+            if parts[0] == "o":
+                piece_groups.append(parts[1])
+                if parts[1] == "base":
+                    has_base_obj = True
             elif parts[0] == "v":
                 v_coords.append((float(parts[1]), float(parts[2]), float(parts[3])))
             elif parts[0] == "f":
@@ -220,7 +224,19 @@ def test_extracted_0ad_assets_exist_and_conform():
                     idx_tuple = tuple(int(x) if x else 1 for x in f_ref.split("/"))
                     assert 1 <= idx_tuple[0] <= len(v_coords)
 
-        assert has_base_obj, f"{obj_file} must define 'o base'"
+        if u in BUILDINGS:
+            # Buildings stay a single static root object.
+            assert has_base_obj, f"{obj_file} must define 'o base'"
+        else:
+            # Units are articulated: every bone becomes its own `o <name>` piece,
+            # so there is no merged `o base` root object any more.
+            assert piece_groups, (
+                f"{obj_file} must define at least one 'o <name>' piece group"
+            )
+            if "cavalry" not in u:
+                assert {"hip", "spine", "thigh_l"} & set(piece_groups), (
+                    f"{obj_file} must define one of 'o hip'/'o spine'/'o thigh_l'"
+                )
         assert face_count >= 900
         assert len(v_coords) >= 600
 
