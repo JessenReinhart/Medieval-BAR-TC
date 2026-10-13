@@ -2,7 +2,7 @@
 
 Date: 2026-10-12
 Branch: `medieval-total-conversion`
-Status: Phases 1–7 complete. **1416 tests pass** (1195 Phase 6 baseline + 221 Phase 7), 79 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
+Status: Phases 1–7 complete. **1494 tests pass** (Phase 6 baseline + Phase 7 + slice-9 rendering fixes), 79 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
 
 ### Phase 5 Status by Slice
 
@@ -546,6 +546,89 @@ Note: the engine still does not exit on `quitforce`; the runner reports
 `Engine timed out after budget (expected; headless quitforce does not terminate this build)`
 and harvests verdicts from `tools/runtime/infolog.txt`. This is the documented behaviour
 in `AGENTS.md`, not a regression.
+
+### Phase 7 Slice 9 — Asset Pipeline Refinement & LUS Animation Enhancement (integration verification, 2026-10-12)
+
+Follow-up to Slices 3–4, delivered by two parallel agents and closed with a full
+integration verification:
+
+- **Asset pipeline** — target scope: teamcolor alpha-zero, prop/head/roof merge,
+  multi-piece OBJ, and a regenerated `tools/assets/0ad-manifest.json` (18 models:
+  13 units + 6 buildings, each with `obj`/`tex1`/`bounds`/`faces`/`vertices` provenance).
+- **LUS animation enhancement** — procedural piece animation in `scripts/*.lua`
+  (`medieval_infantry` / `medieval_archer` / `medieval_cavalry` / `medieval_villager` /
+  `medieval_cart` / `medieval_catapult`), each built on a single `piece "base"` with
+  `optPiece()` probing for optional sub-pieces (head/roof/shield) and falling back to
+  the root piece.
+- **Test coverage** — `tests/test_assets.py` (13), `tests/test_phase7_slice3.py` (30),
+  `tests/test_phase7_slice4.py` (116), `tests/test_phase7_slice5.py` (44).
+
+Verification (this session):
+
+- `python tests/check_lua_syntax.py` → `Checked 79 lua files; 0 errors found.`
+- `python -m pytest tests -q` → **1416 passed** in ~10s (test count unchanged from the
+  Slice 6 gate: no new top-level test module was added).
+- `python tools/launch/run_phase5_slice6_probe.py` → **6/6 PASS** (settlement-start,
+  economy-flow, military-engagement, tc-destroyed, victory-gameover, probe-complete).
+- GUI smoke test → `Get-Process spring` confirmed running; `tools/runtime/infolog.txt`
+  shows **0** `.obj`/`.dds`/model load failures.
+
+Fix applied during smoke test: `LuaUI/Widgets/gui_medieval_hud.lua` read the starvation
+blink from `Spring.GetTimer()`, which Recoil exposes as a userdata (not a number), so
+`DrawScreen()` raised `attempt to perform arithmetic on a userdata value` and the engine
+removed the widget. Replaced both call sites with `Spring.GetGameSeconds()` and updated
+the `Spring` mock in `tests/test_phase5_slice2.py` (95 tests still pass; full suite still
+1416). Re-launch confirmed the widget error is gone.
+
+Verification gap (RESOLVED 2026-10-13): the two targeted asset refinements are now
+applied in `tools/assets/convert_0ad.py` and the outputs regenerated. The converter now
+(1) zeroes `tex1` alpha on every converted DDS — Recoil's shader samples `tex1` alpha as
+the team-color mask, so zeroing it removes the solid-blue team-color blob while preserving
+the RGB bytes verbatim (DXT1 sources rewrapped as DXT5), (2) merges prop/head/roof into
+named pieces via `resolve_model_pieces`, and (3) emits a multi-piece OBJ (`o`/`g`/`usemtl`
+block per piece) via `render_obj`. `tools/assets/0ad-manifest.json` was regenerated: 18
+models (7 units + 11 buildings), each recording `pieces`/`props_resolved`/`tex1`/`bounds`
+with `props_ignored = 0` for every model. The earlier "medieval units will not show team
+color" statement no longer applies — team color is deliberately neutralised by the
+alpha-zero pass, so models render in their true diffuse colors.
+
+Known non-fatal log noise (pre-existing, documented in slice-7 evidence): missing COB
+scripts for the static settlement units (`could not load COB script scripts/medieval_*.cob`),
+`feature_s11n.lua:186 SetFeatureMoveCtrl` in the base s11n lib, and missing Quicksilver
+scar decals. None reference `.obj`/`.dds` and the models load clean.
+
+### Phase 7 Slice 9 — Follow-up: Asset Pipeline Applied + Full Integration Verification (2026-10-13)
+
+The slice-9 asset pipeline is now applied end-to-end (previously landed as code but not
+yet reflected in the converter). `tools/assets/convert_0ad.py` + regenerated outputs:
+
+- **Team-color alpha-zero** — `zero_dds_alpha()` zeroes every texel's alpha in each
+  converted DDS (Recoil reads `tex1` alpha as the team-color mask); DXT1 sources are
+  rewrapped as DXT5 to express "opaque RGB, zero alpha"; RGB bytes preserved verbatim.
+- **Prop/head/roof merge** — `resolve_model_pieces()` resolves actor `<props>` into named
+  pieces; every model now reports `props_ignored = 0` (blacksmith resolves 108 props into
+  41 pieces; archer 8 → 7 pieces; villager head merged).
+- **Multi-piece OBJ export** — `render_obj()` emits one `o`/`usemtl` block per piece (the
+  `g` group line was dropped: a matching `g` makes Assimp duplicate each mesh into `xx00`
+  twins, so LUS animates the wrong half). `optPiece()` no longer always falls back to
+  `base`; infantry/archer/cavalry now animate the real `weapon` piece.
+- **Manifest** — `tools/assets/0ad-manifest.json` regenerated: 18 models (7 units +
+  11 buildings) with `pieces`/`props_resolved`/`tex1`/`bounds` provenance.
+- **Tests** — `tests/test_phase7_slice9_rendering_fixes.py` (78 tests) covers three
+  regressions: CCW winding/normal agreement (backface culling), DXT5 texture loading +
+  zeroed alpha, and LUS animation syntax/call-in lifecycles. Experimental slice-9 test
+  drafts were removed in favour of this consolidated file.
+
+Full integration verification (this session, 2026-10-13):
+
+- `python tests/check_lua_syntax.py` → `Checked 79 lua files; 0 errors found.`
+- `python -m pytest tests -q` → **1494 passed** in ~11s (Phase 6 baseline + Phase 7 +
+  slice-9 rendering fixes).
+- `python tools/launch/run_phase5_slice6_probe.py` → **6/6 PASS** (settlement-start,
+  economy-flow, military-engagement, tc-destroyed, victory-gameover, probe-complete).
+- GUI smoke test → `spring.exe` running; `infolog.txt` shows no `.obj`/`.dds`/`.tex1`/
+  `.lua` load failures and no `props`/`piece`/`tex2`/`teamcolor` warnings (only the
+  pre-existing missing-COB and `feature_s11n` noise recorded above).
 
 **Next:** Phase 7 is the final planned phase in `docs/phase-7.md`; the roadmap is complete
 through Phase 7. Any further work is a new phase (balance/content or map authoring) and

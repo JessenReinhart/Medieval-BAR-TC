@@ -300,7 +300,9 @@ class TestCatapultArtAssets(unittest.TestCase):
 
         text = obj.read_text(encoding="utf-8")
         self.assertIn("o base", text)
-        self.assertIn("g base", text)
+        # A matching `g base` line would make Assimp create a second, identically
+        # named mesh ("base00"), so the converter must not emit one.
+        self.assertNotIn("g base", text)
         faces = [l for l in text.splitlines() if l.startswith("f ")]
         verts = [l for l in text.splitlines() if l.startswith("v ")]
         self.assertGreaterEqual(len(faces), 500)

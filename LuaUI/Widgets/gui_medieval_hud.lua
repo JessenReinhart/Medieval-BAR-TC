@@ -87,7 +87,7 @@ local function buildCells(teamID)
 
   if starving then
     -- Blink on a timer phase: no art, no animation files, just alpha.
-    local blink = (math.floor((Spring.GetTimer() or 0) * 2) % 2) == 0
+    local blink = (math.floor((Spring.GetGameSeconds() or 0) * 2) % 2) == 0
     for _, cell in ipairs(cells) do
       cell.alpha = blink and 1 or 0.4
     end
@@ -119,7 +119,7 @@ function widget:DrawScreen()
 
   if starving then
     -- Red frame around the bar while the team is starving.
-    local blink = (math.floor((Spring.GetTimer() or 0) * 2) % 2) == 0
+    local blink = (math.floor((Spring.GetGameSeconds() or 0) * 2) % 2) == 0
     local a = blink and 0.9 or 0.3
     gl.Color(1, 0.15, 0.1, a)
     gl.Rect(left - 2, bottom - 2, left + width + 2, bottom)

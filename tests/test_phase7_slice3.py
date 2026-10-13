@@ -268,7 +268,9 @@ class TestDedicatedAssetsOnDisk(unittest.TestCase):
             with self.subTest(model=name):
                 text = (OBJECTS_DIR / f"{name}.obj").read_text(encoding="utf-8")
                 self.assertIn("o base", text)
-                self.assertIn("g base", text)
+                # `g base` would make Assimp duplicate the mesh (base + base00);
+                # the converter must not emit a group line.
+                self.assertNotIn("g base", text)
                 self.assertIn("usemtl base", text)
                 self.assertIn("vt ", text)
                 self.assertIn("vn ", text)

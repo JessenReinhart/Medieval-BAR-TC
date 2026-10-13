@@ -680,7 +680,7 @@ Spring = {
   GetMyAllyTeamID = function() return 0 end,
   GetMyTeamID = function() return 0 end,
   GetViewGeometry = function() return 1600, 900 end,
-  GetTimer = function() return TIMER end,
+  GetGameSeconds = function() return TIMER end,
   GetTeamRulesParam = function(teamID, key)
     local t = TEAM_PARAMS[teamID]
     return t and t[key] or nil

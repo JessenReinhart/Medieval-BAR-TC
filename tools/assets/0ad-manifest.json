@@ -7,100 +7,166 @@
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -93.546,
-          99.339
+          -99.339,
+          93.546
         ],
         "y": [
           -46.558,
           105.902
         ],
         "z": [
-          -84.15,
-          97.015
+          -97.015,
+          84.15
         ]
       },
-      "faces": 1249,
+      "faces": 3734,
       "mesh": "art/meshes/structural/brit_barracks_struct.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_barracks.obj",
-      "props_ignored": 2,
+      "pieces": [
+        "base",
+        "brit_barracks_props_new",
+        "wall",
+        "brit_barracks_props1",
+        "brit_barracks_struct1",
+        "brit_barracks_weapons"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 5,
       "tex1": "0ad/medieval_barracks.dds",
       "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
-      "vertices": 2126
+      "vertices": 7393
     },
     "medieval_blacksmith": {
       "actor": "art/actors/structures/britons/blacksmith.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -76.01,
-          77.948
+          -77.948,
+          76.063
         ],
         "y": [
           -55.222,
           99.848
         ],
         "z": [
-          -77.086,
-          87.196
+          -87.196,
+          77.086
         ]
       },
-      "faces": 2922,
+      "faces": 12252,
       "mesh": "art/meshes/structural/brit_blacksmith.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_blacksmith.obj",
-      "props_ignored": 53,
+      "pieces": [
+        "base",
+        "celt_blacksmith_barrels",
+        "celt_blacksmith_bucket_water",
+        "celt_blacksmith_bucket",
+        "celt_blacksmith_armorstand_struct",
+        "celt_blacksmith_armorstand_rome_csp_a",
+        "tool_hammer",
+        "tool_tongs_01",
+        "tool_tongs_02",
+        "brit_workshop_anvil",
+        "wrld_anvil",
+        "wrld_crate_a",
+        "box_pile_01",
+        "sq_03",
+        "sq_03_b",
+        "celt_manipula_a",
+        "celt_boss_01",
+        "celt_boss_04",
+        "sq_04",
+        "sq_04_b",
+        "oval_06",
+        "oval_06_b",
+        "spina_e",
+        "boss_b_1",
+        "oval_05",
+        "oval_05_b",
+        "oval_07",
+        "oval_07_b",
+        "spina_d",
+        "oval_08",
+        "oval_08_b",
+        "hex_02",
+        "hex_02_b",
+        "celt_boss_03",
+        "celt_boss_03_b",
+        "sq_02",
+        "sq_02_b",
+        "weap_csword_a",
+        "celt_alesia_03",
+        "celt_mihovo",
+        "celt_waterloo"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 108,
       "tex1": "0ad/medieval_blacksmith.dds",
       "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
-      "vertices": 6590
+      "vertices": 15804
     },
     "medieval_fletcher": {
       "actor": "art/actors/structures/britons/range.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -88.552,
-          86.803
+          -86.803,
+          88.552
         ],
         "y": [
           -48.581,
-          90.861
+          91.122
         ],
         "z": [
-          -79.528,
-          71.796
+          -72.963,
+          79.528
         ]
       },
-      "faces": 5702,
+      "faces": 7446,
       "mesh": "art/meshes/structural/brit_range.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_fletcher.obj",
-      "props_ignored": 3,
+      "pieces": [
+        "base",
+        "brit_range_shields",
+        "brit_range_nature"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 2,
       "tex1": "0ad/medieval_fletcher.dds",
       "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
-      "vertices": 8687
+      "vertices": 12912
     },
     "medieval_granary": {
       "actor": "art/actors/structures/britons/farmstead.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -43.86,
-          43.586
+          -49.636,
+          70.517
         ],
         "y": [
           -41.666,
           76.764
         ],
         "z": [
-          -38.378,
-          40.584
+          -51.641,
+          52.039
         ]
       },
-      "faces": 576,
+      "faces": 1708,
       "mesh": "art/meshes/structural/celt_farmstead.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_granary.obj",
-      "props_ignored": 1,
+      "pieces": [
+        "base",
+        "celt_farmstead_props",
+        "celt_farmstead_shield",
+        "celt_farmstead_hoe"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 3,
       "tex1": "0ad/medieval_granary.dds",
       "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
-      "vertices": 1038
+      "vertices": 2719
     },
     "medieval_house": {
       "actor": "art/actors/structures/britons/house.xml",
@@ -115,164 +181,211 @@
           65.391
         ],
         "z": [
-          -59.28,
-          48.66
+          -48.66,
+          59.28
         ]
       },
-      "faces": 1073,
+      "faces": 1139,
       "mesh": "art/meshes/structural/brit_house_01.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_house.obj",
-      "props_ignored": 5,
+      "pieces": [
+        "base",
+        "brit_house_a_props_1",
+        "brit_house_a_props_new"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 2,
       "tex1": "0ad/medieval_house.dds",
       "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
-      "vertices": 2195
+      "vertices": 2375
     },
     "medieval_lumber_camp": {
       "actor": "art/actors/structures/britons/storehouse.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -59.354,
-          56.151
+          -56.151,
+          62.547
         ],
         "y": [
           -73.592,
           96.616
         ],
         "z": [
-          -73.428,
-          69.981
+          -69.981,
+          76.857
         ]
       },
-      "faces": 2467,
+      "faces": 3199,
       "mesh": "art/meshes/structural/brit_storehouse.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_lumber_camp.obj",
-      "props_ignored": 2,
+      "pieces": [
+        "base",
+        "brit_storehouse_ore",
+        "brit_storehouse_nature"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 2,
       "tex1": "0ad/medieval_lumber_camp.dds",
       "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
-      "vertices": 4744
+      "vertices": 6905
     },
     "medieval_market": {
       "actor": "art/actors/structures/britons/market.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -81.188,
-          84.022
+          -85.901,
+          88.168
         ],
         "y": [
-          -40.638,
+          -41.167,
           91.699
         ],
         "z": [
-          -81.334,
-          84.057
+          -84.057,
+          86.211
         ]
       },
-      "faces": 1451,
+      "faces": 5377,
       "mesh": "art/meshes/structural/brit_market_struct_1.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_market.obj",
-      "props_ignored": 2,
+      "pieces": [
+        "base",
+        "brit_market_props_1",
+        "brit_market_props_new",
+        "brit_market_wood_c"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 3,
       "tex1": "0ad/medieval_market.dds",
       "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
-      "vertices": 3223
+      "vertices": 9791
     },
     "medieval_stables": {
       "actor": "art/actors/structures/britons/stable.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -85.068,
-          84.152
+          -87.752,
+          85.068
         ],
         "y": [
           -56.883,
           96.772
         ],
         "z": [
-          -82.691,
-          70.218
+          -71.711,
+          84.642
         ]
       },
-      "faces": 4423,
+      "faces": 10193,
       "mesh": "art/meshes/structural/brit_stable.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_stables.obj",
-      "props_ignored": 6,
+      "pieces": [
+        "base",
+        "brit_stable_shields",
+        "brit_stable_nature",
+        "brit_stable_water",
+        "horse_celtic"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 6,
       "tex1": "0ad/medieval_stables.dds",
       "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
-      "vertices": 8689
+      "vertices": 13232
     },
     "medieval_tower": {
       "actor": "art/actors/structures/britons/scout_tower.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -34.972,
-          33.96
+          -45.47,
+          46.191
         ],
         "y": [
-          -53.687,
+          -81.15,
           163.245
         ],
         "z": [
-          -42.42,
-          33.666
+          -45.021,
+          42.42
         ]
       },
-      "faces": 710,
+      "faces": 1228,
       "mesh": "art/meshes/structural/brit_scout_tower_struct.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_tower.obj",
-      "props_ignored": 4,
+      "pieces": [
+        "base",
+        "projectile_bolt_med",
+        "brit_scout_tower_props_new",
+        "wall"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 4,
       "tex1": "0ad/medieval_tower.dds",
       "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
-      "vertices": 1080
+      "vertices": 1940
     },
     "medieval_town_center": {
       "actor": "art/actors/structures/britons/civic_centre.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -111.093,
-          111.968
+          -111.968,
+          111.093
         ],
         "y": [
-          -57.438,
+          -77.44,
           94.364
         ],
         "z": [
-          -110.475,
-          116.077
+          -126.747,
+          118.184
         ]
       },
-      "faces": 2243,
+      "faces": 4268,
       "mesh": "art/meshes/structural/brit_civic_centre_struct1.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_town_center.obj",
-      "props_ignored": 4,
+      "pieces": [
+        "base",
+        "projectile_bolt_med",
+        "brit_civic_centre_props_1",
+        "brit_civic_centre_props_new",
+        "brit_civic_centre_wood_c",
+        "roof"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 6,
       "tex1": "0ad/medieval_town_center.dds",
       "texture": "art/textures/skins/structural/brit_struct_1.png.cached.dds",
-      "vertices": 3547
+      "vertices": 6703
     },
     "medieval_wall": {
       "actor": "art/actors/structures/britons/wall_medium.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -102.656,
-          99.704
+          -99.704,
+          102.656
         ],
         "y": [
           -55.365,
           101.588
         ],
         "z": [
-          -38.061,
-          37.792
+          -37.792,
+          38.061
         ]
       },
       "faces": 1288,
       "mesh": "art/meshes/structural/brit_wall_medium.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_wall.obj",
-      "props_ignored": 1,
+      "pieces": [
+        "base"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 0,
       "tex1": "0ad/medieval_wall.dds",
       "texture": "art/textures/skins/structural/brit_struct.png.cached.dds",
       "vertices": 2968
@@ -425,39 +538,39 @@
     },
     "art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds": {
       "bytes": 87536,
-      "sha256": "754a933ecb3315241dd76750b7cc8563d14388bdf8f7e294ce5030bf47c8a796"
+      "sha256": "ebef664af5872aebfb10e91548751b68ab642704cd7fd14a386524589681a0c9"
     },
     "art/textures/skins/skeletal/celt/druid_02.png.cached.dds": {
       "bytes": 87536,
-      "sha256": "f647c2388525457c2ee1b156acda8195d8c15124e0b0e3f9cb56f376a861383a"
+      "sha256": "960e9ce5633276db9ae018010dd9c908aca52b880f4ed5617cb631628332929b"
     },
     "art/textures/skins/skeletal/celt/tunic_01_01.png.cached.dds": {
       "bytes": 87536,
-      "sha256": "377dbcbf300cf1de1e83ca188f5f71d640f2abdabc6fccc58047ada6af5ef8e3"
+      "sha256": "5578757a2a5df69a97ba7076ab58239bdf60c990d2dc0d551ae0238cbb48291f"
     },
     "art/textures/skins/skeletal/germ/tunic_pants_01_01.png.cached.dds": {
       "bytes": 87536,
-      "sha256": "de0bc3096372a30346a377992c75a715ef4f1d29cf5c58ef466cddd70f6eb5af"
+      "sha256": "4881ec8ddd783315697672ac4db0d0a666f7ae49da26d75159cef513cc69940b"
     },
     "art/textures/skins/skeletal/hele/tunic_03_psiloi_01.png.cached.dds": {
       "bytes": 87536,
-      "sha256": "33dd23e6feae2b61459ac4c9ff4d03615a3dc56729902b6c997f4a55d97829b7"
+      "sha256": "a0dbf9470c1baeec5f24f5a23082ec3f99ff593041f41e711acf3357797b927a"
     },
     "art/textures/skins/skeletal/horse_brown.png.cached.dds": {
       "bytes": 174928,
-      "sha256": "f9befbdc9fb1a79d61c0c66656505bff631e278dbdd625477776351d6e4fd1cb"
+      "sha256": "518cf691bedb4293f6f6e35af591737b67cd755e31da35de3f83799a52da52f9"
     },
     "art/textures/skins/structural/brit_struct.png.cached.dds": {
       "bytes": 1398256,
-      "sha256": "d9577cfb898f945dcd19417ec905ecc96f3119884a2ae73ed43f69bf78907b17"
+      "sha256": "bfba7ff7ca1c4a93b6d14980ab941141d3fe7d64feb22aee20e1aa8414aff4c4"
     },
     "art/textures/skins/structural/brit_struct_1.png.cached.dds": {
-      "bytes": 174904,
-      "sha256": "6b064748e433e6e502cb98ce06c419e721bafb79e3c9598e8f8c3180e9595b59"
+      "bytes": 349680,
+      "sha256": "0066a466d095c403a862cd1b836a81e02f6006ce796b92cfbbbf38d5d7d22650"
     },
     "art/textures/skins/structural/hele_siege.dds.cached.dds": {
-      "bytes": 43832,
-      "sha256": "af6c9b1af96ada869d1aebb194227c74a4660c20530606d8230c975e137ba2e5"
+      "bytes": 87536,
+      "sha256": "4c0a10150d9fc393f23f221a0bde584b592d83a1a3f18e8fe871446e2e24af09"
     },
     "art/variants/quadraped/horse/brown.xml": {
       "bytes": 396,
@@ -474,7 +587,9 @@
   "transform": {
     "axes": "Y-up unchanged",
     "pose": "PMD v4 bind-pose positions; no skinning",
+    "props": "actor <props> merged at their prop points (bone bind pose * prop local)",
     "scale": 8.0,
+    "texture_alpha": "texel alpha zeroed (DXT1 rewrapped as DXT5); RGB bytes preserved",
     "translation": [
       0,
       0,
@@ -488,150 +603,201 @@
       "bones_ignored": 46,
       "bounds": {
         "x": [
-          -7.714,
+          -9.539,
           7.714
         ],
         "y": [
           0.008,
-          30.806
+          35.08
         ],
         "z": [
-          -3.275,
-          3.319
+          -9.811,
+          13.489
         ]
       },
-      "faces": 932,
+      "faces": 2048,
       "mesh": "art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_archer.obj",
-      "props_ignored": 53,
+      "pieces": [
+        "base",
+        "head",
+        "helmet",
+        "weapon",
+        "quiver_greek_back",
+        "quiver_greek_back_arrows",
+        "shield"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 8,
       "tex1": "0ad/medieval_archer.dds",
       "texture": "art/textures/skins/skeletal/hele/tunic_03_psiloi_01.png.cached.dds",
-      "vertices": 668
+      "vertices": 1699
     },
     "medieval_catapult": {
       "actor": "art/actors/units/hellenes/siege_rock.xml",
       "bones_ignored": 8,
       "bounds": {
         "x": [
-          -27.023,
-          27.495
+          -27.495,
+          27.023
         ],
         "y": [
           -1.543,
           54.082
         ],
         "z": [
-          -79.638,
-          40.046
+          -40.046,
+          79.638
         ]
       },
-      "faces": 556,
+      "faces": 652,
       "mesh": "art/meshes/structural/hele_lithobolos.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_catapult.obj",
-      "props_ignored": 2,
+      "pieces": [
+        "base",
+        "projectile_stone_med"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 2,
       "tex1": "0ad/medieval_catapult.dds",
       "texture": "art/textures/skins/structural/hele_siege.dds.cached.dds",
-      "vertices": 982
+      "vertices": 1270
     },
     "medieval_cavalry": {
       "actor": "art/actors/units/athenians/cavalry_swordsman_a_m.xml",
       "bones_ignored": 49,
       "bounds": {
         "x": [
-          -7.066,
-          7.066
+          -7.714,
+          7.714
         ],
         "y": [
           -0.009,
-          44.433
+          65.801
         ],
         "z": [
-          -32.17,
-          19.527
+          -19.527,
+          32.17
         ]
       },
-      "faces": 1682,
+      "faces": 3236,
       "mesh": "art/meshes/skeletal/horse_tessalian.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_cavalry.obj",
-      "props_ignored": 11,
+      "pieces": [
+        "base",
+        "rider",
+        "head",
+        "helmet",
+        "weapon",
+        "chest_colorband_01"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 5,
       "tex1": "0ad/medieval_cavalry.dds",
       "texture": "art/textures/skins/skeletal/horse_brown.png.cached.dds",
-      "vertices": 1013
+      "vertices": 2143
     },
     "medieval_infantry": {
       "actor": "art/actors/units/athenians/infantry_spearman_a.xml",
       "bones_ignored": 46,
       "bounds": {
         "x": [
-          -7.714,
-          7.714
+          -9.082,
+          8.298
         ],
         "y": [
           0.008,
-          30.806
+          34.863
         ],
         "z": [
-          -3.455,
-          3.23
+          -31.048,
+          18.057
         ]
       },
-      "faces": 932,
+      "faces": 1956,
       "mesh": "art/meshes/skeletal/new/m_armor_tunic_short.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_infantry.obj",
-      "props_ignored": 53,
+      "pieces": [
+        "base",
+        "weapon",
+        "shield",
+        "greave_07_r",
+        "greave_07_l",
+        "head",
+        "helmet"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 8,
       "tex1": "0ad/medieval_infantry.dds",
       "texture": "art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds",
-      "vertices": 668
+      "vertices": 1366
     },
     "medieval_king": {
       "actor": "art/actors/units/britons/hero_infantry_swordsman_cunobelin.xml",
       "bones_ignored": 46,
       "bounds": {
         "x": [
-          -7.714,
+          -9.459,
           7.714
         ],
         "y": [
           0.008,
-          30.806
+          35.096
         ],
         "z": [
-          -3.455,
-          2.887
+          -4.09,
+          17.19
         ]
       },
-      "faces": 864,
+      "faces": 1953,
       "mesh": "art/meshes/skeletal/new/m_armor_pants_tunic_long.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_king.obj",
-      "props_ignored": 53,
+      "pieces": [
+        "base",
+        "helmet",
+        "head",
+        "shield",
+        "weapon",
+        "sheath_celt_a",
+        "cape_hd_hoplite"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 10,
       "tex1": "0ad/medieval_king.dds",
       "texture": "art/textures/skins/skeletal/celt/druid_02.png.cached.dds",
-      "vertices": 616
+      "vertices": 1597
     },
     "medieval_spearman": {
       "actor": "art/actors/units/britons/infantry_spearman_a.xml",
       "bones_ignored": 46,
       "bounds": {
         "x": [
-          -7.714,
-          7.714
+          -9.205,
+          7.721
         ],
         "y": [
           0.008,
-          30.806
+          35.078
         ],
         "z": [
-          -3.275,
-          2.853
+          -13.982,
+          29.282
         ]
       },
-      "faces": 864,
+      "faces": 1348,
       "mesh": "art/meshes/skeletal/new/m_pants_tunic_long.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_spearman.obj",
-      "props_ignored": 53,
+      "pieces": [
+        "base",
+        "head",
+        "weapon",
+        "shield"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 7,
       "tex1": "0ad/medieval_spearman.dds",
       "texture": "art/textures/skins/skeletal/celt/tunic_01_01.png.cached.dds",
-      "vertices": 615
+      "vertices": 1194
     },
     "medieval_villager": {
       "actor": "art/actors/units/britons/citizen_male.xml",
@@ -643,20 +809,25 @@
         ],
         "y": [
           0.008,
-          30.806
+          34.173
         ],
         "z": [
-          -3.275,
-          3.319
+          -3.319,
+          3.275
         ]
       },
-      "faces": 932,
+      "faces": 1098,
       "mesh": "art/meshes/skeletal/new/m_tunic_short.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_villager.obj",
-      "props_ignored": 53,
+      "pieces": [
+        "base",
+        "head"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 1,
       "tex1": "0ad/medieval_villager.dds",
       "texture": "art/textures/skins/skeletal/germ/tunic_pants_01_01.png.cached.dds",
-      "vertices": 668
+      "vertices": 777
     }
   }
 }

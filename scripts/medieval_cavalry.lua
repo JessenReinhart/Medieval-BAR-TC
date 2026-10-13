@@ -44,6 +44,7 @@ local function restPose()
 	safeCall(Turn, base, x_axis, 0, 6)
 	safeCall(Turn, base, z_axis, 0, 6)
 	safeCall(Move, base, y_axis, 0, 6)
+	safeCall(Move, weapon, z_axis, 0, 6)  -- retract the weapon after a swing
 end
 
 local function clampLean(pitch)

@@ -167,13 +167,15 @@ def test_render_obj_structure():
     obj_str = render_obj(mesh, "texture.dds", scale=2.0)
     lines = [line.strip() for line in obj_str.strip().splitlines() if line.strip()]
     assert "o base" in lines
-    assert "g base" in lines
     assert "v 0 0 0" in lines
-    assert "v 2 0 0" in lines
+    # Negated for 180 Y-rotation (0 A.D. -Z facing -> Recoil +Z forward)
+    assert "v -2 0 0" in lines
     assert "v 0 4 0" in lines
     # UV flip check: 1 - 0.2 = 0.8
     assert "vt 0.1 0.8" in lines
-    assert "f 1/1/1 2/2/2 3/3/3" in lines
+    # Winding check: 0 A.D. CW face (0, 1, 2) is emitted (0, 2, 1) -> 1/1/1 3/3/3 2/2/2
+    # to enforce CCW front-face winding for OpenGL back-face culling.
+    assert "f 1/1/1 3/3/3 2/2/2" in lines
 
 
 def test_extracted_0ad_assets_exist_and_conform():
@@ -202,7 +204,6 @@ def test_extracted_0ad_assets_exist_and_conform():
         v_coords = []
         face_count = 0
         has_base_obj = False
-        has_base_group = False
 
         for line in obj_text.splitlines():
             line = line.strip()
@@ -211,8 +212,6 @@ def test_extracted_0ad_assets_exist_and_conform():
             parts = line.split()
             if parts[0] == "o" and parts[1] == "base":
                 has_base_obj = True
-            elif parts[0] == "g" and parts[1] == "base":
-                has_base_group = True
             elif parts[0] == "v":
                 v_coords.append((float(parts[1]), float(parts[2]), float(parts[3])))
             elif parts[0] == "f":
@@ -222,7 +221,6 @@ def test_extracted_0ad_assets_exist_and_conform():
                     assert 1 <= idx_tuple[0] <= len(v_coords)
 
         assert has_base_obj, f"{obj_file} must define 'o base'"
-        assert has_base_group, f"{obj_file} must define 'g base'"
         assert face_count >= 900
         assert len(v_coords) >= 600
 
@@ -231,11 +229,13 @@ def test_extracted_0ad_assets_exist_and_conform():
         max_y = max(c[1] for c in v_coords)
         height = max_y - min_y
         if "cavalry" in u:
-            # Horse tessalian ~5.55 * 8 = ~44.4 units
-            assert 35.0 <= height <= 55.0
+            # Mounted horse: the 5.55-unit horse plus its attached rider's own
+            # 3.85-unit body and helmet, so ~8.2 * 8 = ~65.8 units.
+            assert 55.0 <= height <= 80.0
         else:
-            # Human tunic ~3.85 * 8 = ~30.8 units
-            assert 25.0 <= height <= 38.0
+            # Human tunic ~3.85 * 8 = ~30.8 units, plus the merged head and
+            # helmet, which reach ~4.4 * 8 = ~35 units.
+            assert 25.0 <= height <= 40.0
 
 
 def test_manifest_and_license():
