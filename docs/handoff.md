@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Branch: `medieval-total-conversion`
-Status: Phases 1–7 complete. **1515 tests pass** (Phase 6 baseline + Phase 7 + slice-9 rendering fixes + slice-10 skeletal articulation), 79 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
+Status: Phases 1–7 complete. **1566 tests pass** (Phase 6 baseline + Phase 7 + slice-9 rendering fixes + slice-10 skeletal articulation + slice-11 0 A.D. skeletal animation port), 80 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
 
 ### Phase 5 Status by Slice
 
@@ -709,11 +709,50 @@ partition, per-piece geometry, sentinel influences, dominant-bone face assignmen
 unweighted faces → `base`, unknown bone-index sanitisation); `resolve_model_pieces`
 routing (skeletal actor, cavalry actor, static hull kept whole).
 
-Verification (this session, 2026-10-13):
+Verification (Phase 7 Slice 10):
 
 - `python tests/check_lua_syntax.py` → `Checked 79 lua files; 0 errors found.`
 - `python -m pytest tests -q` → **1515 passed** in ~7s.
 - `python -m pytest tests/test_phase7_slice10_articulation.py -q` → **21 passed**.
+
+### Phase 7 Slice 11 — 0 A.D. Skeletal Animation Port & Baked-Keyframe Player (2026-10-13)
+
+Ported native 0 A.D. skeletal animations into Recoil LUS by parsing the shipped binary `.dae.cached.psa` format, baking root-relative keyframe tracks with coordinate corrections matching the OBJ converter, and playing them via a dedicated pure Lua player module.
+
+**Binary PSA format (`.dae.cached.psa`) & Parser tools**
+
+- Parsed 0 A.D. binary `.dae.cached.psa` files (`PSSA` magic, version 1): 12-byte `FileHeader`, empty legacy name string, f32 `frameTime` (ms), u32 `numKeys` (= bone count), u32 `numFrames`, followed by dense frame-major 28-byte keys (`tx, ty, tz` f32 translation + `qx, qy, qz, qw` quaternion rotation).
+- Translation AND rotation are world/root-relative (decomposed at COLLADA -> PSA import; no parent FK needed at runtime).
+- Added `tools/assets/parse_psa.py`: binary reader and archive extractor (all 1220 PSA files in `public.zip` parse cleanly).
+- Added `tools/assets/read_psa_content.py`: validates world-pose proof against skeleton bones, verifies Y-180 yaw and scale=8 coordinate corrections.
+- Added `tools/assets/convert_0ad_anim.py`: bakes extracted animation clips into compact Lua tables under `scripts/animdata/`.
+
+**Bake coordinate correction & generated clip datasets**
+
+- Bake correction matches the OBJ export rigid transform: `t' = 8 * (-tx, ty, -tz)` and `q' = (0, 1, 0, 0)` left-multiplied (left Hamilton product `Q_y180 * q`).
+- Emits `scripts/animdata/*.lua` per unit with normalized piece names aligned with `0ad-manifest.json` and bone order:
+  - Bipeds (`medieval_infantry.lua`, `medieval_archer.lua`, `medieval_villager.lua`, `medieval_spearman.lua`): 25 pieces; clips `walk`, `run`, `idle`, `attack_melee`, `build`, `death`.
+  - Cavalry (`medieval_cavalry.lua`): 39 horse pieces; clips `walk`, `trot`, `gallop`, `idle`, `attack_melee`, `death`.
+
+**Recoil engine piece pivot findings (`research/OBJ_piece_pivot_FINDINGS.md`)**
+
+- Recoil OBJ pieces loaded via Assimp have no node transforms; therefore, `Turn` rotates strictly about the piece-local origin (which collapses to model origin `(0, 0, 0)` for unoffset OBJ groups).
+- `Move` is relative in piece-local axes.
+- Verified in engine source (`rts/Sim/Misc/Transform.hpp`, `rts/Rendering/Models/3DModelPiece.cpp`, `rts/Rendering/Models/AssParser.cpp`). Reference: `research/OBJ_piece_pivot_FINDINGS.md`.
+
+**Pure-module player (`scripts/anim_player.lua`) & LUS integration**
+
+- `scripts/anim_player.lua`: pure-module baked-keyframe player (`q_rel = q_k * conj(q0)`; `Turn` absolute, `Move` relative; the combined delta `d` handles both frame translation and the piece-local-origin pivot term: `d = t_k - R * t0`).
+- Wired into `scripts/medieval_infantry.lua`, `scripts/medieval_archer.lua`, `scripts/medieval_villager.lua`, and `scripts/medieval_cavalry.lua`; spearman and king share `scripts/medieval_infantry.lua`.
+
+**Tests & verification**
+
+- `tests/test_parse_psa.py` (**11 tests**): PSA header/payload deserialization, key counts, frame-major indexing.
+- `tests/test_phase7_slice11_bake.py` (**10 tests**): bone count alignment (46 biped, 49 horse), clip catalog completeness, Y-180 yaw + scale=8 rigid transforms, Hamilton quaternion math, bone name normalization, manifest round-tripping.
+- `tests/test_phase7_slice12_anim.py` (**30 tests**): piece pivot invariants, rigid pose verification (`d = t_k - R * t0`), Euler angle inverse conventions (`anim_player.angles` vs `anim_player.eulerMatrix`), looping/one-shot frame sampling.
+- Full pytest suite: **1566 passed** in ~6s.
+- Lua syntax check: `python tests/check_lua_syntax.py` → **80 files, 0 errors**.
+- Headless integration probe: all verdicts PASS (6/6).
 
 **Next:** Phase 7 is the final planned phase in `docs/phase-7.md`; the roadmap is complete
 through Phase 7. Any further work is a new phase (balance/content or map authoring) and

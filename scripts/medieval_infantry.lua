@@ -77,6 +77,73 @@ end
 -- One signal mask per animation channel, so a loop cancels only its own work.
 local SIG_MOVE, SIG_ATTACK, SIG_DEATH = 1, 2, 4
 
+-- Current clip name, declared here because the playback thread and the
+-- StartMoving/StopMoving call-ins both write it.
+local currentClip = "idle"
+
+-- == Baked-clip playback (Phase 7 Slice 12) ==================================
+-- scripts/animdata/medieval_infantry.lua holds world-space pose frames for
+-- walk / run / idle / attack_melee / build / death. scripts/anim_player.lua
+-- turns them into Turn/Move calls on the mesh's pieces.
+--
+-- The engine exposes the virtual filesystem as a global that returns an
+-- UNEXECUTED chunk; look it up by name so this stays a pure Lua unit script
+-- with no direct VFS dependency. Everything is pcall-wrapped: a build with
+-- no filesystem, no bake bundle or no piece call-ins leaves animCtx nil and
+-- the procedural stride below takes over.
+local function loadModule(path)
+	local vfs = _G["VFS"]
+	local loader = type(vfs) == "table" and vfs["Include"] or nil
+	if type(loader) ~= "function" then return nil end
+	local ok, chunk = pcall(loader, path)
+	if not ok or type(chunk) ~= "function" then return nil end
+	local ran, value = pcall(chunk)
+	if not ran then return nil end
+	return value
+end
+
+local animPlayer, animClips = nil, nil
+do
+	local mod = loadModule("scripts/anim_player.lua")
+	if type(mod) == "table" then
+		animPlayer = mod
+		animClips = loadModule("scripts/animdata/medieval_infantry.lua")
+	end
+end
+
+local animCtx = nil
+do
+	if animPlayer and type(animClips) == "table" then
+		local ctx = animPlayer.new()
+		animPlayer.setClips(ctx, animClips)
+		animPlayer.setPrimitives(ctx, Turn, Move)
+		animPlayer.setSpeed(ctx, 14)
+		animPlayer.bindRest(ctx, animClips.idle)
+
+		-- Bind each distinct resolved handle, preferring the bone whose bake
+		-- owns it and falling back to the root bone so a single-hull mesh still
+		-- animates rather than standing frozen.
+		local restFrame = (animClips.idle and animClips.idle.frames
+			and animClips.idle.frames[1]) or {}
+		local seen = {}
+		for i = 1, #PARTS do
+			local handle = PARTS[i]
+			if handle and not seen[handle] then
+				seen[handle] = true
+				local name = "hip"
+				for candidate in pairs(restFrame) do
+					if optPiece(candidate) == handle then
+						name = candidate
+						break
+					end
+				end
+				animPlayer.bindPiece(ctx, name, handle)
+			end
+		end
+		animCtx = ctx
+	end
+end
+
 -- Back to the bind pose: also the standing stance after a stop.
 local function restPose()
 	for i = 1, #PARTS do
@@ -127,79 +194,147 @@ local function say(msg)
 	end)
 end
 
--- == Locomotion: alternating stride, opposing arm swing, hip bob =============
--- Four keyframes per cycle: left contact, passing, right contact, passing.
-function script.StartMoving()
-	Signal(SIG_MOVE)
+-- The player hands back {piece, axis, value, speed} rows; safeCall applies each
+-- so an engine without the piece call-ins degrades to a static model.
+local animTurnSlots, animMoveSlots = {}, {}
+local animFrames = 0
+
+
+-- Player slot callbacks, bound once. The driver drains these into safeCall.
+do
+	if animPlayer then
+		-- Rebuild the primitive set against the collector tables.
+		local ctx = animCtx
+		if ctx then
+			animPlayer.setPrimitives(ctx,
+				function(handle, axis, value, speed)
+					animTurnSlots[#animTurnSlots + 1] = { handle, axis, value, speed }
+				end,
+				function(handle, axis, value, speed)
+					animMoveSlots[#animMoveSlots + 1] = { handle, axis, value, speed }
+				end)
+		end
+	end
+end
+
+local function driveClip(clipName, dtMs)
+	if not animCtx then return 0 end
+	for i = #animTurnSlots, 1, -1 do animTurnSlots[i] = nil end
+	for i = #animMoveSlots, 1, -1 do animMoveSlots[i] = nil end
+
+	local driven = animPlayer.emit(animCtx, clipName, animPlayer.elapsed(animCtx, clipName))
+	for i = 1, #animTurnSlots do
+		local s = animTurnSlots[i]
+		safeCall(Turn, s[1], s[2], s[3], s[4])
+	end
+	for i = 1, #animMoveSlots do
+		local s = animMoveSlots[i]
+		safeCall(Move, s[1], s[2], s[3], s[4])
+	end
+	animPlayer.advance(animCtx, dtMs)
+
+	if driven > 0 then
+		animFrames = animFrames + 1
+		if animFrames <= 5 then
+			say(string.format("LUS ANIM infantry %s driven=%d", clipName, driven))
+		end
+	end
+	return driven
+end
+
+-- Exactly one playback thread per unit; StartMoving spawns it.
+local animThreadLive = false
+local function startAnimThread()
+	if not animCtx or animThreadLive then return false end
+	animThreadLive = true
 	StartThread(function()
 		SetSignalMask(SIG_MOVE)
 		while true do
-			-- Left contact: left thigh forward, right thigh back, arms counter-swing.
-			safeCall(Turn, thigh_l, x_axis, 0.40, 8)
-			safeCall(Turn, leg_l, x_axis, -0.26, 8)
-			safeCall(Turn, foot_l, x_axis, 0.12, 8)
-			safeCall(Turn, thigh_r, x_axis, -0.40, 8)
-			safeCall(Turn, leg_r, x_axis, -0.04, 8)
-			safeCall(Turn, foot_r, x_axis, 0.06, 8)
-			safeCall(Turn, arm_l, x_axis, -0.32, 8)
-			safeCall(Turn, forearm_l, x_axis, -0.12, 8)
-			safeCall(Turn, arm_r, x_axis, 0.32, 8)
-			safeCall(Turn, forearm_r, x_axis, -0.22, 8)
-			safeCall(Turn, chest, x_axis, 0.06, 8)
-			safeCall(Turn, spine, z_axis, 0.05, 8)
-			safeCall(Move, hip, y_axis, 0.8, 8)
-			Sleep(140)
-			-- Passing pose: legs gather, torso lifts off the bob.
-			safeCall(Turn, thigh_l, x_axis, 0.02, 8)
-			safeCall(Turn, leg_l, x_axis, -0.06, 8)
-			safeCall(Turn, foot_l, x_axis, 0.0, 8)
-			safeCall(Turn, thigh_r, x_axis, -0.02, 8)
-			safeCall(Turn, leg_r, x_axis, -0.10, 8)
-			safeCall(Turn, foot_r, x_axis, -0.04, 8)
-			safeCall(Turn, arm_l, x_axis, 0.0, 8)
-			safeCall(Turn, forearm_l, x_axis, -0.05, 8)
-			safeCall(Turn, arm_r, x_axis, 0.0, 8)
-			safeCall(Turn, forearm_r, x_axis, -0.05, 8)
-			safeCall(Turn, chest, x_axis, 0.0, 8)
-			safeCall(Turn, spine, z_axis, 0.0, 8)
-			safeCall(Move, hip, y_axis, 0.0, 8)
-			Sleep(140)
-			-- Right contact: mirror of the left, so the cycle closes cleanly.
-			safeCall(Turn, thigh_l, x_axis, -0.40, 8)
-			safeCall(Turn, leg_l, x_axis, -0.04, 8)
-			safeCall(Turn, foot_l, x_axis, 0.06, 8)
-			safeCall(Turn, thigh_r, x_axis, 0.40, 8)
-			safeCall(Turn, leg_r, x_axis, -0.26, 8)
-			safeCall(Turn, foot_r, x_axis, 0.12, 8)
-			safeCall(Turn, arm_l, x_axis, 0.32, 8)
-			safeCall(Turn, forearm_l, x_axis, -0.22, 8)
-			safeCall(Turn, arm_r, x_axis, -0.32, 8)
-			safeCall(Turn, forearm_r, x_axis, -0.12, 8)
-			safeCall(Turn, chest, x_axis, 0.06, 8)
-			safeCall(Turn, spine, z_axis, -0.05, 8)
-			safeCall(Move, hip, y_axis, 0.8, 8)
-			Sleep(140)
-			-- Passing pose again.
-			safeCall(Turn, thigh_l, x_axis, -0.02, 8)
-			safeCall(Turn, leg_l, x_axis, -0.10, 8)
-			safeCall(Turn, foot_l, x_axis, -0.04, 8)
-			safeCall(Turn, thigh_r, x_axis, 0.02, 8)
-			safeCall(Turn, leg_r, x_axis, -0.06, 8)
-			safeCall(Turn, foot_r, x_axis, 0.0, 8)
-			safeCall(Turn, arm_l, x_axis, 0.0, 8)
-			safeCall(Turn, forearm_l, x_axis, -0.05, 8)
-			safeCall(Turn, arm_r, x_axis, 0.0, 8)
-			safeCall(Turn, forearm_r, x_axis, -0.05, 8)
-			safeCall(Turn, chest, x_axis, 0.0, 8)
-			safeCall(Turn, spine, z_axis, 0.0, 8)
-			safeCall(Move, hip, y_axis, 0.0, 8)
-			Sleep(140)
+			driveClip(currentClip, 33)
+			Sleep(1)
+		end
+	end)
+	return true
+end
+
+-- == Locomotion: baked `walk` clip, procedural stride as the fallback ========
+-- == Locomotion ==============================================================
+-- Primary: the baked `walk` clip, driven by scripts/anim_player.lua on the
+-- playback thread. Fallback: the procedural cadence inlined below, used when
+-- the build ships no bake bundle or no player module. StartMoving is not
+-- thread-wrapped by the framework, so it spawns its own loop here.
+function script.StartMoving()
+	Signal(SIG_MOVE)
+	currentClip = "walk"
+	StartThread(function()
+		SetSignalMask(SIG_MOVE)
+		if startAnimThread() then return end
+		while true do
+	safeCall(Turn, thigh_l, x_axis, 0.40, 8)
+	safeCall(Turn, leg_l, x_axis, -0.26, 8)
+	safeCall(Turn, foot_l, x_axis, 0.12, 8)
+	safeCall(Turn, thigh_r, x_axis, -0.40, 8)
+	safeCall(Turn, leg_r, x_axis, -0.04, 8)
+	safeCall(Turn, foot_r, x_axis, 0.06, 8)
+	safeCall(Turn, arm_l, x_axis, -0.32, 8)
+	safeCall(Turn, forearm_l, x_axis, -0.12, 8)
+	safeCall(Turn, arm_r, x_axis, 0.32, 8)
+	safeCall(Turn, forearm_r, x_axis, -0.22, 8)
+	safeCall(Turn, chest, x_axis, 0.06, 8)
+	safeCall(Turn, spine, z_axis, 0.05, 8)
+	safeCall(Move, hip, y_axis, 0.8, 8)
+	Sleep(140)
+	safeCall(Turn, thigh_l, x_axis, 0.02, 8)
+	safeCall(Turn, leg_l, x_axis, -0.06, 8)
+	safeCall(Turn, foot_l, x_axis, 0.0, 8)
+	safeCall(Turn, thigh_r, x_axis, -0.02, 8)
+	safeCall(Turn, leg_r, x_axis, -0.10, 8)
+	safeCall(Turn, foot_r, x_axis, -0.04, 8)
+	safeCall(Turn, arm_l, x_axis, 0.0, 8)
+	safeCall(Turn, forearm_l, x_axis, -0.06, 8)
+	safeCall(Turn, arm_r, x_axis, 0.0, 8)
+	safeCall(Turn, forearm_r, x_axis, -0.1, 8)
+	safeCall(Turn, chest, x_axis, 0.0, 8)
+	safeCall(Turn, spine, z_axis, 0.0, 8)
+	safeCall(Move, hip, y_axis, 0.0, 8)
+	Sleep(140)
+	safeCall(Turn, thigh_l, x_axis, -0.40, 8)
+	safeCall(Turn, leg_l, x_axis, -0.04, 8)
+	safeCall(Turn, foot_l, x_axis, 0.06, 8)
+	safeCall(Turn, thigh_r, x_axis, 0.40, 8)
+	safeCall(Turn, leg_r, x_axis, -0.26, 8)
+	safeCall(Turn, foot_r, x_axis, 0.12, 8)
+	safeCall(Turn, arm_l, x_axis, 0.32, 8)
+	safeCall(Turn, forearm_l, x_axis, -0.22, 8)
+	safeCall(Turn, arm_r, x_axis, -0.32, 8)
+	safeCall(Turn, forearm_r, x_axis, -0.12, 8)
+	safeCall(Turn, chest, x_axis, -0.06, 8)
+	safeCall(Turn, spine, z_axis, -0.05, 8)
+	safeCall(Move, hip, y_axis, 0.8, 8)
+	Sleep(140)
+	safeCall(Turn, thigh_l, x_axis, -0.02, 8)
+	safeCall(Turn, leg_l, x_axis, -0.10, 8)
+	safeCall(Turn, foot_l, x_axis, -0.04, 8)
+	safeCall(Turn, thigh_r, x_axis, 0.02, 8)
+	safeCall(Turn, leg_r, x_axis, -0.06, 8)
+	safeCall(Turn, foot_r, x_axis, 0.0, 8)
+	safeCall(Turn, arm_l, x_axis, 0.0, 8)
+	safeCall(Turn, forearm_l, x_axis, -0.1, 8)
+	safeCall(Turn, arm_r, x_axis, 0.0, 8)
+	safeCall(Turn, forearm_r, x_axis, -0.06, 8)
+	safeCall(Turn, chest, x_axis, 0.0, 8)
+	safeCall(Turn, spine, z_axis, 0.0, 8)
+	safeCall(Move, hip, y_axis, 0.0, 8)
+	Sleep(140)
 		end
 	end)
 end
 
+-- StopMoving is not thread-wrapped, so it may only Signal and reset the pose;
+-- the playback thread picks up `idle` on its next tick.
 function script.StopMoving()
 	Signal(SIG_MOVE)
+	currentClip = "idle"
 	restPose()
 end
 
@@ -228,6 +363,20 @@ function script.FireWeapon1()
 	Signal(SIG_ATTACK)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
+		-- Primary: play the baked melee swing. It is a one-shot, but the clock
+		-- is reset first so consecutive swings restart instead of holding on
+		-- the last frame.
+		if animCtx then
+			animPlayer.reset(animCtx)
+			while true do
+				local _driven, done = driveClip("attack_melee", 33)
+				if done then break end
+				Sleep(1)
+			end
+			animPlayer.reset(animCtx)
+			restPose()
+			return
+		end
 		-- Wind-up: cock the spear back, twist the chest off the target line.
 		safeCall(Turn, chest, z_axis, -0.26, 12)
 		safeCall(Turn, arm_r, x_axis, -0.5, 12)

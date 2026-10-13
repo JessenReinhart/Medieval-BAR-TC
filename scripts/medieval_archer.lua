@@ -73,6 +73,148 @@ end
 
 local SIG_MOVE, SIG_ATTACK, SIG_DEATH = 1, 2, 4
 
+-- Current clip name, declared here because the playback thread and the
+-- StartMoving / StopMoving / FireWeapon / Killed call-ins all write it.
+local currentClip = "idle"
+local lastDrivenClip = nil
+
+-- == Baked-clip playback (Phase 7 Slice 12) ==================================
+-- scripts/animdata/medieval_archer.lua holds world-space pose frames for
+-- walk / run / idle / attack_melee / build / death. scripts/anim_player.lua
+-- turns them into Turn/Move calls on the mesh's pieces.
+--
+-- The bake ships no dedicated ranged or bow clip, so `attack_melee` stands in
+-- for the shot: it is the only strike-shaped one-shot in the file. Everything
+-- is pcall-wrapped: a build with no filesystem, no bake bundle or no piece
+-- call-ins leaves animCtx nil and the procedural cadence below takes over.
+local function loadModule(path)
+	local vfs = _G["VFS"]
+	local loader = type(vfs) == "table" and vfs["Include"] or nil
+	if type(loader) ~= "function" then return nil end
+	local ok, chunk = pcall(loader, path)
+	if not ok or type(chunk) ~= "function" then return nil end
+	local ran, value = pcall(chunk)
+	if not ran then return nil end
+	return value
+end
+
+local animPlayer, animClips = nil, nil
+do
+	local mod = loadModule("scripts/anim_player.lua")
+	if type(mod) == "table" then
+		animPlayer = mod
+		animClips = loadModule("scripts/animdata/medieval_archer.lua")
+	end
+end
+
+local animCtx = nil
+do
+	if animPlayer and type(animClips) == "table" then
+		local ctx = animPlayer.new()
+		animPlayer.setClips(ctx, animClips)
+		animPlayer.setPrimitives(ctx, Turn, Move)
+		animPlayer.setSpeed(ctx, 14)
+		animPlayer.bindRest(ctx, animClips.idle)
+
+		-- Bind each distinct resolved handle, preferring the bone whose bake
+		-- owns it and falling back to the root bone so a single-hull mesh still
+		-- animates rather than standing frozen.
+		local restFrame = (animClips.idle and animClips.idle.frames
+			and animClips.idle.frames[1]) or {}
+		local seen = {}
+		for i = 1, #PARTS do
+			local handle = PARTS[i]
+			if handle and not seen[handle] then
+				seen[handle] = true
+				local name = "hip"
+				for candidate in pairs(restFrame) do
+					if optPiece(candidate) == handle then
+						name = candidate
+						break
+					end
+				end
+				animPlayer.bindPiece(ctx, name, handle)
+			end
+		end
+		animCtx = ctx
+	end
+end
+
+-- Player slot callbacks, bound once. The driver drains these into safeCall.
+local animTurnSlots, animMoveSlots = {}, {}
+local animFrames = 0
+
+local function say(msg)
+	pcall(function()
+		if Spring and Spring.Echo then Spring.Echo(msg) else print(msg) end
+	end)
+end
+
+do
+	if animPlayer then
+		-- Rebuild the primitive set against the collector tables.
+		local ctx = animCtx
+		if ctx then
+			animPlayer.setPrimitives(ctx,
+				function(handle, axis, value, speed)
+					animTurnSlots[#animTurnSlots + 1] = { handle, axis, value, speed }
+				end,
+				function(handle, axis, value, speed)
+					animMoveSlots[#animMoveSlots + 1] = { handle, axis, value, speed }
+				end)
+		end
+	end
+end
+
+local function driveClip(clipName, dtMs)
+	if not animCtx then return 0 end
+	-- The player keeps one shared clock, so a clip's timeline only resets when
+	-- the switch actually changes clip; restarting a one-shot from zero would
+	-- otherwise rewind the loop it was layered on top of.
+	if lastDrivenClip ~= clipName then
+		animPlayer.reset(animCtx)
+		lastDrivenClip = clipName
+	elseif animPlayer.elapsed(animCtx, clipName) > 100000 then
+		animPlayer.reset(animCtx)  -- wrap the accumulating clock, never diverge
+	end
+	for i = #animTurnSlots, 1, -1 do animTurnSlots[i] = nil end
+	for i = #animMoveSlots, 1, -1 do animMoveSlots[i] = nil end
+
+	local driven, done = animPlayer.emit(animCtx, clipName, animPlayer.elapsed(animCtx, clipName))
+	for i = 1, #animTurnSlots do
+		local s = animTurnSlots[i]
+		safeCall(Turn, s[1], s[2], s[3], s[4])
+	end
+	for i = 1, #animMoveSlots do
+		local s = animMoveSlots[i]
+		safeCall(Move, s[1], s[2], s[3], s[4])
+	end
+	animPlayer.advance(animCtx, dtMs)
+
+	if driven > 0 then
+		animFrames = animFrames + 1
+		if animFrames <= 5 then
+			say(string.format("LUS ANIM archer %s driven=%d", clipName, driven))
+		end
+	end
+	return driven, done
+end
+
+-- Exactly one playback thread per unit; StartMoving spawns it.
+local animThreadLive = false
+local function startAnimThread()
+	if not animCtx or animThreadLive then return false end
+	animThreadLive = true
+	StartThread(function()
+		SetSignalMask(SIG_MOVE)
+		while true do
+			driveClip(currentClip, 33)
+			Sleep(1)
+		end
+	end)
+	return true
+end
+
 local function restPose()
 	for i = 1, #PARTS do
 		local p = PARTS[i]
@@ -125,8 +267,14 @@ end
 -- Lighter and quicker than the melee stride: shorter thigh swing, lower bob.
 function script.StartMoving()
 	Signal(SIG_MOVE)
+	-- Primary: the baked `walk` clip, driven by scripts/anim_player.lua on the
+	-- playback thread. Fallback: the procedural cadence below, used when the
+	-- build ships no bake bundle or no player module. StartMoving is not
+	-- thread-wrapped by the framework, so it spawns its own loop here.
+	currentClip = "walk"
 	StartThread(function()
 		SetSignalMask(SIG_MOVE)
+		if startAnimThread() then return end
 		while true do
 			-- Left contact: left thigh forward, bow arm counter-swings.
 			safeCall(Turn, thigh_l, x_axis, 0.32, 8)
@@ -194,6 +342,9 @@ end
 
 function script.StopMoving()
 	Signal(SIG_MOVE)
+	-- StopMoving is not thread-wrapped, so it may only Signal and reset the
+	-- pose; the playback thread picks up `idle` on its next tick.
+	currentClip = "idle"
 	restPose()
 end
 
@@ -213,6 +364,10 @@ function script.AimWeapon1(heading, pitch)
 	return true
 end
 
+-- Primary: play the baked melee swing (the stand-in for the shot, as the bake
+-- carries no ranged clip). It is a one-shot, but the clock is reset first so
+-- consecutive shots restart instead of holding on the last frame.
+-- Fallback: the procedural draw / release cadence below.
 function script.FireWeapon1()
 	if fireEchoes < 3 then
 		fireEchoes = fireEchoes + 1
@@ -221,6 +376,17 @@ function script.FireWeapon1()
 	Signal(SIG_ATTACK)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
+		if animCtx then
+			animPlayer.reset(animCtx)
+			while true do
+				local _driven, done = driveClip("attack_melee", 33)
+				if done then break end
+				Sleep(1)
+			end
+			animPlayer.reset(animCtx)
+			restPose()
+			return
+		end
 		-- Draw: bow arm extends forward, draw hand pulls the string back.
 		safeCall(Turn, arm_l, x_axis, 0.45, 14)
 		safeCall(Turn, forearm_l, x_axis, 0.12, 14)
@@ -272,6 +438,17 @@ function script.FireWeapon(weaponNum)
 	Signal(SIG_ATTACK)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
+		if animCtx then
+			animPlayer.reset(animCtx)
+			while true do
+				local _driven, done = driveClip("attack_melee", 33)
+				if done then break end
+				Sleep(1)
+			end
+			animPlayer.reset(animCtx)
+			restPose()
+			return
+		end
 		safeCall(Turn, arm_l, x_axis, 0.45, 14)
 		safeCall(Turn, arm_r, x_axis, -0.5, 14)
 		safeCall(Turn, forearm_r, x_axis, -0.7, 14)
@@ -290,6 +467,17 @@ function script.Killed(recentDamage, maxHealth)
 	Signal(SIG_ATTACK)
 	Signal(SIG_DEATH)
 	SetSignalMask(SIG_DEATH)
+	-- Primary: the baked `death` one-shot, held on its last frame while the
+	-- engine waits out the thread. Fallback: the procedural tumble below.
+	if animCtx then
+		animPlayer.reset(animCtx)
+		while true do
+			local _driven, done = driveClip("death", 33)
+			if done then break end
+			Sleep(1)
+		end
+		return 1
+	end
 	-- Buckle backwards: the bow arm goes slack and the legs fold under the body.
 	safeCall(Turn, thigh_l, x_axis, -0.4, 3)
 	safeCall(Turn, thigh_r, x_axis, -0.5, 3)

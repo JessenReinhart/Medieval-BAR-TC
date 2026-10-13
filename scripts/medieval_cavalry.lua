@@ -64,6 +64,159 @@ end
 
 local SIG_MOVE, SIG_ATTACK, SIG_DEATH = 1, 2, 4
 
+-- Current clip name, declared here because the playback thread and the
+-- StartMoving / StopMoving / FireWeapon / Killed call-ins all write it.
+local currentClip = "idle"
+local lastDrivenClip = nil
+
+-- == Baked-clip playback (Phase 7 Slice 12) ==================================
+-- scripts/animdata/medieval_cavalry.lua holds world-space pose frames for
+-- walk / trot / gallop / idle / attack_melee / death. scripts/anim_player.lua
+-- turns them into Turn/Move calls on the mesh's pieces.
+--
+-- Every baked channel belongs to the ANIMAL: the bake carries no rider
+-- namespace (39 bones, all horse). The rider therefore stays on the procedural
+-- rig below, which posts it against the horse's baked root motion, and the
+-- mounted pose is driven by `gallop` -- the cavalry's only locomotion register.
+-- Everything is pcall-wrapped: a build with no filesystem, no bake bundle or no
+-- piece call-ins leaves animCtx nil and the procedural canter below takes over.
+local function loadModule(path)
+	local vfs = _G["VFS"]
+	local loader = type(vfs) == "table" and vfs["Include"] or nil
+	if type(loader) ~= "function" then return nil end
+	local ok, chunk = pcall(loader, path)
+	if not ok or type(chunk) ~= "function" then return nil end
+	local ran, value = pcall(chunk)
+	if not ran then return nil end
+	return value
+end
+
+local animPlayer, animClips = nil, nil
+do
+	local mod = loadModule("scripts/anim_player.lua")
+	if type(mod) == "table" then
+		animPlayer = mod
+		animClips = loadModule("scripts/animdata/medieval_cavalry.lua")
+	end
+end
+
+-- Horse bones only: the rider rides through the procedural rig, so binding it
+-- here would let a baked frame fight the mounted pose.
+local HORSE_PARTS = {
+	base, root, spine, neck, head, tail,
+	l_femur, l_thigh, l_leg, l_shin, l_hoof,
+	r_femur, r_thigh, r_leg, r_shin, r_hoof,
+	l_shoulder, l_forearm, r_shoulder, r_forearm,
+}
+
+local animCtx = nil
+do
+	if animPlayer and type(animClips) == "table" then
+		local ctx = animPlayer.new()
+		animPlayer.setClips(ctx, animClips)
+		animPlayer.setPrimitives(ctx, Turn, Move)
+		animPlayer.setSpeed(ctx, 14)
+		animPlayer.bindRest(ctx, animClips.idle)
+
+		-- Bind each distinct resolved handle, preferring the bone whose bake
+		-- owns it and falling back to the root bone so a single-hull mesh still
+		-- animates rather than standing frozen.
+		local restFrame = (animClips.idle and animClips.idle.frames
+			and animClips.idle.frames[1]) or {}
+		local seen = {}
+		for i = 1, #HORSE_PARTS do
+			local handle = HORSE_PARTS[i]
+			if handle and not seen[handle] then
+				seen[handle] = true
+				local name = "root"
+				for candidate in pairs(restFrame) do
+					if optPiece(candidate) == handle then
+						name = candidate
+						break
+					end
+				end
+				animPlayer.bindPiece(ctx, name, handle)
+			end
+		end
+		animCtx = ctx
+	end
+end
+
+-- Player slot callbacks, bound once. The driver drains these into safeCall.
+local animTurnSlots, animMoveSlots = {}, {}
+local animFrames = 0
+
+local function say(msg)
+	pcall(function()
+		if Spring and Spring.Echo then Spring.Echo(msg) else print(msg) end
+	end)
+end
+
+do
+	if animPlayer then
+		-- Rebuild the primitive set against the collector tables.
+		local ctx = animCtx
+		if ctx then
+			animPlayer.setPrimitives(ctx,
+				function(handle, axis, value, speed)
+					animTurnSlots[#animTurnSlots + 1] = { handle, axis, value, speed }
+				end,
+				function(handle, axis, value, speed)
+					animMoveSlots[#animMoveSlots + 1] = { handle, axis, value, speed }
+				end)
+		end
+	end
+end
+
+local function driveClip(clipName, dtMs)
+	if not animCtx then return 0 end
+	-- The player keeps one shared clock, so a clip's timeline only resets when
+	-- the switch actually changes clip; restarting a one-shot from zero would
+	-- otherwise rewind the loop it was layered on top of.
+	if lastDrivenClip ~= clipName then
+		animPlayer.reset(animCtx)
+		lastDrivenClip = clipName
+	elseif animPlayer.elapsed(animCtx, clipName) > 100000 then
+		animPlayer.reset(animCtx)  -- wrap the accumulating clock, never diverge
+	end
+	for i = #animTurnSlots, 1, -1 do animTurnSlots[i] = nil end
+	for i = #animMoveSlots, 1, -1 do animMoveSlots[i] = nil end
+
+	local driven, done = animPlayer.emit(animCtx, clipName, animPlayer.elapsed(animCtx, clipName))
+	for i = 1, #animTurnSlots do
+		local s = animTurnSlots[i]
+		safeCall(Turn, s[1], s[2], s[3], s[4])
+	end
+	for i = 1, #animMoveSlots do
+		local s = animMoveSlots[i]
+		safeCall(Move, s[1], s[2], s[3], s[4])
+	end
+	animPlayer.advance(animCtx, dtMs)
+
+	if driven > 0 then
+		animFrames = animFrames + 1
+		if animFrames <= 5 then
+			say(string.format("LUS ANIM cavalry %s driven=%d", clipName, driven))
+		end
+	end
+	return driven, done
+end
+
+-- Exactly one playback thread per unit; StartMoving spawns it.
+local animThreadLive = false
+local function startAnimThread()
+	if not animCtx or animThreadLive then return false end
+	animThreadLive = true
+	StartThread(function()
+		SetSignalMask(SIG_MOVE)
+		while true do
+			driveClip(currentClip, 33)
+			Sleep(1)
+		end
+	end)
+	return true
+end
+
 -- == Rest pose: every bone back to zero =====================================
 local REST_PIECES = {
 	base, root, spine, neck, head, tail,
@@ -152,8 +305,16 @@ end
 
 function script.StartMoving()
 	Signal(SIG_MOVE)
+	-- Primary: the baked `gallop` clip, driven by scripts/anim_player.lua on the
+	-- playback thread -- the cavalry's locomotion register, and the only baked
+	-- cycle whose stride matches the procedural canter below. Fallback: that
+	-- procedural canter, used when the build ships no bake bundle or no player
+	-- module. Note the rider is NOT in the bake, so it only posts on the
+	-- procedural path; on the baked path it rides the saddle bone rigidly.
+	currentClip = "gallop"
 	StartThread(function()
 		SetSignalMask(SIG_MOVE)
+		if startAnimThread() then return end
 		local phase = 1
 		while true do
 			local beat = GALLOP[phase]
@@ -189,6 +350,9 @@ end
 
 function script.StopMoving()
 	Signal(SIG_MOVE)
+	-- StopMoving is not thread-wrapped, so it may only Signal and reset the
+	-- pose; the playback thread picks up `idle` on its next tick.
+	currentClip = "idle"
 	restPose()
 end
 
@@ -216,6 +380,21 @@ function script.FireWeapon1()
 	Signal(SIG_ATTACK)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
+		-- Primary: the baked melee is a HORSE move (rear plus foreleg strike),
+		-- so the rider's own slash would double up on it and is skipped on this
+		-- path. It is a one-shot, but the clock is reset first so consecutive
+		-- swings restart instead of holding on the last frame.
+		if animCtx then
+			animPlayer.reset(animCtx)
+			while true do
+				local _driven, done = driveClip("attack_melee", 33)
+				if done then break end
+				Sleep(1)
+			end
+			animPlayer.reset(animCtx)
+			restPose()
+			return
+		end
 		-- Rear: the hull pitches up, weight rocks onto the hocks and the front
 		-- pair leaves the ground.
 		safeCall(Turn, root, x_axis, -0.30, 8)
@@ -276,6 +455,18 @@ function script.FireWeapon(weaponNum)
 	Signal(SIG_ATTACK)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
+		-- Primary: the baked horse melee, as above.
+		if animCtx then
+			animPlayer.reset(animCtx)
+			while true do
+				local _driven, done = driveClip("attack_melee", 33)
+				if done then break end
+				Sleep(1)
+			end
+			animPlayer.reset(animCtx)
+			restPose()
+			return
+		end
 		safeCall(Turn, root, x_axis, -0.30, 8)
 		safeCall(Move, root, y_axis, 1.4, 10)
 		safeCall(Turn, l_shoulder, x_axis, -0.55, 9)
@@ -301,6 +492,18 @@ function script.Killed(recentDamage, maxHealth)
 	Signal(SIG_ATTACK)
 	Signal(SIG_DEATH)
 	SetSignalMask(SIG_DEATH)
+	-- Primary: the baked `death` one-shot (horse only -- the rider is not in the
+	-- bake), held on its last frame while the engine waits out the thread.
+	-- Fallback: the procedural collapse below, which also throws the rider.
+	if animCtx then
+		animPlayer.reset(animCtx)
+		while true do
+			local _driven, done = driveClip("death", 33)
+			if done then break end
+			Sleep(1)
+		end
+		return 1
+	end
 	-- Rear one last time, then go over sideways onto the flank.
 	safeCall(Turn, root, x_axis, -0.35, 4)
 	safeCall(Turn, neck, x_axis, -0.30, 4)
