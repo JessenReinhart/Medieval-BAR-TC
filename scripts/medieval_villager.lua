@@ -90,22 +90,38 @@ local lastDrivenClip = nil
 -- no filesystem, no bake bundle or no piece call-ins leaves animCtx nil and the
 -- procedural trudge / labour cadence below takes over.
 local function loadModule(path)
-  local vfs = _G["VFS"]
-  local loader = type(vfs) == "table" and vfs["Include"] or nil
-  if type(loader) ~= "function" then return nil end
-  local ok, chunk = pcall(loader, path)
-  if not ok or type(chunk) ~= "function" then return nil end
-  local ran, value = pcall(chunk)
-  if not ran then return nil end
+  local inc = include
+  if type(inc) ~= "function" then
+    return nil, "include unavailable"
+  end
+  -- include() resolves paths against scripts/ and runs the chunk in this
+  -- unit's environment, so drop the scripts/ prefix the callers carry. The
+  -- old VFS loader is gone: a VFS chunk executes in the wrong environment.
+  local rel = type(path) == "string" and path:gsub("^scripts[/\\]", "") or path
+  local ok, value = pcall(inc, rel)
+  if not ok then
+    return nil, tostring(value)
+  end
+  if type(value) ~= "table" then
+    return nil, "module returned " .. type(value)
+  end
   return value
 end
 
 local animPlayer, animClips = nil, nil
+local animFailReason = nil
 do
-  local mod = loadModule("scripts/anim_player.lua")
+  local mod, perr = loadModule("scripts/anim_player.lua")
   if type(mod) == "table" then
     animPlayer = mod
-    animClips = loadModule("scripts/animdata/medieval_villager.lua")
+    local clips, cerr = loadModule("scripts/animdata/medieval_villager.lua")
+    if type(clips) == "table" then
+      animClips = clips
+    else
+      animFailReason = cerr or "clips load failed"
+    end
+  else
+    animFailReason = perr or "anim_player load failed"
   end
 end
 
@@ -139,6 +155,22 @@ do
       end
     end
     animCtx = ctx
+  end
+end
+
+-- One-time init diagnostic, logged once per unit at chunk scope: proves the
+-- baked 0 A.D. clips initialised, or the procedural trudge took over. Uses
+-- Spring.Echo when present and no-ops in a bare-Lua test harness.
+do
+  local spring = type(Spring) == "table" and Spring or nil
+  if spring and type(spring.Echo) == "function" then
+    if animCtx then
+      local n = 0
+      for _ in pairs(animClips) do n = n + 1 end
+      spring.Echo("MEDIEVAL ANIM baked init unit=" .. tostring(unitID) .. " clips=" .. n)
+    else
+      spring.Echo("MEDIEVAL ANIM fallback unit=" .. tostring(unitID) .. " reason=" .. tostring(animFailReason or "none"))
+    end
   end
 end
 
