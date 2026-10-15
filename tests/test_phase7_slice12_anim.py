@@ -459,6 +459,53 @@ EMIT_STEP = LUA.eval(
     """
 )
 
+EMIT_THEN_ADVANCE = LUA.eval(
+    """
+    function(clip, dt)
+      local ctx = player.new()
+      player.setClips(ctx, clips)
+      player.setPrimitives(ctx, function() end, function() end)
+      player.setSpeed(ctx, 14)
+      player.bindRest(ctx, clips.idle)
+      player.bindPiece(ctx, "hip", "hip")
+      player.emit(ctx, clip, 0)
+      player.advance(ctx, dt)
+      local t1 = player.elapsed(ctx, clip)
+      player.advance(ctx, dt)
+      local t2 = player.elapsed(ctx, clip)
+      return t1, t2
+    end
+    """
+)
+
+ONESHOT_ADVANCE_FINISHES = LUA.eval(
+    """
+    function(clip, dt, maxSteps)
+      local ctx = player.new()
+      player.setClips(ctx, clips)
+      player.setPrimitives(ctx, function() end, function() end)
+      player.setSpeed(ctx, 14)
+      player.bindRest(ctx, clips.idle)
+      player.bindPiece(ctx, "hip", "hip")
+      player.emit(ctx, clip, 0)
+      local done = false
+      local elapsed = 0
+      local steps = 0
+      for i = 1, maxSteps do
+        player.advance(ctx, dt)
+        local driven, d = player.emit(ctx, clip, player.elapsed(ctx, clip))
+        if d == true then
+          done = true
+          elapsed = player.elapsed(ctx, clip)
+          steps = i
+          break
+        end
+      end
+      return done and 1 or 0, elapsed, steps
+    end
+    """
+)
+
 SPEED_PROBE = LUA.eval(
     """
     function()
@@ -776,6 +823,17 @@ class TestEmit:
         assert n1 > 0, "step must emit"
         assert t1 == 33
         assert t2 == 66
+
+    def test_emit_then_advance_makes_clock_progress_on_walk(self):
+        t1, t2 = EMIT_THEN_ADVANCE("walk", 33)
+        assert t1 == 33
+        assert t2 == 66
+
+    def test_one_shot_clip_finishes_after_enough_advance(self):
+        done, elapsed, steps = ONESHOT_ADVANCE_FINISHES("attack_melee", 33, 100)
+        assert done == 1
+        assert steps > 0
+        assert elapsed > 0
 
     def test_emit_is_frame_absolute_not_cumulative(self):
         """Emitting the same timestamp twice must produce identical values."""

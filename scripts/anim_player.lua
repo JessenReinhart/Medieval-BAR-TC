@@ -93,6 +93,8 @@ local LOOPING = {
 	walk = true,
 	run = true,
 	idle = true,
+	gallop = true,
+	trot = true,
 }
 
 -- ---------------------------------------------------------------------------
@@ -306,6 +308,10 @@ end
 function anim_player.emit(ctx, clipName, ms)
 	local clip = ctx.clips[clipName]
 	if not clip or not clip.frames or #clip.frames == 0 then return 0, true end
+
+	-- Register this clip's playback clock so elapsed()/advance() progress even
+	-- when the caller drives frames via emit() then advance() (not just step()).
+	ctx.clock[clipName] = ms
 
 	local looping = anim_player.isLooping(clipName)
 	local frame, _idx, done = anim_player.sample(clip, ms, looping)

@@ -116,14 +116,9 @@ do
 	end
 end
 
--- Horse bones only: the rider rides through the procedural rig, so binding it
--- here would let a baked frame fight the mounted pose.
-local HORSE_PARTS = {
-	base, root, spine, neck, head, tail,
-	l_femur, l_thigh, l_leg, l_shin, l_hoof,
-	r_femur, r_thigh, r_leg, r_shin, r_hoof,
-	l_shoulder, l_forearm, r_shoulder, r_forearm,
-}
+-- The rider rides through the procedural rig, so non-bone props never enter
+-- the bake binding below and cannot fight the mounted aim / fire pose.
+local bakedNames = {}
 
 local animCtx = nil
 do
@@ -134,25 +129,30 @@ do
 		animPlayer.setSpeed(ctx, 14)
 		animPlayer.bindRest(ctx, animClips.idle)
 
-		-- Bind each distinct resolved handle, preferring the bone whose bake
-		-- owns it and falling back to the root bone so a single-hull mesh still
-		-- animates rather than standing frozen.
+		-- Rigid bone-as-piece port: bind every exact bone name the idle frame
+		-- carries to its own resolved piece (optPiece maps the 0 A.D. alias
+		-- chain to the emitted piece). Each engine handle is bound once so
+		-- spinal aliases sharing a piece cannot clobber one another, and props
+		-- like rider / weapon -- which fall back to the hull but never appear
+		-- in a frame -- can never hijack the root channel: they stay in
+		-- REST_PIECES for the procedural canter / aim loops.
 		local restFrame = (animClips.idle and animClips.idle.frames
 			and animClips.idle.frames[1]) or {}
+		local bound = 0
 		local seen = {}
-		for i = 1, #HORSE_PARTS do
-			local handle = HORSE_PARTS[i]
+		for name, _ in pairs(restFrame) do
+			local handle = optPiece(name)
 			if handle and not seen[handle] then
 				seen[handle] = true
-				local name = "root"
-				for candidate in pairs(restFrame) do
-					if optPiece(candidate) == handle then
-						name = candidate
-						break
-					end
-				end
+				bakedNames[#bakedNames + 1] = name
 				animPlayer.bindPiece(ctx, name, handle)
+				bound = bound + 1
 			end
+		end
+		-- Single-hull mesh: no bone name resolved to a piece, so pin the hull
+		-- to the canonical root the procedural fallback still animates.
+		if bound == 0 then
+			animPlayer.bindPiece(ctx, "root", base)
 		end
 		animCtx = ctx
 	end
@@ -236,16 +236,21 @@ end
 
 -- Exactly one playback thread per unit; StartMoving spawns it.
 local animThreadLive = false
+local isAttacking = false
 local function startAnimThread()
-	if not animCtx or animThreadLive then return false end
-	animThreadLive = true
-	StartThread(function()
-		SetSignalMask(SIG_MOVE)
-		while true do
-			driveClip(currentClip, 33)
-			Sleep(1)
-		end
-	end)
+	if not animCtx then return false end
+	if not animThreadLive then
+		animThreadLive = true
+		StartThread(function()
+			SetSignalMask(SIG_DEATH)
+			while true do
+				if not isAttacking then
+					driveClip(currentClip, 33)
+				end
+				Sleep(1)
+			end
+		end)
+	end
 	return true
 end
 
@@ -264,8 +269,23 @@ local function restPose()
 		safeCall(Turn, p, x_axis, 0, 6)
 		safeCall(Turn, p, y_axis, 0, 6)
 		safeCall(Turn, p, z_axis, 0, 6)
+		safeCall(Move, p, x_axis, 0, 6)
 		safeCall(Move, p, y_axis, 0, 6)
 		safeCall(Move, p, z_axis, 0, 6)
+	end
+	-- The rigid bone-as-piece bind drives spine1/spine2, neck1/neck2, belly,
+	-- ears, upperarm/arm/hand, feet and tail3..7 as well, so clear them too or
+	-- a stopped horse freezes mid-canter.
+	for i = 1, #bakedNames do
+		local p = optPiece(bakedNames[i])
+		if p then
+			safeCall(Turn, p, x_axis, 0, 6)
+			safeCall(Turn, p, y_axis, 0, 6)
+			safeCall(Turn, p, z_axis, 0, 6)
+			safeCall(Move, p, x_axis, 0, 6)
+			safeCall(Move, p, y_axis, 0, 6)
+			safeCall(Move, p, z_axis, 0, 6)
+		end
 	end
 end
 
@@ -394,12 +414,17 @@ function script.AimWeapon1(heading, pitch)
 		aimEchoes = aimEchoes + 1
 		say(string.format("LUS AIM cavalry w1 heading=%.1f pitch=%.1f", heading or 0, pitch or 0))
 	end
-	-- Slew the whole animal onto the aim line, then let the neck and the rider
-	-- follow the target; the couched torso stays low rather than on the raw pitch.
+	-- Slew the animal onto the aim line when procedural. In baked mode,
+	-- root and neck are driven by baked frames, so only the rider aims
+	-- to prevent fighting over bone channels.
 	local yaw = clampHeading(heading)
-	safeCall(Turn, root, y_axis, yaw * 0.35, 6)
-	safeCall(Turn, neck, y_axis, yaw * 0.20, 6)
-	safeCall(Turn, rider, y_axis, yaw * 0.45, 6)
+	if not animCtx then
+		safeCall(Turn, root, y_axis, yaw * 0.35, 6)
+		safeCall(Turn, neck, y_axis, yaw * 0.20, 6)
+		safeCall(Turn, rider, y_axis, yaw * 0.45, 6)
+	else
+		safeCall(Turn, rider, y_axis, yaw, 6)
+	end
 	safeCall(Turn, rider, x_axis, clampPitch(pitch) * 0.4 + 0.08, 5)
 	return true
 end
@@ -417,6 +442,7 @@ function script.FireWeapon1()
 		-- path. It is a one-shot, but the clock is reset first so consecutive
 		-- swings restart instead of holding on the last frame.
 		if animCtx then
+			isAttacking = true
 			animPlayer.reset(animCtx)
 			while true do
 				local _driven, done = driveClip("attack_melee", 33)
@@ -424,6 +450,7 @@ function script.FireWeapon1()
 				Sleep(1)
 			end
 			animPlayer.reset(animCtx)
+			isAttacking = false
 			restPose()
 			return
 		end
@@ -472,9 +499,13 @@ function script.AimWeapon(weaponNum, heading, pitch)
 		say(string.format("LUS AIM cavalry w%d [unnum] heading=%.1f pitch=%.1f", weaponNum or 0, heading or 0, pitch or 0))
 	end
 	local yaw = clampHeading(heading)
-	safeCall(Turn, root, y_axis, yaw * 0.35, 6)
-	safeCall(Turn, neck, y_axis, yaw * 0.20, 6)
-	safeCall(Turn, rider, y_axis, yaw * 0.45, 6)
+	if not animCtx then
+		safeCall(Turn, root, y_axis, yaw * 0.35, 6)
+		safeCall(Turn, neck, y_axis, yaw * 0.20, 6)
+		safeCall(Turn, rider, y_axis, yaw * 0.45, 6)
+	else
+		safeCall(Turn, rider, y_axis, yaw, 6)
+	end
 	safeCall(Turn, rider, x_axis, clampPitch(pitch) * 0.4 + 0.08, 5)
 	return true
 end
@@ -489,6 +520,7 @@ function script.FireWeapon(weaponNum)
 		SetSignalMask(SIG_ATTACK)
 		-- Primary: the baked horse melee, as above.
 		if animCtx then
+			isAttacking = true
 			animPlayer.reset(animCtx)
 			while true do
 				local _driven, done = driveClip("attack_melee", 33)
@@ -496,6 +528,7 @@ function script.FireWeapon(weaponNum)
 				Sleep(1)
 			end
 			animPlayer.reset(animCtx)
+			isAttacking = false
 			restPose()
 			return
 		end

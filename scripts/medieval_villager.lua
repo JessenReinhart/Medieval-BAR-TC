@@ -125,34 +125,47 @@ do
   end
 end
 
+local bakedNames = {}
 local animCtx = nil
 do
   if animPlayer and type(animClips) == "table" then
+    if type(animPlayer.isLooping) == "function" then
+      local baseIsLooping = animPlayer.isLooping
+      animPlayer.isLooping = function(clip)
+        if clip == "build" then return true end
+        return baseIsLooping(clip)
+      end
+    end
     local ctx = animPlayer.new()
     animPlayer.setClips(ctx, animClips)
     animPlayer.setPrimitives(ctx, Turn, Move)
     animPlayer.setSpeed(ctx, 14)
     animPlayer.bindRest(ctx, animClips.idle)
 
-    -- Bind each distinct resolved handle, preferring the bone whose bake owns
-    -- it and falling back to the root bone so a single-hull mesh still
-    -- animates rather than standing frozen.
+    -- Rigid bone-as-piece port: bind every exact bone name the idle frame
+    -- carries to its own resolved piece (optPiece maps the 0 A.D. alias chain
+    -- to the emitted piece). Each engine handle is bound once, so two alias
+    -- names sharing a piece cannot clobber each other, and props like the hoe
+    -- or shield -- which fall back to the hull but never appear in a frame --
+    -- can never hijack the hip channel: they stay in PARTS for the procedural
+    -- trudge / labour loops.
     local restFrame = (animClips.idle and animClips.idle.frames
       and animClips.idle.frames[1]) or {}
+    local bound = 0
     local seen = {}
-    for i = 1, #PARTS do
-      local handle = PARTS[i]
+    for name, _ in pairs(restFrame) do
+      local handle = optPiece(name)
       if handle and not seen[handle] then
         seen[handle] = true
-        local name = "hip"
-        for candidate in pairs(restFrame) do
-          if optPiece(candidate) == handle then
-            name = candidate
-            break
-          end
-        end
+        bakedNames[#bakedNames + 1] = name
         animPlayer.bindPiece(ctx, name, handle)
+        bound = bound + 1
       end
+    end
+    -- Single-hull mesh: no bone name resolved to a piece, so pin the hull to
+    -- the canonical hip the procedural fallback still animates.
+    if bound == 0 then
+      animPlayer.bindPiece(ctx, "hip", base)
     end
     animCtx = ctx
   end
@@ -234,18 +247,20 @@ local function driveClip(clipName, dtMs)
   return driven, done
 end
 
--- Exactly one playback thread per unit; StartMoving spawns it.
+-- Exactly one playback thread per unit; StartMoving / StartBuilding spawns it.
 local animThreadLive = false
 local function startAnimThread()
-  if not animCtx or animThreadLive then return false end
-  animThreadLive = true
-  StartThread(function()
-    SetSignalMask(SIG_MOVE)
-    while true do
-      driveClip(currentClip, 33)
-      Sleep(1)
-    end
-  end)
+  if not animCtx then return false end
+  if not animThreadLive then
+    animThreadLive = true
+    StartThread(function()
+      SetSignalMask(SIG_DEATH)
+      while true do
+        driveClip(currentClip, 33)
+        Sleep(1)
+      end
+    end)
+  end
   return true
 end
 
@@ -258,6 +273,19 @@ local function restPose()
     safeCall(Move, p, x_axis, 0, 6)
     safeCall(Move, p, y_axis, 0, 6)
     safeCall(Move, p, z_axis, 0, 6)
+  end
+  -- The rigid bone-as-piece bind drives shoulder / hand / neck / finger
+  -- pieces too, so clear them as well or a stopped unit freezes mid-pose.
+  for i = 1, #bakedNames do
+    local p = optPiece(bakedNames[i])
+    if p then
+      safeCall(Turn, p, x_axis, 0, 6)
+      safeCall(Turn, p, y_axis, 0, 6)
+      safeCall(Turn, p, z_axis, 0, 6)
+      safeCall(Move, p, x_axis, 0, 6)
+      safeCall(Move, p, y_axis, 0, 6)
+      safeCall(Move, p, z_axis, 0, 6)
+    end
   end
 end
 

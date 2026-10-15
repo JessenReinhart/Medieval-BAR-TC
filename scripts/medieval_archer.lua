@@ -77,6 +77,9 @@ local SIG_MOVE, SIG_ATTACK, SIG_DEATH = 1, 2, 4
 -- StartMoving / StopMoving / FireWeapon / Killed call-ins all write it.
 local currentClip = "idle"
 local lastDrivenClip = nil
+-- Set while a one-shot (attack_melee / death) is playing so the persistent
+-- walk playback loop pauses instead of overwriting the same pieces.
+local animOneShot = false
 
 -- == Baked-clip playback (Phase 7 Slice 12) ==================================
 -- scripts/animdata/medieval_archer.lua holds world-space pose frames for
@@ -132,25 +135,25 @@ do
 		animPlayer.setSpeed(ctx, 14)
 		animPlayer.bindRest(ctx, animClips.idle)
 
-		-- Bind each distinct resolved handle, preferring the bone whose bake
-		-- owns it and falling back to the root bone so a single-hull mesh still
-		-- animates rather than standing frozen.
+		-- Bind each baked bone name to its exact piece only: one handle per
+		-- name and no hull/hip fallback overwrite. Bones the bake names but the
+		-- OBJ lacks are skipped, so weapon/shield/greave/helmet can never be
+		-- mapped onto hip, and every named bone the static PARTS list omits
+		-- (shoulders, neck, hands, fingers, fingertips, helmet) is covered.
 		local restFrame = (animClips.idle and animClips.idle.frames
 			and animClips.idle.frames[1]) or {}
-		local seen = {}
-		for i = 1, #PARTS do
-			local handle = PARTS[i]
-			if handle and not seen[handle] then
-				seen[handle] = true
-				local name = "hip"
-				for candidate in pairs(restFrame) do
-					if optPiece(candidate) == handle then
-						name = candidate
-						break
-					end
-				end
+		local boundAny = false
+		for name in pairs(restFrame) do
+			local handle = optPiece(name)
+			if handle then
 				animPlayer.bindPiece(ctx, name, handle)
+				boundAny = true
 			end
+		end
+		if not boundAny and base then
+			-- Old single-hull fallback: no baked joint piece resolved, so
+			-- drive the root hull from the hip channel once.
+			animPlayer.bindPiece(ctx, "hip", base)
 		end
 		animCtx = ctx
 	end
@@ -232,15 +235,17 @@ local function driveClip(clipName, dtMs)
 	return driven, done
 end
 
--- Exactly one playback thread per unit; StartMoving spawns it.
-local animThreadLive = false
+-- One playback thread per unit; StartMoving spawns it. Signal(SIG_MOVE) inside
+-- StartMoving/StopMoving already cancels any prior loop, so at most one survives;
+-- dropping the liveness flag lets the baked walk respawn after a stop.
 local function startAnimThread()
-	if not animCtx or animThreadLive then return false end
-	animThreadLive = true
+	if not animCtx then return false end
 	StartThread(function()
 		SetSignalMask(SIG_MOVE)
 		while true do
-			driveClip(currentClip, 33)
+			if not animOneShot then
+				driveClip(currentClip, 33)
+			end
 			Sleep(1)
 		end
 	end)
@@ -256,6 +261,16 @@ local function restPose()
 		safeCall(Move, p, x_axis, 0, 6)
 		safeCall(Move, p, y_axis, 0, 6)
 		safeCall(Move, p, z_axis, 0, 6)
+	end
+	if animCtx and animCtx.pieces then
+		for _, p in pairs(animCtx.pieces) do
+			safeCall(Turn, p, x_axis, 0, 6)
+			safeCall(Turn, p, y_axis, 0, 6)
+			safeCall(Turn, p, z_axis, 0, 6)
+			safeCall(Move, p, x_axis, 0, 6)
+			safeCall(Move, p, y_axis, 0, 6)
+			safeCall(Move, p, z_axis, 0, 6)
+		end
 	end
 end
 
@@ -386,13 +401,17 @@ function script.AimWeapon1(heading, pitch)
 		aimEchoes = aimEchoes + 1
 		say(string.format("LUS AIM archer w1 heading=%.1f pitch=%.1f", heading or 0, pitch or 0))
 	end
-	-- Raise the torso onto the aim line while the bow is held.
-	local lean = clampLean(pitch)
-	local yaw = clampYaw(heading)
-	safeCall(Turn, spine, x_axis, lean * 0.4, 5)
-	safeCall(Turn, chest, x_axis, lean * 0.6, 5)
-	safeCall(Turn, chest, y_axis, yaw, 5)
-	safeCall(Turn, head, y_axis, yaw * 0.4, 5)
+	-- Raise the torso onto the aim line while the bow is held. In baked mode
+	-- the playback thread already drives those pieces, so the procedural
+	-- lean/yaw stays off to avoid two writers fighting over the same channels.
+	if not animCtx then
+		local lean = clampLean(pitch)
+		local yaw = clampYaw(heading)
+		safeCall(Turn, spine, x_axis, lean * 0.4, 5)
+		safeCall(Turn, chest, x_axis, lean * 0.6, 5)
+		safeCall(Turn, chest, y_axis, yaw, 5)
+		safeCall(Turn, head, y_axis, yaw * 0.4, 5)
+	end
 	return true
 end
 
@@ -409,6 +428,7 @@ function script.FireWeapon1()
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
 		if animCtx then
+			animOneShot = true
 			animPlayer.reset(animCtx)
 			while true do
 				local _driven, done = driveClip("attack_melee", 33)
@@ -417,6 +437,7 @@ function script.FireWeapon1()
 			end
 			animPlayer.reset(animCtx)
 			restPose()
+			animOneShot = false
 			return
 		end
 		-- Draw: bow arm extends forward, draw hand pulls the string back.
@@ -453,12 +474,16 @@ function script.AimWeapon(weaponNum, heading, pitch)
 		aimEchoes = aimEchoes + 1
 		say(string.format("LUS AIM archer w%d [unnum] heading=%.1f pitch=%.1f", weaponNum or 0, heading or 0, pitch or 0))
 	end
-	local lean = clampLean(pitch)
-	local yaw = clampYaw(heading)
-	safeCall(Turn, spine, x_axis, lean * 0.4, 5)
-	safeCall(Turn, chest, x_axis, lean * 0.6, 5)
-	safeCall(Turn, chest, y_axis, yaw, 5)
-	safeCall(Turn, head, y_axis, yaw * 0.4, 5)
+	-- In baked mode the playback thread already drives the chest/spine/head, so
+	-- the procedural lean/yaw must stay off to avoid two writers fighting.
+	if not animCtx then
+		local lean = clampLean(pitch)
+		local yaw = clampYaw(heading)
+		safeCall(Turn, spine, x_axis, lean * 0.4, 5)
+		safeCall(Turn, chest, x_axis, lean * 0.6, 5)
+		safeCall(Turn, chest, y_axis, yaw, 5)
+		safeCall(Turn, head, y_axis, yaw * 0.4, 5)
+	end
 	return true
 end
 
@@ -471,6 +496,7 @@ function script.FireWeapon(weaponNum)
 	StartThread(function()
 		SetSignalMask(SIG_ATTACK)
 		if animCtx then
+			animOneShot = true
 			animPlayer.reset(animCtx)
 			while true do
 				local _driven, done = driveClip("attack_melee", 33)
@@ -479,6 +505,7 @@ function script.FireWeapon(weaponNum)
 			end
 			animPlayer.reset(animCtx)
 			restPose()
+			animOneShot = false
 			return
 		end
 		safeCall(Turn, arm_l, x_axis, 0.45, 14)
