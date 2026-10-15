@@ -305,20 +305,20 @@ end
 -- and drive the piece. Returns the number of pieces driven plus the per-call
 -- completion flag for one-shot clips.
 -- ---------------------------------------------------------------------------
-function anim_player.emit(ctx, clipName, ms)
+-- Compute the absolute per-piece targets for one frame. Returns
+--   targets = { [handle] = {rx, ry, rz, dx, dy, dz} }
+-- where (rx, ry, rz) are the engine YXZ euler angles and (dx, dy, dz) the
+-- pivot-term translation such that the engine renders the rigid bone pose
+-- t_k + R (v - t_0). Pure: no primitive calls, no state mutation.
+function anim_player.frameTargets(ctx, clipName, ms)
 	local clip = ctx.clips[clipName]
-	if not clip or not clip.frames or #clip.frames == 0 then return 0, true end
-
-	-- Register this clip's playback clock so elapsed()/advance() progress even
-	-- when the caller drives frames via emit() then advance() (not just step()).
-	ctx.clock[clipName] = ms
+	if not clip or not clip.frames or #clip.frames == 0 then return nil, 0, true end
 
 	local looping = anim_player.isLooping(clipName)
 	local frame, _idx, done = anim_player.sample(clip, ms, looping)
-	if not frame then return 0, true end
+	if not frame then return nil, 0, true end
 
-	local turn, move = ctx.turn, ctx.move
-	local speed = ctx.speed
+	local targets = {}
 	local driven = 0
 
 	for name, v in pairs(frame) do
@@ -338,17 +338,36 @@ function anim_player.emit(ctx, clipName, ms)
 			local dy = v[2] - (R[2][1] * t0[1] + R[2][2] * t0[2] + R[2][3] * t0[3])
 			local dz = v[3] - (R[3][1] * t0[1] + R[3][2] * t0[2] + R[3][3] * t0[3])
 
-			if turn then
-				turn(handle, 1, rx, speed)
-				turn(handle, 2, ry, speed)
-				turn(handle, 3, rz, speed)
-			end
-			if move then
-				move(handle, 1, dx, speed)
-				move(handle, 2, dy, speed)
-				move(handle, 3, dz, speed)
-			end
+			targets[handle] = { rx, ry, rz, dx, dy, dz }
 			driven = driven + 1
+		end
+	end
+
+	return targets, driven, done
+end
+
+-- Emit one frame as ABSOLUTE Turn()/Move() destinations. Verified by
+-- test_emit_is_frame_absolute_not_cumulative: a given ms always yields the same
+-- values. Spring's Move(p,axis,destination,speed) / Turn(p,axis,destination,
+-- speed) animate the piece TO that absolute destination, so only absolute
+-- sampling is correct.
+function anim_player.emit(ctx, clipName, ms)
+	ctx.clock[clipName] = ms
+	local targets, driven, done = anim_player.frameTargets(ctx, clipName, ms)
+	if not targets then return 0, true end
+
+	local turn, move = ctx.turn, ctx.move
+	local speed = ctx.speed
+	for handle, t in pairs(targets) do
+		if turn then
+			turn(handle, 1, t[1], speed)
+			turn(handle, 2, t[2], speed)
+			turn(handle, 3, t[3], speed)
+		end
+		if move then
+			move(handle, 1, t[4], speed)
+			move(handle, 2, t[5], speed)
+			move(handle, 3, t[6], speed)
 		end
 	end
 

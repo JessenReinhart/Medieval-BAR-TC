@@ -737,12 +737,12 @@ Ported native 0 A.D. skeletal animations into Recoil LUS by parsing the shipped 
 **Recoil engine piece pivot findings (`research/OBJ_piece_pivot_FINDINGS.md`)**
 
 - Recoil OBJ pieces loaded via Assimp have no node transforms; therefore, `Turn` rotates strictly about the piece-local origin (which collapses to model origin `(0, 0, 0)` for unoffset OBJ groups).
-- `Move` is relative in piece-local axes.
-- Verified in engine source (`rts/Sim/Misc/Transform.hpp`, `rts/Rendering/Models/3DModelPiece.cpp`, `rts/Rendering/Models/AssParser.cpp`). Reference: `research/OBJ_piece_pivot_FINDINGS.md`.
+- `Move` and `Turn` destinations are absolute relative to the piece's rest transform (`destination` argument in `Spring.UnitScript.Move` / `Turn`).
+- Verified in engine source (`rts/Sim/Misc/Transform.hpp`, `rts/Rendering/Models/3DModelPiece.cpp`, `rts/Rendering/Models/AssParser.cpp`, Spring LUS reference). Reference: `research/OBJ_piece_pivot_FINDINGS.md`.
 
 **Pure-module player (`scripts/anim_player.lua`) & LUS integration**
 
-- `scripts/anim_player.lua`: pure-module baked-keyframe player (`q_rel = q_k * conj(q0)`; `Turn` absolute, `Move` relative; the combined delta `d` handles both frame translation and the piece-local-origin pivot term: `d = t_k - R * t0`).
+- `scripts/anim_player.lua`: pure-module baked-keyframe player (`q_rel = q_k * conj(q0)`; `Turn` and `Move` both take absolute destinations; the combined term `d = t_k - R * t0` supplies the piece-local-origin pivot compensation and is fed straight into `Move`).
 - Wired into `scripts/medieval_infantry.lua`, `scripts/medieval_archer.lua`, `scripts/medieval_villager.lua`, and `scripts/medieval_cavalry.lua`; spearman and king share `scripts/medieval_infantry.lua`.
 
 **Tests & verification**
@@ -757,3 +757,22 @@ Ported native 0 A.D. skeletal animations into Recoil LUS by parsing the shipped 
 **Next:** Phase 7 is the final planned phase in `docs/phase-7.md`; the roadmap is complete
 through Phase 7. Any further work is a new phase (balance/content or map authoring) and
 should get its own spec document.
+
+### Phase 7 Slice 12 follow-up — Emit-Mode Regression Fixed (2026-10-15)
+
+- **Symptom:** after switching the baked-keyframe player to emit per-frame *deltas*, the
+  in-game walk loop stopped moving (models collapsed toward rest).
+- **Root cause:** Recoil/Spring `Move`/`Turn` take an **absolute `destination`** (relative
+  to rest), not an incremental delta. Feeding frame-to-frame deltas placed pieces at tiny
+  near-zero absolute offsets instead of the baked pose. Reference: Spring LUS docs
+  (`Spring.UnitScript.Move(piece, axis, destination[, speed])`).
+- **Fix:** reverted `scripts/anim_player.lua` to absolute `emit`, removed the incremental
+  `emitFrame` and its `lastEmit`/`lastClip` delta state; kept the pure `frameTargets`
+  split. All four LUS wiring scripts returned to `animPlayer.emit(...)`.
+- **Verification:** `tests/test_phase7_slice12_anim.py` + `tests/test_phase7_piece_bindings.py`
+  40 passed; `check_lua_syntax.py` 0 errors; windowed launch shows
+  `infantry walk driven=25` / `archer walk driven=25` per frame (walk restored).
+- **Open (unchanged from the audit):** the "Rayman detach/explode" was a piece-wiring issue
+  (hip-binding collision, unbound groups), not accumulate-vs-absolute; `driven=25` confirms
+  all 25 baked bones bind. If detachment persists at runtime, trace handle→bone pose mapping,
+  not the emit mode.

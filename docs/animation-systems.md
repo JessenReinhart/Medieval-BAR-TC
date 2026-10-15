@@ -89,8 +89,8 @@ Render = rotate about piece origin, then translate. Repo OBJ pieces have `offset
 
 | API | Axis | Units |
 |---|---|---|
-| `Turn(p, axis, angle, speed)` | 1=x 2=y 3=z | radians, rad/s |
-| `Move(p, axis, dist, speed)` | 1=x 2=y 3=z | elmo, elmo/s |
+| `Turn(p, axis, angle, speed)` | 1=x 2=y 3=z | radians, rad/s (destination is **absolute**) |
+| `Move(p, axis, dist, speed)` | 1=x 2=y 3=z | elmo, elmo/s (destination is **absolute**) |
 | `Spin(p, axis, speed[, accel])` | | rad/s, rad/s² |
 | `StopSpin(p, axis[, decel])` | | rad/s² |
 | `TurnNow` / `MoveNow` | | instant |
