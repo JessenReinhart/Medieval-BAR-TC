@@ -562,13 +562,19 @@ function script.Killed(recentDamage, maxHealth)
 	-- Fallback: the procedural collapse below, which also throws the rider.
 	if animCtx then
 		animPlayer.reset(animCtx)
+		local drivenTotal = 0
 		while true do
-			local _driven, done = driveClip("death", 33)
+			local driven, done = driveClip("death", 33)
+			drivenTotal = drivenTotal + (driven or 0)
 			if done then break end
 			Sleep(1)
 		end
+		say(string.format("PHASE7 DEATH unit=%s clip=death baked=1 driven=%d",
+			tostring(unitID), drivenTotal))
 		return 1
 	end
+	say(string.format("PHASE7 DEATH unit=%s clip=procedural baked=0",
+		tostring(unitID)))
 	-- Rear one last time, then go over sideways onto the flank.
 	safeCall(Turn, root, x_axis, -0.35, 4)
 	safeCall(Turn, neck, x_axis, -0.30, 4)

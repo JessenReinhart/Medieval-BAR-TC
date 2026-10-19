@@ -431,13 +431,19 @@ function script.Killed(recentDamage, maxHealth)
   -- engine waits out the thread. Fallback: the procedural crumple below.
   if animCtx then
     animPlayer.reset(animCtx)
+    local drivenTotal = 0
     while true do
-      local _driven, done = driveClip("death", 33)
+      local driven, done = driveClip("death", 33)
+      drivenTotal = drivenTotal + (driven or 0)
       if done then break end
       Sleep(1)
     end
+    say(string.format("PHASE7 DEATH unit=%s clip=death baked=1 driven=%d",
+      tostring(unitID), drivenTotal))
     return 1
   end
+  say(string.format("PHASE7 DEATH unit=%s clip=procedural baked=0",
+    tostring(unitID)))
   -- The knees give way first, then the torso folds onto the ground.
   safeCall(Turn, thigh_l, x_axis, 0.5, 3)
   safeCall(Turn, thigh_r, x_axis, 0.42, 3)

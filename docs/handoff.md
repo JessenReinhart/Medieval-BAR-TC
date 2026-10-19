@@ -776,3 +776,48 @@ should get its own spec document.
   (hip-binding collision, unbound groups), not accumulate-vs-absolute; `driven=25` confirms
   all 25 baked bones bind. If detachment persists at runtime, trace handle→bone pose mapping,
   not the emit mode.
+
+### Phase 7 Slice 12 follow-up — Baked Death Clips Verified In-Engine (2026-10-19)
+
+The baked `death` clip was already wired into `script.Killed` for all four articulated
+LUS scripts in Slice 11, but nothing proved it ran. This pass makes it observable and
+verifies every articulated unitdef against the live engine.
+
+- **Diagnostics (`scripts/medieval_infantry.lua`, `medieval_archer.lua`,
+  `medieval_villager.lua`, `medieval_cavalry.lua`):** the baked `Killed` branch now sums
+  the pieces driven across the one-shot and emits
+  `PHASE7 DEATH unit=<id> clip=death baked=1 driven=<piece-frames>`; the procedural
+  fallback emits `PHASE7 DEATH unit=<id> clip=procedural baked=0`. Unit scripts stay
+  pure LUS (no `UnitDefs` / `GG.` / `VFS.` tokens); the probe correlates unit IDs to
+  unitdefs through its own spawn lines.
+- **Probe gadget** `luarules/gadgets/gadget_phase7_death_probe.lua`, gated on the new
+  `medievalanimprobe` modoption (default off). It funds team 0 before spawning (the
+  recruitment gadget tears down unitdefs the team cannot pay for), spawns all nine
+  articulated defs in rows on the flat haul lane, kills them in staggered groups with
+  `Spring.AddUnitDamage` (a plain `DestroyUnit` skips `Killed`), and reports lifecycle
+  state at frame 260.
+- **Runner** `tools/launch/run_phase7_death_probe.py` + `startscript_phase7_death.txt`.
+- **Coverage:** infantry, spearman, men-at-arms, king (`medieval_infantry.lua`);
+  archer, crossbow (`medieval_archer.lua`); villager; cavalry, knight
+  (`medieval_cavalry.lua`).
+- **Tests:** `tests/test_phase7_death_wiring.py` (21) covers the source contract, a Lua
+  sandbox that asserts the death clip drives Turn/Move on real piece names, and probe
+  coverage/runner parity.
+
+Engine result (9/9 PASS, `driven` = piece-frames over the one-shot):
+
+```text
+PHASE7 DEATH unit=16909 clip=death baked=1 driven=950   # infantry
+PHASE7 DEATH unit=24324 clip=death baked=1 driven=912   # spearman
+PHASE7 DEATH unit=9848  clip=death baked=1 driven=950   # men-at-arms
+PHASE7 DEATH unit=25734 clip=death baked=1 driven=950   # king
+PHASE7 DEATH unit=23744 clip=death baked=1 driven=950   # archer
+PHASE7 DEATH unit=4961  clip=death baked=1 driven=950   # crossbow
+PHASE7 DEATH unit=27521 clip=death baked=1 driven=874   # villager
+PHASE7 DEATH unit=12086 clip=death baked=1 driven=1482  # cavalry
+PHASE7 DEATH unit=10614 clip=death baked=1 driven=1482  # knight
+```
+
+Verification: `python -m pytest tests -q` → **1614 passed**;
+`python tests/check_lua_syntax.py` → **81 files, 0 errors**;
+`python tools/launch/run_phase7_death_probe.py` → **ALL VERDICTS PASSED**.

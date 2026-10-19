@@ -530,13 +530,19 @@ function script.Killed(recentDamage, maxHealth)
 	-- engine waits out the thread. Fallback: the procedural tumble below.
 	if animCtx then
 		animPlayer.reset(animCtx)
+		local drivenTotal = 0
 		while true do
-			local _driven, done = driveClip("death", 33)
+			local driven, done = driveClip("death", 33)
+			drivenTotal = drivenTotal + (driven or 0)
 			if done then break end
 			Sleep(1)
 		end
+		say(string.format("PHASE7 DEATH unit=%s clip=death baked=1 driven=%d",
+			tostring(unitID), drivenTotal))
 		return 1
 	end
+	say(string.format("PHASE7 DEATH unit=%s clip=procedural baked=0",
+		tostring(unitID)))
 	-- Buckle backwards: the bow arm goes slack and the legs fold under the body.
 	safeCall(Turn, thigh_l, x_axis, -0.4, 3)
 	safeCall(Turn, thigh_r, x_axis, -0.5, 3)

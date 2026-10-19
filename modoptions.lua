@@ -96,4 +96,11 @@ return {
     type = "bool",
     def = true,
   },
+  {
+    key = "medievalanimprobe",
+    name = "Death Animation Probe",
+    desc = "Headless test hook: spawn and kill one unit per articulated script to verify the baked death clip",
+    type = "bool",
+    def = false,
+  },
 }
