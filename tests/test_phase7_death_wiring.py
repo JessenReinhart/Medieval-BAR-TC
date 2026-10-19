@@ -23,6 +23,7 @@ OBJECTS = ROOT / "objects3d" / "0ad"
 GADGET = ROOT / "luarules" / "gadgets" / "gadget_phase7_death_probe.lua"
 RUNNER = ROOT / "tools" / "launch" / "run_phase7_death_probe.py"
 STARTSCRIPT = ROOT / "tools" / "launch" / "startscript_phase7_death.txt"
+FALLBACK_STARTSCRIPT = ROOT / "tools" / "launch" / "startscript_phase7_death_fallback.txt"
 
 # LUS file -> bare unit name used to exercise it in the sandbox
 # (`medieval_<name>` is both the OBJ stem and the unitdef name).
@@ -73,11 +74,15 @@ function Sleep() end
 
 x_axis, y_axis, z_axis = 1, 2, 3
 unitID = 42
-Spring = { Echo = function(msg) echoes[#echoes + 1] = msg end }
+rules = {}
+Spring = {
+  Echo = function(msg) echoes[#echoes + 1] = msg end,
+  GetUnitRulesParam = function(id, key) return rules[key] end,
+}
 """
 
 
-def run_killed(unit: str):
+def run_killed(unit: str, force_fallback: bool = False):
     source = (SCRIPTS / f"medieval_{unit}.lua").read_text(encoding="utf-8")
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(SANDBOX)
@@ -93,6 +98,8 @@ def run_killed(unit: str):
     }
     lua.globals().setSources(lua.table_from(sources))
     lua.execute(source)
+    if force_fallback:
+        lua.execute("rules['medieval_force_procedural_death'] = 1")
 
     result = lua.eval("script.Killed(500, 100)")
     return lua, result
@@ -105,7 +112,7 @@ class TestDeathCallInContract:
         body = function_body(source, "function script.Killed(")
 
         baked = body.index('driveClip("death"')
-        assert "if animCtx then" in body[:baked], (
+        assert "if animCtx and not forceProceduralFallback() then" in body[:baked], (
             f"{script_name}: the death clip must be the primary path inside `if animCtx`"
         )
         # The procedural tumble follows the baked branch.
@@ -148,6 +155,25 @@ class TestBakedDeathPlayback:
         )
         assert any(abs(moves[i].v) > 1e-6 for i in range(1, len(moves) + 1)), (
             f"{unit}: every death Move was zero (pivot term not emitted)"
+        )
+
+    def test_forced_fallback_skips_the_bake(self, script_name):
+        unit = ARTICULATED_SCRIPTS[script_name]
+        lua, result = run_killed(unit, force_fallback=True)
+
+        assert result == 1, "the procedural fallback must still return the wreck level"
+        echoes = [lua.globals().echoes[i] for i in range(1, len(lua.globals().echoes) + 1)]
+        death_lines = [line for line in echoes if line.startswith("PHASE7 DEATH ")]
+        assert death_lines, f"{unit}: fallback emitted no PHASE7 DEATH evidence"
+        assert all("baked=0" in line for line in death_lines), (
+            f"{unit}: forced fallback still reported a baked clip"
+        )
+        assert not any("baked=1" in line for line in death_lines)
+
+        turns = lua.globals().turns
+        assert len(turns) > 0, f"{unit}: the procedural death drove no Turn calls"
+        assert any(abs(turns[i].v) > 1e-6 for i in range(1, len(turns) + 1)), (
+            f"{unit}: the procedural death produced only rest-pose values"
         )
 
     def test_death_evidence_line_is_baked_with_driven_pieces(self, script_name):
@@ -212,14 +238,35 @@ class TestProbeCoverage:
         # the probe must fund the team before spawning or later spawns vanish.
         assert "GG.MedievalEconomy" in text
         assert "Deposit" in text
+        # Fallback mode is driven by a per-unit rule the LUS reads in Killed.
+        assert "medievalanimfallback" in text
+        assert "medieval_force_procedural_death" in text
+        assert "SetUnitRulesParam" in text
 
     def test_startscript_enables_the_probe(self):
         text = STARTSCRIPT.read_text(encoding="utf-8")
         assert "medievalanimprobe=1" in text
         assert "medievaltest=0" in text
+        assert "medievalanimfallback" not in text
+
+    def test_fallback_startscript_enables_the_fallback_mode(self):
+        assert FALLBACK_STARTSCRIPT.exists()
+        text = FALLBACK_STARTSCRIPT.read_text(encoding="utf-8")
+        assert "medievalanimprobe=1" in text
+        assert "medievalanimfallback=1" in text
+
+    def test_runner_verifies_both_modes(self):
+        text = RUNNER.read_text(encoding="utf-8")
+        assert "startscript_phase7_death.txt" in text
+        assert "startscript_phase7_death_fallback.txt" in text
+        assert "procedural" in text
+        assert "expect_baked" in text
 
     def test_modoption_exists_and_defaults_off(self):
         text = (ROOT / "modoptions.lua").read_text(encoding="utf-8")
-        assert 'key = "medievalanimprobe"' in text
-        block = text.split('key = "medievalanimprobe"', 1)[1].split("},", 1)[0]
-        assert "def = false" in block
+        for key in ("medievalanimprobe", "medievalanimfallback"):
+            assert f'key = "{key}"' in text
+        probe_block = text.split('key = "medievalanimprobe"', 1)[1].split("},", 1)[0]
+        assert "def = false" in probe_block
+        fallback_block = text.split('key = "medievalanimfallback"', 1)[1].split("},", 1)[0]
+        assert "def = false" in fallback_block

@@ -103,4 +103,11 @@ return {
     type = "bool",
     def = false,
   },
+  {
+    key = "medievalanimfallback",
+    name = "Death Animation Fallback Probe",
+    desc = "Headless test hook: with the death probe on, force the procedural tumble instead of the baked death clip",
+    type = "bool",
+    def = false,
+  },
 }

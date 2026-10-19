@@ -421,6 +421,16 @@ function script.StopBuilding()
   restPose()
 end
 
+-- Headless probe hook: when the death probe sets this unit rule, skip the baked
+-- clip and exercise the procedural crumple. Guarded so a harness without the
+-- rules-param API (or a normal match, where the rule is unset) plays the bake.
+local function forceProceduralFallback()
+  local ok, value = pcall(function()
+    return Spring.GetUnitRulesParam(unitID, "medieval_force_procedural_death")
+  end)
+  return ok and (value == 1 or value == "1" or value == true)
+end
+
 -- == Defeat: an unarmed civilian simply crumples forward ====================
 function script.Killed(recentDamage, maxHealth)
   Signal(SIG_MOVE)
@@ -429,7 +439,7 @@ function script.Killed(recentDamage, maxHealth)
   SetSignalMask(SIG_DEATH)
   -- Primary: the baked `death` one-shot, held on its last frame while the
   -- engine waits out the thread. Fallback: the procedural crumple below.
-  if animCtx then
+  if animCtx and not forceProceduralFallback() then
     animPlayer.reset(animCtx)
     local drivenTotal = 0
     while true do

@@ -1,14 +1,16 @@
-"""Headless probe runner: Phase 7 baked death-clip wiring.
+"""Headless probe runner: Phase 7 death-clip wiring, both modes.
 
-Spawns one unit per articulated unitdef, kills it, and checks the evidence each
-`Killed` call-in writes to infolog.txt:
+Mode 1 (`baked`): spawns one unit per articulated unitdef, kills it, and checks
+the evidence each `Killed` call-in writes to infolog.txt:
 
     PHASE7 DEATH unit=<id> clip=death baked=1 driven=<pieces>
 
-A PASS requires, for every articulated unitdef, that the baked `death` clip
-drove at least one real model piece. A `baked=0` line means the script fell
-back to its procedural tumble. Unit IDs are correlated to unitdefs through the
-gadget's own spawn lines.
+Mode 2 (`procedural`): same probe with `medievalanimfallback=1`, which makes the
+gadget set `medieval_force_procedural_death` on each unit. The LUS must then skip
+the bake and emit `clip=procedural baked=0`, proving the fallback still works.
+
+A mode PASSES when every articulated unitdef produces its expected evidence.
+Unit IDs are correlated to unitdefs through the gadget's own spawn lines.
 
 Mirrors run_phase5_slice6_probe.py: sync the source into the runtime SDD, run
 the pinned headless engine, then harvest verdicts from infolog.txt. The engine
@@ -21,7 +23,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / "tools" / "runtime"
 ENGINE = ROOT / "tools" / "engine" / "recoil_2026.07.04" / "spring-headless.exe"
-STARTSCRIPT = ROOT / "tools" / "launch" / "startscript_phase7_death.txt"
+
+BAKED_STARTSCRIPT = ROOT / "tools" / "launch" / "startscript_phase7_death.txt"
+FALLBACK_STARTSCRIPT = ROOT / "tools" / "launch" / "startscript_phase7_death_fallback.txt"
 
 # Every articulated unitdef. Several share a script and a baked clip set:
 #   medieval_infantry.lua <- infantry, spearman, men_at_arms, king
@@ -40,6 +44,12 @@ UNITS = [
     "medieval_knight",
 ]
 
+# (label echoed by the gadget, startscript, expect baked clip)
+MODES = [
+    ("baked", BAKED_STARTSCRIPT, True),
+    ("procedural", FALLBACK_STARTSCRIPT, False),
+]
+
 
 def sync_source() -> None:
     dest = RUNTIME / "games" / "Medieval-BAR-TC.sdd"
@@ -50,14 +60,19 @@ def sync_source() -> None:
     ], capture_output=True)
 
 
-def run_engine() -> None:
-    print(f"Launching Recoil engine: {ENGINE}...")
-    cmd = [str(ENGINE), "--isolation", "--write-dir", str(RUNTIME), str(STARTSCRIPT)]
+def run_engine(label: str, startscript: Path) -> Path:
+    infolog = RUNTIME / "infolog.txt"
+    if infolog.exists():
+        infolog.replace(RUNTIME / f"infolog.prev-{label}.txt")
+
+    print(f"\n[{label}] Launching Recoil engine: {ENGINE}...")
+    cmd = [str(ENGINE), "--isolation", "--write-dir", str(RUNTIME), str(startscript)]
     try:
         proc = subprocess.run(cmd, timeout=90, capture_output=True, text=True)
-        print(f"Engine exited {proc.returncode}")
+        print(f"[{label}] Engine exited {proc.returncode}")
     except subprocess.TimeoutExpired:
-        print("Engine timed out after budget (expected; headless quitforce does not terminate this build)")
+        print(f"[{label}] Engine timed out after budget (expected; headless quitforce does not terminate this build)")
+    return infolog
 
 
 def parse_fields(line: str) -> dict:
@@ -81,7 +96,7 @@ def spawn_map(text: str) -> dict:
 
 
 def parse_death_lines(text: str):
-    """Return {unitID: {'baked': bool, 'driven': int}} from the LUS evidence."""
+    """Return {unitID: {'baked': bool, 'procedural': bool, 'driven': int}}."""
     found = {}
     for line in text.splitlines():
         if "PHASE7 DEATH " not in line or "PHASE7 DEATH PROBE" in line:
@@ -94,72 +109,96 @@ def parse_death_lines(text: str):
             driven = int(fields.get("driven", "0"))
         except ValueError:
             driven = 0
-        entry = found.setdefault(unit, {"baked": False, "driven": 0})
+        entry = found.setdefault(unit, {"baked": False, "procedural": False, "driven": 0})
         if fields.get("baked") == "1" and driven > 0:
             entry["baked"] = True
+        if fields.get("baked") == "0":
+            entry["procedural"] = True
         entry["driven"] = max(entry["driven"], driven)
     return found
 
 
-def main() -> int:
-    sync_source()
+def check_mode(label: str, expect_baked: bool, text: str) -> list[str]:
+    probe_lines = [line for line in text.splitlines() if "PHASE7 DEATH" in line]
 
-    # Never let a previous run's verdicts leak into this one.
-    infolog = RUNTIME / "infolog.txt"
-    if infolog.exists():
-        infolog.replace(RUNTIME / "infolog.prev.txt")
-
-    run_engine()
-
-    if not infolog.exists():
-        print("ERROR: No infolog generated")
-        return 1
-
-    text = infolog.read_text(encoding="utf-8", errors="replace")
-
-    print("\n--- DEATH PROBE LINES ---")
-    probe_lines = [line for line in text.splitlines()
-                   if "PHASE7 DEATH" in line]
+    print(f"\n--- [{label}] DEATH PROBE LINES ---")
     for line in probe_lines:
         print(line)
     if not probe_lines:
         print("(none)")
 
+    failures = []
     found = parse_death_lines(text)
     spawned_by_id = spawn_map(text)
 
-    print("\n--- SUMMARY ---")
-    failed = []
-    spawned = any("PHASE7 DEATH PROBE spawned def=" in line for line in probe_lines)
+    print(f"\n--- [{label}] SUMMARY ---")
+    spawn_line = next(
+        (line for line in probe_lines
+         if "PHASE7 DEATH PROBE spawn-summary" in line and f"mode={label}" in line),
+        None,
+    )
+    spawned = spawn_line is not None and f"spawned={len(UNITS)}" in spawn_line
     killed = all(
         any(f"PHASE7 DEATH PROBE kill def={unit} " in line and "ok=true" in line
             for line in probe_lines)
         for unit in UNITS
     )
     complete = any("PHASE7 DEATH PROBE complete" in line for line in probe_lines)
+
     for unit in UNITS:
         unit_ids = [uid for uid, name in spawned_by_id.items() if name == unit]
         entries = [found[uid] for uid in unit_ids if uid in found]
-        baked = [entry for entry in entries if entry["baked"]]
-        if baked:
-            print(f"{unit}: PASS (baked death clip, driven={baked[0]['driven']})")
-        elif entries:
-            print(f"{unit}: FAIL (baked=0, procedural fallback)")
-            failed.append(unit)
+        if expect_baked:
+            baked = [entry for entry in entries if entry["baked"]]
+            if baked:
+                print(f"{unit}: PASS (baked death clip, driven={baked[0]['driven']})")
+            else:
+                print(f"{unit}: FAIL (no baked death clip)")
+                failures.append(unit)
         else:
-            print(f"{unit}: FAIL (no PHASE7 DEATH line for its unit id)")
-            failed.append(unit)
+            procedural = [entry for entry in entries if entry["procedural"]]
+            if procedural and not any(entry["baked"] for entry in entries):
+                print(f"{unit}: PASS (procedural fallback, baked=0)")
+            else:
+                print(f"{unit}: FAIL (baked clip still played, or no baked=0 line)")
+                failures.append(unit)
 
+    print(f"mode: {'PASS' if spawned else 'FAIL'}")
     print(f"spawn: {'PASS' if spawned else 'FAIL'}")
     print(f"kill: {'PASS' if killed else 'FAIL'}")
     print(f"complete: {'PASS' if complete else 'FAIL'}")
     if not spawned or not killed or not complete:
-        failed.append("probe-lifecycle")
+        failures.append("probe-lifecycle")
+    return failures
+
+
+def main() -> int:
+    sync_source()
+
+    all_failed = {}
+    for label, startscript, expect_baked in MODES:
+        infolog = run_engine(label, startscript)
+        if not infolog.exists():
+            print(f"[{label}] ERROR: No infolog generated")
+            all_failed[label] = ["infolog"]
+            continue
+        text = infolog.read_text(encoding="utf-8", errors="replace")
+        all_failed[label] = check_mode(label, expect_baked, text)
+
+    print("\n=== OVERALL ===")
+    failed = False
+    for label, _, _ in MODES:
+        problems = all_failed.get(label) or []
+        if problems:
+            failed = True
+            print(f"{label}: FAILED ({', '.join(problems)})")
+        else:
+            print(f"{label}: PASSED")
 
     if not failed:
-        print("PHASE7 DEATH PROBE: ALL VERDICTS PASSED")
+        print("PHASE7 DEATH PROBE: ALL MODES PASSED")
         return 0
-    print(f"PHASE7 DEATH PROBE: FAILED ({', '.join(failed)})")
+    print("PHASE7 DEATH PROBE: FAILED")
     return 1
 
 

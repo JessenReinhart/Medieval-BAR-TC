@@ -11,6 +11,10 @@
 -- engine's Turn/Move primitives for real pieces; `baked=0` means the script
 -- fell back to the procedural tumble (no bake bundle or no player module).
 --
+-- `medievalanimfallback=1` runs the same probe in fallback mode: each unit gets
+-- the `medieval_force_procedural_death` unit rule before it is killed, so the
+-- LUS skips the bake deliberately and the procedural path is verified too.
+--
 -- This gadget only spawns and destroys; it never asserts. The runner
 -- (tools/launch/run_phase7_death_probe.py) harvests both its own
 -- PHASE7 DEATH PROBE lines and the LUS PHASE7 DEATH lines from infolog.txt.
@@ -36,6 +40,12 @@ local enabled = options.medievalanimprobe == true
   or options.medievalanimprobe == "1"
   or options.medievalanimprobe == "true"
 if not enabled then return end
+
+local forceFallback = options.medievalanimfallback == true
+  or options.medievalanimfallback == 1
+  or options.medievalanimfallback == "1"
+  or options.medievalanimfallback == "true"
+local modeName = forceFallback and "procedural" or "baked"
 
 -- Frames (30 fps). The death clip is 36 frames (~1.2 s), so the report frame
 -- leaves room for the full one-shot plus the engine's death-script wait.
@@ -113,8 +123,8 @@ function gadget:GameFrame(frame)
     for i = 1, #UNITS do
       spawnOne(i, UNITS[i])
     end
-    Spring.Echo(string.format("PHASE7 DEATH PROBE spawn-summary requested=%d spawned=%d",
-      #UNITS, spawnedCount))
+    Spring.Echo(string.format("PHASE7 DEATH PROBE spawn-summary requested=%d spawned=%d mode=%s",
+      #UNITS, spawnedCount, modeName))
   elseif frame >= KILL_FRAME
       and (frame - KILL_FRAME) % KILL_GROUP_GAP == 0
       and frame < KILL_FRAME + KILL_GROUP_GAP * math.ceil(#UNITS / KILLS_PER_GROUP) then
@@ -127,6 +137,11 @@ function gadget:GameFrame(frame)
     for i = first, last do
       local unitID = ids[i]
       if unitID then
+        -- Fallback mode: tell the LUS to skip its baked death clip before the
+        -- lethal damage runs `Killed`.
+        if forceFallback then
+          pcall(Spring.SetUnitRulesParam, unitID, "medieval_force_procedural_death", 1)
+        end
         -- Lethal damage, not DestroyUnit: a plain destroy removes the unit
         -- without running the LUS `Killed` call-in, so the death clip would
         -- never be exercised. AddUnitDamage goes through the normal death

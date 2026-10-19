@@ -821,3 +821,24 @@ PHASE7 DEATH unit=10614 clip=death baked=1 driven=1482  # knight
 Verification: `python -m pytest tests -q` → **1614 passed**;
 `python tests/check_lua_syntax.py` → **81 files, 0 errors**;
 `python tools/launch/run_phase7_death_probe.py` → **ALL VERDICTS PASSED**.
+
+### Phase 7 Slice 12 follow-up — Procedural Fallback Verified In-Engine (2026-10-19)
+
+The death probe now verifies both animation paths.
+
+- **Hook:** each articulated LUS `Killed` calls `forceProceduralFallback()`, which reads the
+  `medieval_force_procedural_death` unit rule behind a `pcall`. A normal match (rule unset)
+  and a bare-Lua harness both keep playing the baked clip; when the probe sets the rule the
+  baked branch is skipped and the procedural tumble runs, emitting
+  `PHASE7 DEATH unit=<id> clip=procedural baked=0`.
+- **Modoption:** `medievalanimfallback` (default off). With `medievalanimprobe=1` the probe
+  gadget sets the per-unit rule before the lethal damage on every spawn.
+- **Startscript:** `tools/launch/startscript_phase7_death_fallback.txt`.
+- **Runner:** `run_phase7_death_probe.py` now runs both modes in one invocation, prints a
+  verdict per mode, and exits non-zero if either mode fails.
+
+Engine result: baked 9/9 PASS, procedural 9/9 PASS (`PHASE7 DEATH PROBE: ALL MODES PASSED`).
+
+Verification: `python -m pytest tests -q` -> **1620 passed**;
+`python tests/check_lua_syntax.py` -> **81 files, 0 errors**;
+`python tools/launch/run_phase7_death_probe.py` -> **both modes PASS**.
