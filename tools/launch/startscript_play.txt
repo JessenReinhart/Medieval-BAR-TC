@@ -60,5 +60,7 @@
 		medievaltactics=1;
 		medievalaudio=1;
 		medievalbuildicons=1;
+		medievalbottompanel=1;
+		medievalminimap=1;
 	}
 }

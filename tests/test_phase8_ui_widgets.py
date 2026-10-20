@@ -152,6 +152,29 @@ class TestBottomPanelWidget(unittest.TestCase):
         """AAA polish: panel height 150px centered at bottom."""
         self.assertIn("PANEL_HEIGHT       = 150", self.src)
 
+    def test_suppresses_engine_default_command_menu(self):
+        """0 A.D. style: suppresses Recoil's ugly left-side command menu."""
+        self.assertIn("ConfigLayoutHandler(false)", self.src)
+        self.assertIn("ConfigLayoutHandler(true)", self.src)
+
+    def test_multi_select_grouped_by_type(self):
+        """AoE / 0 A.D. style: multi-select groups units by type with xN count badge."""
+        self.assertIn("groups[udID]", self.src)
+        self.assertIn('"x" .. g.count', self.src)
+        self.assertIn("groupCardHitboxes", self.src)
+
+    def test_mouse_interaction_on_commands_and_groups(self):
+        """Interactive 0 A.D. controls: clicking command buttons or group cards."""
+        self.assertIn("widget:MousePress", self.src)
+        self.assertIn("Spring.GiveOrder", self.src)
+        self.assertIn("Spring.SetActiveCommand", self.src)
+        self.assertIn("Spring.SelectUnitArray", self.src)
+
+    def test_command_catalog_includes_guard_and_wait(self):
+        """Full 0 A.D. tactical command coverage."""
+        self.assertIn("bitmaps/ui/command_guard.png", self.src)
+        self.assertIn("bitmaps/ui/command_wait.png", self.src)
+
     def test_modoption_declared_in_modoptions_lua(self):
         src = MODOPTIONS_PATH.read_text(encoding="utf-8")
         self.assertIn('key = "medievalbottompanel"', src)

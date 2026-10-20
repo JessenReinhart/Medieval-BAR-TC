@@ -622,6 +622,52 @@ def _glyph_repair(d, s, C, ow, O):
     d.polygon(_P(chisel_pts, s), fill=C["head"], outline=O, width=ow)
 
 
+def _glyph_guard(d, s, C, ow, O):
+    """Kite shield with vigilant eye / crest for Guard command."""
+    shield = [
+        (0.50, 0.12),
+        (0.82, 0.20),
+        (0.82, 0.52),
+        (0.50, 0.88),
+        (0.18, 0.52),
+        (0.18, 0.20),
+    ]
+    d.polygon(_P(shield, s), fill=C["fill"], outline=O, width=ow)
+    # Inner border
+    inner_shield = [
+        (0.50, 0.18),
+        (0.76, 0.25),
+        (0.76, 0.50),
+        (0.50, 0.82),
+        (0.24, 0.50),
+        (0.24, 0.25),
+    ]
+    d.polygon(_P(inner_shield, s), outline=C["hi"], width=max(1, ow - 1))
+    # Eye of vigilance (guard ward)
+    d.ellipse(_B([0.34, 0.38, 0.66, 0.58], s), fill=C["eye"], outline=O, width=ow - 1)
+    d.ellipse(_B([0.44, 0.42, 0.56, 0.54], s), fill=O)
+
+
+def _glyph_wait(d, s, C, ow, O):
+    """Antique bronze hourglass with sand for Wait command."""
+    # Hourglass glass bulbs (top & bottom triangles)
+    top_bulb = [(0.28, 0.22), (0.72, 0.22), (0.50, 0.50)]
+    bot_bulb = [(0.50, 0.50), (0.72, 0.78), (0.28, 0.78)]
+    d.polygon(_P(top_bulb, s), fill=C["glass"], outline=O, width=ow)
+    d.polygon(_P(bot_bulb, s), fill=C["glass"], outline=O, width=ow)
+
+    # Sand
+    d.polygon(_P([(0.36, 0.26), (0.64, 0.26), (0.50, 0.44)], s), fill=C["sand"])
+    d.polygon(_P([(0.44, 0.62), (0.56, 0.62), (0.66, 0.76), (0.34, 0.76)], s), fill=C["sand"])
+
+    # Bronze frame caps (top & bottom bars)
+    d.rounded_rectangle(_B([0.22, 0.16, 0.78, 0.24], s), radius=int(s*0.03), fill=C["frame"], outline=O, width=ow)
+    d.rounded_rectangle(_B([0.22, 0.76, 0.78, 0.84], s), radius=int(s*0.03), fill=C["frame"], outline=O, width=ow)
+    # Side pillars
+    d.line(_P([(0.26, 0.24), (0.26, 0.76)], s), fill=C["frame"], width=max(2, ow))
+    d.line(_P([(0.74, 0.24), (0.74, 0.76)], s), fill=C["frame"], width=max(2, ow))
+
+
 # ---------------------------------------------------------------------------
 # Minimap frame (thick stone fill, no pocket circles)
 # ---------------------------------------------------------------------------
@@ -744,6 +790,13 @@ COMMAND_ICONS = (
     }),
     ("command_repair.png", _glyph_repair, {
         "haft": (150, 108, 60), "head": _rgb("steel"), "hi": _rgb("steel_hi"),
+    }),
+    ("command_guard.png", _glyph_guard, {
+        "fill": (118, 98, 72), "hi": _rgb("ivory"), "eye": _rgb("bronze_light"),
+    }),
+    ("command_wait.png", _glyph_wait, {
+        "glass": (180, 170, 150), "sand": (212, 178, 102),
+        "frame": _rgb("bronze_mid"),
     }),
 )
 

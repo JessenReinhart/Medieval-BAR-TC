@@ -77,6 +77,8 @@ local _CMD = CMD or {
   ATTACK = 20,
   PATROL = 15,
   FIGHT = 30,
+  GUARD = 25,
+  WAIT = 5,
   HOLD_POS = 50,
   SET_WANTED_MAX_SPEED = 70,
   LOAD_UNITS = 75,
@@ -84,15 +86,18 @@ local _CMD = CMD or {
 }
 
 local COMMAND_BUTTONS = {
-  { id = _CMD.STOP,      label = "Stop",   tex = "bitmaps/ui/command_stop.png"    },
-  { id = _CMD.MOVE,      label = "Move",   tex = "bitmaps/ui/command_move.png"    },
-  { id = _CMD.ATTACK,    label = "Attack", tex = "bitmaps/ui/command_attack.png"  },
-  { id = _CMD.PATROL,    label = "Patrol", tex = "bitmaps/ui/command_patrol.png"  },
-  { id = _CMD.FIGHT,     label = "Fight",  tex = "bitmaps/ui/command_attack.png"  },
-  { id = _CMD.HOLD_POS,  label = "Hold",   tex = "bitmaps/ui/command_hold.png"    },
-  { id = _CMD.SET_WANTED_MAX_SPEED, label = "Stance", tex = "bitmaps/ui/command_stance.png" },
+  -- Row 1: core movement and combat
+  { id = _CMD.STOP,      label = "Stop",     tex = "bitmaps/ui/command_stop.png",    instant = true },
+  { id = _CMD.MOVE,      label = "Move",     tex = "bitmaps/ui/command_move.png"     },
+  { id = _CMD.ATTACK,    label = "Attack",   tex = "bitmaps/ui/command_attack.png"   },
+  { id = _CMD.PATROL,    label = "Patrol",   tex = "bitmaps/ui/command_patrol.png"   },
+  { id = _CMD.GUARD,     label = "Guard",    tex = "bitmaps/ui/command_guard.png"    },
+  -- Row 2: stance and utility
+  { id = _CMD.WAIT,      label = "Wait",     tex = "bitmaps/ui/command_wait.png",    instant = true },
+  { id = _CMD.HOLD_POS,  label = "Hold",     tex = "bitmaps/ui/command_hold.png",    instant = true },
+  { id = _CMD.FIGHT,     label = "Fight",    tex = "bitmaps/ui/command_attack.png"   },
   { id = _CMD.LOAD_UNITS, label = "Garrison", tex = "bitmaps/ui/command_garrison.png" },
-  { id = _CMD.REPAIR,    label = "Repair", tex = "bitmaps/ui/command_repair.png"  },
+  { id = _CMD.REPAIR,    label = "Repair",   tex = "bitmaps/ui/command_repair.png"   },
 }
 
 -- Cache for unit portrait textures (unitDef name -> path, or false if missing)
@@ -225,52 +230,77 @@ end
 -- Hover state: track mouse position for hover effect.
 local mouseX, mouseY = 0, 0
 
+-- Command button hitboxes for click handling (populated every DrawScreen).
+local cmdButtonHitboxes = {}
+
+-- Group card hitboxes for click-to-filter in multi-select mode.
+local groupCardHitboxes = {}
+
 local function drawCommandGrid(px, py, pw, ph)
-  -- Command grid sits on the right side of the panel
-  local gridW = CMD_COLS * (CMD_ICON_SIZE + CMD_PAD) + CMD_PAD
-  local gridH = CMD_ROWS * (CMD_ICON_SIZE + CMD_PAD) + CMD_PAD
+  -- 0 A.D. / AoE style: icon button with a small text label underneath.
+  -- Two rows of five, right side of the panel.
+  local labelH = 12
+  local cellW = CMD_ICON_SIZE + CMD_PAD
+  local cellH = CMD_ICON_SIZE + labelH + CMD_PAD
+  local gridW = CMD_COLS * cellW + CMD_PAD
+  local gridH = CMD_ROWS * cellH + CMD_PAD
   local gx = px + pw - gridW - 12
   local gy = py + (ph - gridH) * 0.5
 
   local glTexture = gl["Texture"]
   local glTexRect = gl["TexRect"]
 
+  -- Rebuild hitboxes each frame
+  cmdButtonHitboxes = {}
+
   for i, btn in ipairs(COMMAND_BUTTONS) do
     if i > CMD_COLS * CMD_ROWS then break end
     local col = (i - 1) % CMD_COLS
     local row = math.floor((i - 1) / CMD_COLS)
-    local bx = gx + CMD_PAD + col * (CMD_ICON_SIZE + CMD_PAD)
-    local by = gy + gridH - CMD_PAD - (row + 1) * (CMD_ICON_SIZE + CMD_PAD) + CMD_PAD
+    local bx = gx + CMD_PAD + col * cellW
+    local by = gy + gridH - CMD_PAD - (row + 1) * cellH + CMD_PAD
+    local ix = bx + CMD_PAD * 0.5
+    local iy = by + labelH
 
     -- Button background
-    local isHover = mouseX >= bx and mouseX <= bx + CMD_ICON_SIZE
-                    and mouseY >= by and mouseY <= by + CMD_ICON_SIZE
+    local isHover = mouseX >= bx and mouseX <= bx + cellW
+                    and mouseY >= by and mouseY <= by + cellH
     if isHover then
       gl.Color(COL_CMD_HOVER)
     else
       gl.Color(COL_CMD_BG)
     end
-    gl.Rect(bx, by, bx + CMD_ICON_SIZE, by + CMD_ICON_SIZE)
+    gl.Rect(bx, by, bx + cellW, by + cellH)
 
     -- Button border
     gl.Color(COL_BRONZE)
-    gl.Rect(bx, by, bx + CMD_ICON_SIZE, by + 1)
-    gl.Rect(bx, by + CMD_ICON_SIZE - 1, bx + CMD_ICON_SIZE, by + CMD_ICON_SIZE)
-    gl.Rect(bx, by, bx + 1, by + CMD_ICON_SIZE)
-    gl.Rect(bx + CMD_ICON_SIZE - 1, by, bx + CMD_ICON_SIZE, by + CMD_ICON_SIZE)
+    gl.Rect(bx, by, bx + cellW, by + 1)
+    gl.Rect(bx, by + cellH - 1, bx + cellW, by + cellH)
+    gl.Rect(bx, by, bx + 1, by + cellH)
+    gl.Rect(bx + cellW - 1, by, bx + cellW, by + cellH)
 
     -- Command icon texture (dynamic lookup, no forbidden gl.Texture source token)
     if glTexture and btn.tex then
-      gl.Color(1, 1, 1, isHover and 1.0 or 0.85)
-      local pad2 = 4
+      gl.Color(1, 1, 1, isHover and 1.0 or 0.88)
+      local pad2 = 3
       glTexture(btn.tex)
-      glTexRect(bx + pad2, by + pad2, bx + CMD_ICON_SIZE - pad2, by + CMD_ICON_SIZE - pad2)
+      glTexRect(ix + pad2, iy + pad2, ix + CMD_ICON_SIZE - pad2, iy + CMD_ICON_SIZE - pad2)
       glTexture(false)
     else
       -- Fallback: label text
       gl.Color(COL_PARCHMENT)
-      gl.Text(btn.label, bx + CMD_ICON_SIZE * 0.5, by + CMD_ICON_SIZE * 0.3, 9, "oc")
+      gl.Text(btn.label, ix + CMD_ICON_SIZE * 0.5, iy + CMD_ICON_SIZE * 0.4, 9, "oc")
     end
+
+    -- Label under the icon (0 A.D. / AoE readability)
+    gl.Color(COL_PARCHMENT)
+    gl.Text(btn.label, bx + cellW * 0.5, by + labelH - 2, 9, "oc")
+
+    -- Store hitbox
+    cmdButtonHitboxes[i] = {
+      x0 = bx, y0 = by, x1 = bx + cellW, y1 = by + cellH,
+      btn = btn,
+    }
   end
 end
 
@@ -461,75 +491,120 @@ end
 --------------------------------------------------------------------------------
 
 local function drawMultiSelect(units, px, py, pw, ph)
-  local slotSize = MULTI_PORTRAIT
-  local pad = 3
-  local maxCols = math.floor((pw - PORTRAIT_PAD * 2) / (slotSize + pad))
-  if maxCols < 1 then maxCols = 1 end
-  local maxSlots = maxCols * MULTI_ROWS
-
-  local drawCount = math.min(#units, maxSlots)
-  local col = 0
-  local row = 0
-
-  for i = 1, drawCount do
-    local uid = units[i]
+  -- Group units by unitDefID: { udID = { count=N, units={...}, avgHealth=frac } }
+  local groups = {}
+  local groupOrder = {}
+  for _, uid in ipairs(units) do
     local udID = getUnitDefID(uid)
     if udID then
-      local ud = UnitDefs and UnitDefs[udID]
-      if ud then
-        local sx = px + PORTRAIT_PAD + col * (slotSize + pad)
-        local sy = py + ph - PORTRAIT_PAD - (row + 1) * (slotSize + pad)
-
-        -- Slot background
-        gl.Color(COL_DARK_BG)
-        gl.Rect(sx, sy, sx + slotSize, sy + slotSize)
-
-        -- Portrait
-        local portrait = getPortraitPath(ud.name or "")
-        if portrait then
-          gl.Color(1, 1, 1, 1)
-          gl.Texture(portrait)
-          gl.TexRect(sx, sy, sx + slotSize, sy + slotSize)
-          gl.Texture(false)
-        end
-
-        -- Mini health bar
-        local health, maxHP = getUnitHealth(uid)
-        if health and maxHP and maxHP > 0 then
-          local frac = clamp(health / maxHP, 0, 1)
-          local hc = healthColor(frac)
-          gl.Color(0.10, 0.08, 0.06, 0.8)
-          gl.Rect(sx, sy, sx + slotSize, sy + 3)
-          gl.Color(hc)
-          gl.Rect(sx, sy, sx + slotSize * frac, sy + 3)
-        end
-
-        -- Slot border
-        gl.Color(COL_BRONZE[1], COL_BRONZE[2], COL_BRONZE[3], 0.6)
-        gl.Rect(sx, sy, sx + slotSize, sy + 1)
-        gl.Rect(sx, sy + slotSize - 1, sx + slotSize, sy + slotSize)
-        gl.Rect(sx, sy, sx + 1, sy + slotSize)
-        gl.Rect(sx + slotSize - 1, sy, sx + slotSize, sy + slotSize)
-
-        col = col + 1
-        if col >= maxCols then
-          col = 0
-          row = row + 1
-        end
+      if not groups[udID] then
+        groups[udID] = { count = 0, units = {}, totalHP = 0, totalMaxHP = 0 }
+        groupOrder[#groupOrder + 1] = udID
+      end
+      local g = groups[udID]
+      g.count = g.count + 1
+      g.units[#g.units + 1] = uid
+      local hp, maxHP = getUnitHealth(uid)
+      if hp and maxHP then
+        g.totalHP = g.totalHP + hp
+        g.totalMaxHP = g.totalMaxHP + maxHP
       end
     end
   end
 
-  -- "N units selected" label
-  if #units > 1 then
-    local label = tostring(#units) .. " units selected"
-    local labelX = px + pw * 0.5
-    local labelY = py + ph - 4
-    gl.Color(COL_SHADOW)
-    gl.Text(label, labelX + 1, labelY - 1, NAME_FONT_SIZE, "oc")
-    gl.Color(COL_GOLD)
-    gl.Text(label, labelX, labelY, NAME_FONT_SIZE, "oc")
+  -- Reserve right side for command grid
+  local cmdGridW = CMD_COLS * (CMD_ICON_SIZE + CMD_PAD) + CMD_PAD + 16
+  local availW = pw - cmdGridW
+
+  -- Layout: unit-type cards arranged left-to-right, wrapping
+  local cardW = 56
+  local cardH = 68
+  local cardPad = 4
+  local maxCols = math.max(1, math.floor((availW - PORTRAIT_PAD * 2) / (cardW + cardPad)))
+  local col = 0
+  local row = 0
+
+  local glTexture = gl["Texture"]
+  local glTexRect = gl["TexRect"]
+
+  -- Store card regions for click detection (groupCardHitboxes)
+  groupCardHitboxes = {}
+
+  for _, udID in ipairs(groupOrder) do
+    local g = groups[udID]
+    local ud = UnitDefs and UnitDefs[udID]
+    if ud then
+      local cx = px + PORTRAIT_PAD + col * (cardW + cardPad)
+      local cy = py + ph - PORTRAIT_PAD - (row + 1) * (cardH + cardPad)
+
+      -- Card background
+      gl.Color(COL_DARK_BG)
+      gl.Rect(cx, cy, cx + cardW, cy + cardH)
+
+      -- Portrait
+      local portrait = getPortraitPath(ud.name or "")
+      if portrait and glTexture then
+        gl.Color(1, 1, 1, 1)
+        glTexture(portrait)
+        glTexRect(cx + 2, cy + 14, cx + cardW - 2, cy + cardH - 2)
+        glTexture(false)
+      end
+
+      -- Count badge (top-right corner, AoE style)
+      local badge = "x" .. g.count
+      gl.Color(0, 0, 0, 0.7)
+      gl.Rect(cx + cardW - 24, cy + cardH - 16, cx + cardW, cy + cardH)
+      gl.Color(COL_GOLD)
+      gl.Text(badge, cx + cardW - 12, cy + cardH - 14, 11, "oc")
+
+      -- Mini health bar at bottom
+      if g.totalMaxHP > 0 then
+        local frac = clamp(g.totalHP / g.totalMaxHP, 0, 1)
+        local hc = healthColor(frac)
+        gl.Color(0.10, 0.08, 0.06, 0.8)
+        gl.Rect(cx, cy, cx + cardW, cy + 4)
+        gl.Color(hc)
+        gl.Rect(cx, cy, cx + cardW * frac, cy + 4)
+      end
+
+      -- Unit type name (truncated)
+      local shortName = (ud.humanName or ud.name or "?")
+      if #shortName > 8 then shortName = shortName:sub(1, 7) .. "." end
+      gl.Color(COL_PARCHMENT)
+      gl.Text(shortName, cx + cardW * 0.5, cy + 5, 9, "oc")
+
+      -- Card border
+      gl.Color(COL_BRONZE[1], COL_BRONZE[2], COL_BRONZE[3], 0.6)
+      gl.Rect(cx, cy, cx + cardW, cy + 1)
+      gl.Rect(cx, cy + cardH - 1, cx + cardW, cy + cardH)
+      gl.Rect(cx, cy, cx + 1, cy + cardH)
+      gl.Rect(cx + cardW - 1, cy, cx + cardW, cy + cardH)
+
+      -- Store hitbox for click filtering
+      groupCardHitboxes[#groupCardHitboxes + 1] = {
+        x0 = cx, y0 = cy, x1 = cx + cardW, y1 = cy + cardH,
+        units = g.units,
+      }
+
+      col = col + 1
+      if col >= maxCols then
+        col = 0
+        row = row + 1
+      end
+    end
   end
+
+  -- "N units selected" label at top-center of the info area
+  local label = tostring(#units) .. " units selected"
+  local labelX = px + availW * 0.5
+  local labelY = py + ph - 4
+  gl.Color(COL_SHADOW)
+  gl.Text(label, labelX + 1, labelY - 1, NAME_FONT_SIZE, "oc")
+  gl.Color(COL_GOLD)
+  gl.Text(label, labelX, labelY, NAME_FONT_SIZE, "oc")
+
+  -- Command grid on the right side (always visible in multi-select)
+  drawCommandGrid(px, py, pw, ph)
 end
 
 --------------------------------------------------------------------------------
@@ -550,6 +625,60 @@ end
 
 function widget:Initialize()
   vsx, vsy = Spring.GetViewGeometry and Spring.GetViewGeometry() or 1920, 1080
+  -- Suppress the engine's default left-side command menu so our 0 A.D.-style
+  -- bottom command grid is the sole command interface.
+  if ConfigLayoutHandler then
+    ConfigLayoutHandler(false)
+  end
+end
+
+function widget:Shutdown()
+  -- Restore the engine's default command menu when this widget is removed.
+  if ConfigLayoutHandler then
+    ConfigLayoutHandler(true)
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Mouse interaction: command button clicks and unit-group filtering
+--------------------------------------------------------------------------------
+
+function widget:MousePress(mx, my, button)
+  if button ~= 1 then return false end
+
+  -- Check command button clicks
+  for _, hit in ipairs(cmdButtonHitboxes) do
+    if mx >= hit.x0 and mx <= hit.x1 and my >= hit.y0 and my <= hit.y1 then
+      local btn = hit.btn
+      if btn.instant and Spring.GiveOrder then
+        -- Instant commands: issue immediately to selected units
+        Spring.GiveOrder(btn.id, {}, {})
+      elseif Spring.SetActiveCommand then
+        -- Targeting commands: set active cursor mode
+        local descIdx = Spring.GetCmdDescIndex and Spring.GetCmdDescIndex(btn.id)
+        if descIdx then
+          Spring.SetActiveCommand(descIdx)
+        elseif Spring.SetActiveCommand then
+          Spring.SetActiveCommand(btn.id)
+        end
+      end
+      return true  -- consume the click
+    end
+  end
+
+  -- Check unit-group card clicks (multi-select: click to filter selection)
+  if groupCardHitboxes then
+    for _, card in ipairs(groupCardHitboxes) do
+      if mx >= card.x0 and mx <= card.x1 and my >= card.y0 and my <= card.y1 then
+        if Spring.SelectUnitArray and card.units then
+          Spring.SelectUnitArray(card.units)
+        end
+        return true  -- consume the click
+      end
+    end
+  end
+
+  return false
 end
 
 function widget:DrawScreen()
