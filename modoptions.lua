@@ -97,6 +97,20 @@ return {
     def = true,
   },
   {
+    key = "medievalbottompanel",
+    name = "Medieval Bottom Panel",
+    desc = "Show the AoE / 0 A.D. style selection, portrait and command panel at the bottom of the screen",
+    type = "bool",
+    def = true,
+  },
+  {
+    key = "medievalminimap",
+    name = "Medieval Minimap Frame",
+    desc = "Ornamental stone/wood frame around the minimap in the bottom-left corner",
+    type = "bool",
+    def = true,
+  },
+  {
     key = "medievalanimprobe",
     name = "Death Animation Probe",
     desc = "Headless test hook: spawn and kill one unit per articulated script to verify the baked death clip",
