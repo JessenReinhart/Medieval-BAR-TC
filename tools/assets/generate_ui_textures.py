@@ -1,18 +1,24 @@
-"""Generate authentic medieval/0 A.D./AoE style UI bitmap textures in ``bitmaps/ui/``.
+"""Generate AAA medieval UI bitmap textures in ``bitmaps/ui/``.
 
-Outputs:
-    - ``bar_background.png``: 512x64 dark aged parchment/wood texture for top/bottom bars.
-    - ``panel_border.png``: 128x128 ornamental antique bronze/stone border slice (9-slice compatible).
-    - ``frame_corner.png``: 64x64 ornamental antique bronze/stone corner ornament.
-    - ``icon_food.png``: 48x48 RGBA wheat sheaf / grain harvest icon.
-    - ``icon_wood.png``: 48x48 RGBA chopped wood logs / axe icon.
-    - ``icon_stone.png``: 48x48 RGBA stone block / quarry masonry icon.
-    - ``icon_iron.png``: 48x48 RGBA iron ingot / anvil icon.
-    - ``icon_pop.png``: 48x48 RGBA population helmet / peasant silhouette icon.
-    - ``icon_idle.png``: 48x48 RGBA idle villager bell / sleeping worker indicator icon.
-    - ``minimap_frame.png``: 256x256 circular/square medieval compass stone/bronze frame.
+All art is deterministic (pinned seeds), 100% procedural, and GPL-v2 compatible
+(Pillow + NumPy only). No proprietary or CC-BY-NC-ND assets are used.
 
-The art is deterministic, original, GPL-v2 compatible, and rendered via Pillow and NumPy.
+Material language (aged oak + chiseled stone + antique bronze) is shared across:
+    - ``bar_background.png``  512x64  horizontal aged-oak top/bottom bar with
+                                      gold bead inlay, usable tiled at ~52-56px.
+    - ``panel_border.png``    128x128 9-slice compatible oak/bronze/stone rim.
+    - ``frame_corner.png``     64x64  ornamental bronze/stone corner boss.
+    - ``icon_*.png``           64x64  BOLD, high-contrast silhouette resource
+                                      icons (dark outline, bright fill, baked
+                                      drop shadow) that survive 28-32px blits.
+    - ``command_*.png``        32x32  command button icons in the same bold
+                                      silhouette language.
+    - ``minimap_frame.png``   256x256 thick CHISELED-STONE frame fill with
+                                      rounded bevels and N/S/E/W bronze
+                                      medallions (no pocket circles).
+
+Usage:
+    python tools/assets/generate_ui_textures.py
 """
 
 from __future__ import annotations
@@ -20,531 +26,783 @@ from __future__ import annotations
 import argparse
 import math
 from pathlib import Path
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "bitmaps" / "ui"
 
-# Palette definitions matching 0 A.D. & AoE aesthetics
-# Dark aged wood / parchment
-WOOD_DARK = np.array([28, 20, 14], dtype=np.float32)
-WOOD_MID = np.array([48, 36, 24], dtype=np.float32)
-WOOD_LIGHT = np.array([72, 54, 36], dtype=np.float32)
+# ---------------------------------------------------------------------------
+# Palette (documented in docs/ui-specs.md). Hex values are canonical.
+# ---------------------------------------------------------------------------
+HEX = {
+    # Aged oak
+    "oak_dark":    "#1c140d",
+    "oak_mid":     "#382a18",
+    "oak_light":   "#523c24",
+    "oak_hi":      "#6c5030",
+    # Chiseled stone
+    "stone_dark":  "#2c2a28",
+    "stone_mid":   "#4e4a46",
+    "stone_light": "#807870",
+    "stone_hi":    "#a89a92",
+    "mortar":      "#1e1c1a",
+    # Antique bronze
+    "bronze_dark": "#2e2012",
+    "bronze_mid":  "#8a6432",
+    "bronze_light":"#d0a860",
+    "bronze_hi":   "#fae0a0",
+    "verdigris":   "#587860",
+    # Glyph / icon language
+    "ink":         "#100c0a",
+    "ivory":       "#e8dcc0",
+    "blood":       "#a63a2a",
+    "blood_hi":    "#d84834",
+    "steel":       "#b8c0c8",
+    "steel_hi":    "#e4ecf4",
+    "wheat":       "#e8b83c",
+    "wheat_hi":    "#f6d878",
+    "wood_bark":   "#4c321c",
+    "wood_face":   "#cf9e5a",
+    "wood_ring":   "#8c582c",
+}
 
-# Antique Bronze / Gold
-BRONZE_DARK = (52, 38, 22)
-BRONZE_MID = (142, 108, 54)
-BRONZE_LIGHT = (212, 178, 102)
-BRONZE_HIGHLIGHT = (248, 224, 156)
 
-# Stone / Slate
-STONE_DARK = (42, 44, 46)
-STONE_MID = (84, 88, 92)
-STONE_LIGHT = (140, 144, 148)
+def _rgb(name: str) -> tuple[int, int, int]:
+    h = HEX[name].lstrip("#")
+    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
+
+
+INK = _rgb("ink")
+SHADOW_FILL = (10, 8, 6, 210)
+
+# Supersampling factor for icons: draw large, then LANCZOS-downscale.
+SS = 4
 
 
 def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def generate_bar_background(width: int = 512, height: int = 64) -> Image.Image:
-    """Generate dark aged parchment & weathered oak panel texture."""
-    # Base procedural wood grain + horizontal fiber
-    np.random.seed(42)
-    x = np.linspace(0, 1, width)
-    y = np.linspace(0, 1, height)
-    xx, yy = np.meshgrid(x, y)
+def _V(v: float, s: int) -> int:
+    """Fraction of s -> integer pixel coordinate."""
+    return int(round(v * s))
 
-    # Wood grain bands along X axis with high frequency streaks
+
+def _P(seq, s: int):
+    """[(fx, fy), ...] -> list of integer (x, y) at scale s."""
+    return [(_V(x, s), _V(y, s)) for x, y in seq]
+
+
+def _B(box, s: int):
+    """[fx0, fy0, fx1, fy1] -> list of integer [x0, y0, x1, y1] at scale s."""
+    return [_V(box[0], s), _V(box[1], s), _V(box[2], s), _V(box[3], s)]
+
+
+def _wood_texture(w: int, h: int, seed: int):
+    """Return an (h, w, 3) uint8 aged-oak RGB array."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:h, 0:w]
+    x = xx.astype(np.float32) / w
+    y = yy.astype(np.float32) / h
+
     grain = (
-        np.sin(yy * 32.0 + np.sin(xx * 8.0) * 0.8) * 0.15
-        + np.sin(yy * 64.0) * 0.08
-        + np.random.normal(0, 0.04, (height, width))
+        np.sin(y * 26.0 + np.sin(x * 9.0) * 0.9) * 0.16
+        + np.sin(y * 71.0) * 0.07
+        + np.sin(x * 3.0 + y * 5.0) * 0.03
+        + rng.normal(0.0, 0.035, (h, w))
     )
-    # Vignette at top and bottom edge
-    edge_vignette = 1.0 - np.power(np.abs(yy - 0.5) * 2.0, 3.0) * 0.45
-    # Bevel highlights at y=0..2 and shadow at y=height-3..height
-    bevel = np.ones((height, width), dtype=np.float32)
-    bevel[0:2, :] += 0.35
-    bevel[-3:, :] -= 0.40
+    vign = 1.0 - 0.45 * np.abs(y - 0.5) ** 1.6
+    shade = 0.5 + grain * vign
+    shade = np.clip(shade, 0.0, 1.0)[..., None]
 
-    intensity = (grain + 0.5) * edge_vignette * bevel
-    intensity = np.clip(intensity, 0.0, 1.0)[:, :, np.newaxis]
+    dark = np.array(_rgb("oak_dark"), dtype=np.float32)
+    mid = np.array(_rgb("oak_mid"), dtype=np.float32)
+    light = np.array(_rgb("oak_light"), dtype=np.float32)
 
-    rgb = WOOD_DARK + (WOOD_LIGHT - WOOD_DARK) * intensity
-    rgb = np.clip(rgb, 0, 255).astype(np.uint8)
+    rgb = np.where(
+        shade < 0.5,
+        dark + (mid - dark) * (shade * 2.0),
+        mid + (light - mid) * ((shade - 0.5) * 2.0),
+    )
+    return np.clip(rgb, 0, 255).astype(np.uint8)
 
-    # Alpha channel: opaque 245 with slight corner softening
-    alpha = np.full((height, width), 245, dtype=np.uint8)
-    rgba = np.dstack([rgb, alpha])
-    img = Image.fromarray(rgba, "RGBA")
 
-    # Add subtle ornamental trim lines (top golden bead, bottom dark groove)
-    draw = ImageDraw.Draw(img)
-    # Golden top inlay line
-    draw.line([(0, 1), (width - 1, 1)], fill=(168, 132, 68, 220), width=1)
-    draw.line([(0, 2), (width - 1, 2)], fill=(96, 72, 36, 180), width=1)
-    # Bottom groove
-    draw.line([(0, height - 2), (width - 1, height - 2)], fill=(16, 12, 8, 240), width=1)
-    draw.line([(0, height - 1), (width - 1, height - 1)], fill=(64, 48, 28, 180), width=1)
+def _stone_texture(w: int, h: int, seed: int, block: int = 24):
+    """Return an (h, w, 3) uint8 chiseled-stone RGB array."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:h, 0:w]
 
+    nbx = int(math.ceil(w / block)) + 1
+    nby = int(math.ceil(h / block)) + 1
+    cell = rng.uniform(-0.08, 0.08, (nby, nbx))
+    cv = np.repeat(np.repeat(cell, block, axis=0), block, axis=1)[:h, :w]
+
+    noise = rng.normal(0.0, 0.045, (h, w))
+    chisel = 0.5 + 0.5 * np.sin((xx * 0.75) + (yy * 0.28)) * 0.06
+
+    mortar = (
+        ((xx % block) < 1.2) | ((yy % block) < 1.2)
+    ).astype(np.float32)
+
+    shade = 0.5 + noise + cv + chisel - mortar * 0.38
+    shade = np.clip(shade, 0.0, 1.0)[..., None]
+
+    dark = np.array(_rgb("stone_dark"), dtype=np.float32)
+    mid = np.array(_rgb("stone_mid"), dtype=np.float32)
+    light = np.array(_rgb("stone_light"), dtype=np.float32)
+
+    rgb = np.where(
+        shade < 0.5,
+        dark + (mid - dark) * (shade * 2.0),
+        mid + (light - mid) * ((shade - 0.5) * 2.0),
+    )
+    return np.clip(rgb, 0, 255).astype(np.uint8)
+
+
+def _render_icon(size: int, glyph_fn, colors: dict) -> Image.Image:
+    """Draw a glyph on a transparent canvas, bake a soft drop shadow, and
+    downscale LANCZOS. glyph_fn(draw, s, C, OW, OUTLINE)."""
+    s = size * SS
+    ow = max(3, int(s * 0.038))
+
+    # ---- drop shadow (uniform silhouette, blurred, offset) ----
+    shadow = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sc = {k: (12, 10, 8, 200) for k in colors}
+    glyph_fn(sd, s, sc, ow, (12, 10, 8, 200))
+    blur_r = max(2, int(round(s * 0.032)))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(blur_r))
+
+    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    ox, oy = int(s * 0.035), int(s * 0.045)
+    canvas.paste(shadow, (ox, oy), shadow)
+
+    # ---- real glyph: bright fill + heavy dark outline ----
+    glyph = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glyph)
+    glyph_fn(gd, s, colors, ow, INK)
+    canvas.alpha_composite(glyph)
+
+    return canvas.resize((size, size), Image.Resampling.LANCZOS)
+
+
+# ---------------------------------------------------------------------------
+# Bar / panel / frame surfaces
+# ---------------------------------------------------------------------------
+
+def generate_bar_background(width: int = 512, height: int = 64) -> Image.Image:
+    """512x64 aged-oak bar with gold bead inlay, designed to tile wide."""
+    w, h = width, height
+    rgb = _wood_texture(w, h, seed=42)
+
+    yy, xx = np.mgrid[0:h, 0:w]
+    x = xx.astype(np.float32) / w
+    y = yy.astype(np.float32) / h
+    sheen = (np.sin(x * 12.0 + y * 3.0) * 0.5 + 0.5) * 0.08
+    sheen_a = (
+        sheen[..., None].astype(np.float32)
+        * np.array(_rgb("oak_hi"), dtype=np.float32)
+    )
+    rgb = np.clip(rgb.astype(np.float32) + sheen_a, 0, 255).astype(np.uint8)
+
+    alpha = np.full((h, w), 250, dtype=np.uint8)
+    img = Image.fromarray(np.dstack([rgb, alpha]).astype(np.uint8), "RGBA")
+    d = ImageDraw.Draw(img)
+
+    # Top and bottom bronze bead rails (scales naturally as a repeating bead).
+    bead_hi, bead_mid, bead_dark = (
+        _rgb("bronze_hi"),
+        _rgb("bronze_light"),
+        _rgb("bronze_dark"),
+    )
+    for ybase in (3, h - 9):
+        for bx in range(2, w - 4, 7):
+            d.ellipse([bx, ybase, bx + 5, ybase + 5], fill=bead_dark)
+            d.ellipse([bx + 1, ybase + 1, bx + 4, ybase + 4], fill=bead_mid)
+            d.point((bx + 2, ybase + 2), fill=bead_hi)
+
+    # Rail grooves flanking the beads.
+    d.line([(0, 0), (w - 1, 0)], fill=_rgb("oak_hi"), width=1)
+    d.line([(0, 1), (w - 1, 1)], fill=_rgb("bronze_mid"), width=1)
+    d.line([(0, h - 1), (w - 1, h - 1)], fill=_rgb("oak_dark"), width=1)
+    d.line([(0, 10), (w - 1, 10)], fill=(20, 14, 9, 230), width=1)
+    d.line([(0, h - 11), (w - 1, h - 11)], fill=(20, 14, 9, 230), width=1)
     return img
 
 
 def generate_panel_border(size: int = 128) -> Image.Image:
-    """Generate 9-slice compatible ornamental antique bronze border frame."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    """128x128 9-slice compatible ornamental antique bronze & stone border."""
+    w = h = size
+    rgb = _wood_texture(w, h, seed=1337)
+    alpha = np.full((h, w), 255, dtype=np.uint8)
+    img = Image.fromarray(np.dstack([rgb, alpha]).astype(np.uint8), "RGBA")
+    d = ImageDraw.Draw(img)
 
-    # Outer border dimensions
-    b_width = 16
-    # Outer dark stone rim
-    draw.rectangle([0, 0, size - 1, size - 1], outline=STONE_DARK, width=2)
-    # Bronze metallic relief
-    for i in range(2, b_width - 2):
-        t = (i - 2) / float(b_width - 4)
-        # Highlight in center, darker edges
-        if t < 0.4:
-            c = tuple(int(BRONZE_DARK[j] + (BRONZE_LIGHT[j] - BRONZE_DARK[j]) * (t / 0.4)) for j in range(3))
-        elif t < 0.6:
-            c = BRONZE_HIGHLIGHT
-        else:
-            c = tuple(int(BRONZE_HIGHLIGHT[j] + (BRONZE_MID[j] - BRONZE_HIGHLIGHT[j]) * ((t - 0.6) / 0.4)) for j in range(3))
-        draw.rectangle([i, i, size - 1 - i, size - 1 - i], outline=(*c, 255), width=1)
+    band = 16
+    for i in range(4):
+        inset = i
+        col = _rgb("stone_dark" if i < 2 else "stone_light")
+        d.rectangle([inset, inset, w - 1 - inset, h - 1 - inset], outline=col, width=1)
 
-    # Inner dark shadow groove
-    draw.rectangle([b_width - 2, b_width - 2, size - b_width + 1, size - b_width + 1], outline=(18, 14, 10, 255), width=2)
+    d.rectangle([5, 5, w - 6, h - 6], outline=_rgb("bronze_mid"), width=2)
+    d.rectangle([7, 7, w - 8, h - 8], outline=_rgb("bronze_dark"), width=1)
+    d.rectangle([band - 2, band - 2, w - band + 1, h - band + 1],
+                outline=(16, 12, 8, 220), width=1)
 
-    # Central area filled with semi-transparent aged parchment
-    inner_box = [b_width, b_width, size - b_width - 1, size - b_width - 1]
-    draw.rectangle(inner_box, fill=(28, 22, 16, 235))
+    # Center fill: warm oak panel tint
+    d.rectangle([band, band, w - 1 - band, h - 1 - band], fill=(42, 32, 22, 100))
 
-    # Decorative corner studs/rivets in 4 corners
-    stud_radius = 4
-    for cx, cy in [(8, 8), (size - 9, 8), (8, size - 9), (size - 9, size - 9)]:
-        draw.ellipse([cx - stud_radius, cy - stud_radius, cx + stud_radius, cy + stud_radius], fill=BRONZE_LIGHT, outline=BRONZE_DARK)
-        draw.point((cx - 1, cy - 1), fill=(255, 245, 210))
-
+    # Corner rivet bosses (chiseled square bronze accents)
+    for cx, cy in ((band - 3, band - 3), (w - band + 2, band - 3),
+                   (band - 3, h - band + 2), (w - band + 2, h - band + 2)):
+        d.rectangle([cx - 2, cy - 2, cx + 2, cy + 2], fill=_rgb("bronze_mid"))
+        d.point((cx, cy), fill=_rgb("bronze_hi"))
     return img
 
 
 def generate_frame_corner(size: int = 64) -> Image.Image:
-    """Generate ornamental corner bracket/boss for UI panels."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    """Ornamental 64x64 bronze/stone corner boss."""
+    s = size
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    ox, oy = 4, 4
 
-    # Filigree bracket pointing into the corner (top-left)
-    # Outer decorative scroll
-    points = [
-        (4, 4), (size - 6, 4), (size - 14, 12), (18, 12),
-        (12, 18), (12, size - 14), (4, size - 6)
-    ]
-    draw.polygon(points, fill=BRONZE_MID, outline=BRONZE_DARK)
+    # Stone backing bracket
+    d.polygon([(ox, s - oy), (ox, oy), (s - ox, oy), (s - ox, oy + 8),
+               (ox + 8, oy + 8), (ox + 8, s - oy)],
+              fill=_rgb("stone_mid"), outline=_rgb("stone_dark"), width=2)
+    d.polygon([(ox, s - oy), (ox, oy), (ox + 8, oy + 8), (ox + 8, s - oy - 10)],
+              fill=_rgb("stone_light"), outline=_rgb("stone_dark"), width=1)
 
-    # Inner raised relief
-    inner_pts = [
-        (7, 7), (size - 18, 7), (size - 22, 10), (14, 10),
-        (10, 14), (10, size - 22), (7, size - 18)
-    ]
-    draw.polygon(inner_pts, fill=BRONZE_HIGHLIGHT)
+    # Bronze filigree scroll
+    d.line([(ox + 6, s - oy - 4), (s // 2 - 2, s // 2 + 4)], fill=_rgb("bronze_mid"), width=4)
+    d.line([(s // 2 - 4, s // 2 + 4), (s - ox - 4, ox + 10)], fill=_rgb("bronze_mid"), width=4)
+    d.line([(ox + 8, s - oy - 6), (s // 2 - 2, s // 2 + 4)], fill=_rgb("bronze_hi"), width=1)
 
-    # Central embossed gemstone / rivet boss
-    bx, by = 14, 14
-    r = 7
-    draw.ellipse([bx - r, by - r, bx + r, by + r], fill=BRONZE_DARK, outline=(20, 15, 10))
-    draw.ellipse([bx - r + 2, by - r + 2, bx + r - 2, by + r - 2], fill=BRONZE_LIGHT)
-    draw.point((bx - 1, by - 1), fill=(255, 255, 230))
-
-    # Corner filigree accents
-    draw.arc([16, 16, size - 8, size - 8], start=180, end=270, fill=BRONZE_LIGHT, width=2)
-    draw.arc([18, 18, size - 10, size - 10], start=180, end=270, fill=BRONZE_DARK, width=1)
-
+    # Leaf finial
+    d.ellipse([s // 2 - 5, s // 2 - 1, s // 2 + 5, s // 2 + 9],
+              fill=_rgb("verdigris"), outline=_rgb("bronze_dark"), width=1)
     return img
 
 
-def _create_icon_canvas(size: int) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    return img, d
+# ---------------------------------------------------------------------------
+# Resource / status icons (64x64 source)
+# ---------------------------------------------------------------------------
+
+def _glyph_food(d, s, C, ow, O):
+    """Wheat sheaf / grain stalk: 3 curving ears + tied stalk bundle."""
+    tie = (0.50, 0.58)
+
+    # Bottom flare of cut stalks
+    for fx in (0.36, 0.43, 0.50, 0.57, 0.64):
+        d.line(_P([tie, (fx, 0.90)], s), fill=O, width=ow + 2)
+        d.line(_P([tie, (fx, 0.90)], s), fill=C["wheat"], width=max(1, ow))
+
+    # Three grain ears: left, center, right
+    ears = [
+        (-0.24, [(0.46, 0.44), (0.34, 0.28), (0.24, 0.12)]),
+        (0.00,  [(0.50, 0.40), (0.50, 0.24), (0.50, 0.08)]),
+        (0.24,  [(0.54, 0.44), (0.66, 0.28), (0.76, 0.12)]),
+    ]
+
+    for lean, pts in ears:
+        full_pts = [tie] + pts
+        d.line(_P(full_pts, s), fill=O, width=ow + 2)
+        d.line(_P(full_pts, s), fill=C["wheat_hi"], width=max(1, ow))
+        # Grain kernels along the stalk
+        for pt in pts:
+            px, py = pt
+            for kdx in (-0.05, 0.05):
+                box = [px + kdx - 0.045, py - 0.055, px + kdx + 0.045, py + 0.055]
+                d.ellipse(_B(box, s), fill=C["wheat"], outline=O, width=max(1, ow - 1))
+                d.ellipse(_B([box[0] + 0.01, box[1] + 0.01, box[2] - 0.01, box[3] - 0.02], s),
+                          fill=C["wheat_hi"])
+
+    # Binding band around the sheaf
+    band_box = [0.38, 0.54, 0.62, 0.63]
+    d.rounded_rectangle(_B(band_box, s), radius=_V(0.02, s), fill=C["wheat_hi"], outline=O, width=ow)
+    d.line(_P([(0.40, 0.58), (0.60, 0.58)], s), fill=O, width=max(1, ow - 1))
 
 
-def _draw_icon_base_plate(draw: ImageDraw.ImageDraw, size: int) -> None:
-    """Draw circular/rounded antique bronze coin backing with dark core."""
-    pad = 2
-    box = [pad, pad, size - 1 - pad, size - 1 - pad]
-    # Dark shadow rim
-    draw.ellipse([box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1], fill=(12, 10, 8, 180))
-    # Bronze outer bevel
-    draw.ellipse(box, fill=BRONZE_DARK, outline=(18, 14, 10, 240))
-    # Inner metallic ring
-    draw.ellipse([box[0] + 2, box[1] + 2, box[2] - 2, box[3] - 2], outline=BRONZE_LIGHT)
-    # Dark inner field for icon clarity
-    draw.ellipse([box[0] + 3, box[1] + 3, box[2] - 3, box[3] - 3], fill=(22, 18, 14, 230))
-
-
-def generate_icon_food(size: int = 48) -> Image.Image:
-    """Food icon: Golden wheat sheaf / bundle of grain."""
-    scale = 4
-    s = size * scale
-    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
-
-    _draw_icon_base_plate(draw, s)
-
-    # Wheat stalks curving outward
-    GOLD_DEEP = (186, 134, 32)
-    GOLD_BRIGHT = (248, 206, 64)
-    GOLD_LIGHT = (255, 240, 160)
-
-    center_x = s // 2
-    base_y = int(s * 0.78)
-
-    # Tied ribbon at bottom
-    draw.rectangle([center_x - int(s * 0.08), base_y - int(s * 0.06), center_x + int(s * 0.08), base_y], fill=(160, 40, 32), outline=(90, 20, 16))
-
-    # Grains along 3 stalks (left, center, right)
-    for stalk_angle, stalk_x_off in [(-0.25, -s * 0.12), (0.0, 0.0), (0.25, s * 0.12)]:
-        # Draw curved stem
-        stem_pts = [
-            (center_x, base_y),
-            (center_x + stalk_x_off * 0.6, s * 0.52),
-            (center_x + stalk_x_off, s * 0.24)
-        ]
-        draw.line(stem_pts, fill=GOLD_DEEP, width=max(2, int(s * 0.035)))
-
-        # Grains on stalk
-        top_y = s * 0.24
-        for k in range(5):
-            gy = top_y + k * (s * 0.08)
-            gx = center_x + stalk_x_off * (0.3 + 0.7 * (1.0 - k / 5.0))
-            # Left grain
-            draw.ellipse([gx - s * 0.07, gy - s * 0.035, gx - s * 0.005, gy + s * 0.035], fill=GOLD_BRIGHT, outline=GOLD_DEEP)
-            draw.point((int(gx - s * 0.04), int(gy)), fill=GOLD_LIGHT)
-            # Right grain
-            draw.ellipse([gx + s * 0.005, gy - s * 0.035, gx + s * 0.07, gy + s * 0.035], fill=GOLD_BRIGHT, outline=GOLD_DEEP)
-            draw.point((int(gx + s * 0.04), int(gy)), fill=GOLD_LIGHT)
-
-    # Top grain tip
-    draw.ellipse([center_x - s * 0.03, s * 0.16, center_x + s * 0.03, s * 0.24], fill=GOLD_LIGHT, outline=GOLD_DEEP)
-
-    return canvas.resize((size, size), Image.Resampling.LANCZOS)
-
-
-def generate_icon_wood(size: int = 48) -> Image.Image:
-    """Wood icon: Chopped logs and forester's iron axe."""
-    scale = 4
-    s = size * scale
-    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
-
-    _draw_icon_base_plate(draw, s)
-
-    # Log stack
-    LOG_BARK = (78, 52, 32)
-    LOG_WOOD = (194, 154, 102)
-    LOG_RING = (144, 108, 68)
-
+def _glyph_wood(d, s, C, ow, O):
+    """Stacked logs + broadaxe."""
     # Bottom log
-    bx1, by1 = int(s * 0.22), int(s * 0.58)
-    bx2, by2 = int(s * 0.76), int(s * 0.78)
-    draw.rounded_rectangle([bx1, by1, bx2, by2], radius=int(s * 0.08), fill=LOG_BARK, outline=(40, 26, 16))
-    # Cut end face (circle)
-    end_x, end_y = bx1 + int(s * 0.08), (by1 + by2) // 2
-    er = int(s * 0.09)
-    draw.ellipse([end_x - er, end_y - er, end_x + er, end_y + er], fill=LOG_WOOD, outline=LOG_BARK)
-    draw.ellipse([end_x - er // 2, end_y - er // 2, end_x + er // 2, end_y + er // 2], outline=LOG_RING)
+    d.rounded_rectangle(_B([0.10, 0.56, 0.88, 0.76], s), radius=_V(0.05, s),
+                        fill=C["bark"], outline=O, width=ow)
+    # Bottom log face
+    d.ellipse(_B([0.10, 0.56, 0.28, 0.76], s), fill=C["wood"], outline=O, width=ow)
+    d.ellipse(_B([0.14, 0.60, 0.24, 0.72], s), outline=C["ring"], width=max(1, ow - 1))
+
+    # Top log
+    d.rounded_rectangle(_B([0.18, 0.38, 0.84, 0.56], s), radius=_V(0.05, s),
+                        fill=C["bark"], outline=O, width=ow)
+    # Top log face
+    d.ellipse(_B([0.18, 0.38, 0.34, 0.56], s), fill=C["wood"], outline=O, width=ow)
+    d.ellipse(_B([0.21, 0.41, 0.31, 0.53], s), outline=C["ring"], width=max(1, ow - 1))
 
     # Axe handle (diagonal)
-    handle_start = (int(s * 0.28), int(s * 0.78))
-    handle_end = (int(s * 0.72), int(s * 0.22))
-    draw.line([handle_start, handle_end], fill=(160, 115, 68), width=int(s * 0.07))
-    draw.line([handle_start, handle_end], fill=(80, 50, 28), width=int(s * 0.02))
+    d.line(_P([(0.30, 0.86), (0.72, 0.16)], s), fill=O, width=ow + 4)
+    d.line(_P([(0.30, 0.86), (0.72, 0.16)], s), fill=C["haft"], width=max(2, ow + 1))
 
-    # Axe head (steel blade)
-    blade_pts = [
-        (int(s * 0.62), int(s * 0.20)),
-        (int(s * 0.82), int(s * 0.18)),
-        (int(s * 0.86), int(s * 0.38)),
-        (int(s * 0.68), int(s * 0.35)),
-    ]
-    draw.polygon(blade_pts, fill=(180, 190, 200), outline=(80, 85, 95))
-    # Sharp edge highlight
-    draw.line([(int(s * 0.82), int(s * 0.18)), (int(s * 0.86), int(s * 0.38))], fill=(245, 250, 255), width=max(2, int(s * 0.02)))
-
-    return canvas.resize((size, size), Image.Resampling.LANCZOS)
+    # Axe head (heavy steel blade)
+    blade = [(0.62, 0.14), (0.88, 0.10), (0.92, 0.36), (0.70, 0.30)]
+    d.polygon(_P(blade, s), fill=C["steel"], outline=O, width=ow)
+    d.line(_P([(0.68, 0.18), (0.86, 0.14)], s), fill=C["steel_hi"], width=max(1, ow - 1))
 
 
-def generate_icon_stone(size: int = 48) -> Image.Image:
-    """Stone icon: Cut masonry blocks with chiseled facets."""
-    scale = 4
-    s = size * scale
-    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
+def _glyph_stone(d, s, C, ow, O):
+    """Stacked cut masonry blocks (sturdy 3-block ashlar pyramid)."""
+    # Two foundation blocks
+    b1 = [0.12, 0.54, 0.48, 0.82]
+    b2 = [0.52, 0.54, 0.88, 0.82]
+    # One keystone centered on top
+    b3 = [0.26, 0.22, 0.74, 0.52]
 
-    _draw_icon_base_plate(draw, s)
-
-    # Ashlar masonry block (isometric perspective)
-    # Top face
-    top_face = [
-        (int(s * 0.50), int(s * 0.22)),
-        (int(s * 0.76), int(s * 0.36)),
-        (int(s * 0.50), int(s * 0.48)),
-        (int(s * 0.24), int(s * 0.36))
-    ]
-    draw.polygon(top_face, fill=(175, 180, 185), outline=(90, 95, 100))
-
-    # Left face
-    left_face = [
-        (int(s * 0.24), int(s * 0.36)),
-        (int(s * 0.50), int(s * 0.48)),
-        (int(s * 0.50), int(s * 0.74)),
-        (int(s * 0.24), int(s * 0.62))
-    ]
-    draw.polygon(left_face, fill=(110, 115, 120), outline=(60, 65, 70))
-
-    # Right face
-    right_face = [
-        (int(s * 0.50), int(s * 0.48)),
-        (int(s * 0.76), int(s * 0.36)),
-        (int(s * 0.76), int(s * 0.62)),
-        (int(s * 0.50), int(s * 0.74))
-    ]
-    draw.polygon(right_face, fill=(140, 145, 150), outline=(70, 75, 80))
-
-    # Stone chisel cracks/chiseled lines
-    draw.line([(int(s * 0.36), int(s * 0.44)), (int(s * 0.42), int(s * 0.58))], fill=(80, 85, 90), width=max(1, int(s * 0.015)))
-    draw.line([(int(s * 0.60), int(s * 0.45)), (int(s * 0.64), int(s * 0.55))], fill=(100, 105, 110), width=max(1, int(s * 0.015)))
-
-    # Smaller secondary stone at bottom-left
-    s_top = [(int(s * 0.18), int(s * 0.64)), (int(s * 0.34), int(s * 0.60)), (int(s * 0.32), int(s * 0.72)), (int(s * 0.16), int(s * 0.76))]
-    draw.polygon(s_top, fill=(150, 155, 160), outline=(80, 85, 90))
-
-    return canvas.resize((size, size), Image.Resampling.LANCZOS)
+    for b in (b1, b2, b3):
+        d.rounded_rectangle(_B(b, s), radius=_V(0.025, s), fill=C["block"], outline=O, width=ow)
+        # Bevel highlight on top edge
+        d.line(_P([(b[0] + 0.02, b[1] + 0.02), (b[2] - 0.02, b[1] + 0.02)], s),
+               fill=C["block_hi"], width=max(1, ow - 1))
+        # Bevel highlight on left edge
+        d.line(_P([(b[0] + 0.02, b[1] + 0.02), (b[0] + 0.02, b[3] - 0.02)], s),
+               fill=C["block_hi"], width=max(1, ow - 1))
+        # Chisel dressing marks
+        my = (b[1] + b[3]) / 2
+        d.line(_P([(b[0] + 0.08, my), (b[2] - 0.08, my)], s),
+               fill=C["block_hi"], width=max(1, ow - 2))
 
 
-def generate_icon_iron(size: int = 48) -> Image.Image:
-    """Iron icon: Heavy blacksmith's anvil and iron ingot."""
-    scale = 4
-    s = size * scale
-    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
+def _glyph_iron(d, s, C, ow, O):
+    """Blacksmith's anvil (pointed horn, flat face, flanged base)."""
+    # Horn (left triangle)
+    horn = [(0.10, 0.34), (0.28, 0.24), (0.28, 0.42)]
+    d.polygon(_P(horn, s), fill=C["steel"], outline=O, width=ow)
 
-    _draw_icon_base_plate(draw, s)
+    # Face plate (flat polished striking surface)
+    d.rectangle(_B([0.26, 0.22, 0.86, 0.38], s), fill=C["steel"], outline=O, width=ow)
+    # Bright polished face highlight
+    d.line(_P([(0.28, 0.25), (0.84, 0.25)], s), fill=C["steel_hi"], width=max(2, ow - 1))
 
-    # Anvil silhouette: flat top horn pointing left, block body, flared foot
-    # Horn (left horn, flat face, right step)
-    horn = [
-        (int(s * 0.20), int(s * 0.36)),  # Horn tip
-        (int(s * 0.36), int(s * 0.34)),
-        (int(s * 0.76), int(s * 0.34)),  # Top face
-        (int(s * 0.78), int(s * 0.44)),
-        (int(s * 0.66), int(s * 0.48)),  # Waist right
-        (int(s * 0.72), int(s * 0.70)),  # Foot right
-        (int(s * 0.28), int(s * 0.70)),  # Foot left
-        (int(s * 0.36), int(s * 0.48)),  # Waist left
-    ]
-    # Dark steel base
-    draw.polygon(horn, fill=(75, 82, 92), outline=(35, 40, 48))
+    # Waist (narrow central pillar)
+    waist = [(0.36, 0.38), (0.72, 0.38), (0.68, 0.58), (0.40, 0.58)]
+    d.polygon(_P(waist, s), fill=C["iron"], outline=O, width=ow)
 
-    # Top struck face highlight
-    face_pts = [
-        (int(s * 0.34), int(s * 0.34)),
-        (int(s * 0.76), int(s * 0.34)),
-        (int(s * 0.74), int(s * 0.40)),
-        (int(s * 0.35), int(s * 0.40))
-    ]
-    draw.polygon(face_pts, fill=(185, 198, 212), outline=(100, 110, 124))
-
-    # Glowing heat streak or forge spark on top
-    draw.line([(int(s * 0.50), int(s * 0.36)), (int(s * 0.58), int(s * 0.36))], fill=(255, 230, 180), width=max(2, int(s * 0.025)))
-
-    # Ingot bar below anvil
-    ingot = [
-        (int(s * 0.32), int(s * 0.73)),
-        (int(s * 0.68), int(s * 0.73)),
-        (int(s * 0.64), int(s * 0.81)),
-        (int(s * 0.36), int(s * 0.81))
-    ]
-    draw.polygon(ingot, fill=(130, 140, 155), outline=(50, 55, 65))
-
-    return canvas.resize((size, size), Image.Resampling.LANCZOS)
+    # Base footing (heavy stepped flanged foot)
+    base = [(0.26, 0.58), (0.78, 0.58), (0.90, 0.82), (0.16, 0.82)]
+    d.polygon(_P(base, s), fill=C["steel"], outline=O, width=ow)
+    d.line(_P([(0.20, 0.78), (0.86, 0.78)], s), fill=C["steel_hi"], width=max(1, ow - 2))
 
 
-def generate_icon_pop(size: int = 48) -> Image.Image:
-    """Population icon: Medieval pot-helm / soldier silhouette."""
-    scale = 4
-    s = size * scale
-    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
+def _glyph_pop(d, s, C, ow, O):
+    """Peasant cottage / house silhouette (pitched roof, door, window)."""
+    # Pitched roof (eaves extend beyond walls)
+    roof = [(0.12, 0.44), (0.50, 0.12), (0.88, 0.44)]
+    d.polygon(_P(roof, s), fill=C["roof"], outline=O, width=ow)
+    d.line(_P([(0.14, 0.42), (0.50, 0.14), (0.86, 0.42)], s), fill=C["roof_hi"], width=max(1, ow - 1))
 
-    _draw_icon_base_plate(draw, s)
+    # Cottage body
+    d.rectangle(_B([0.22, 0.42, 0.78, 0.84], s), fill=C["wall"], outline=O, width=ow)
 
-    cx = s // 2
+    # Arched doorway
+    d.rectangle(_B([0.38, 0.56, 0.56, 0.84], s), fill=C["door"], outline=O, width=ow)
+    d.ellipse(_B([0.38, 0.48, 0.56, 0.62], s), fill=C["door"], outline=O, width=ow)
 
-    # Shoulder armor / tunic base
-    shoulders = [
-        (int(s * 0.18), int(s * 0.82)),
-        (int(s * 0.34), int(s * 0.62)),
-        (int(s * 0.66), int(s * 0.62)),
-        (int(s * 0.82), int(s * 0.82)),
-    ]
-    draw.polygon(shoulders, fill=(90, 75, 55), outline=(45, 35, 25))
-
-    # Norman conical helmet / kettle hat
-    # Brim
-    draw.ellipse([int(s * 0.24), int(s * 0.48), int(s * 0.76), int(s * 0.58)], fill=(150, 160, 172), outline=(65, 72, 82))
-    # Dome
-    dome = [
-        (int(s * 0.28), int(s * 0.52)),
-        (cx, int(s * 0.20)),
-        (int(s * 0.72), int(s * 0.52))
-    ]
-    draw.polygon(dome, fill=(175, 185, 198), outline=(65, 72, 82))
-    # Nasal guard
-    draw.rectangle([cx - int(s * 0.03), int(s * 0.50), cx + int(s * 0.03), int(s * 0.66)], fill=(120, 130, 142), outline=(55, 60, 70))
-
-    # Helmet specular crest
-    draw.line([(cx - 1, int(s * 0.24)), (cx - 1, int(s * 0.50))], fill=(240, 245, 255), width=max(2, int(s * 0.03)))
-
-    return canvas.resize((size, size), Image.Resampling.LANCZOS)
+    # Glass window
+    d.rectangle(_B([0.62, 0.52, 0.72, 0.64], s), fill=C["window"], outline=O, width=max(1, ow - 1))
 
 
-def generate_icon_idle(size: int = 48) -> Image.Image:
-    """Idle villager icon: Medieval warning bell with idle exclamation mark."""
-    scale = 4
-    s = size * scale
-    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
+def _glyph_idle(d, s, C, ow, O):
+    """Medieval town / church bell (yoke beam, bell body, clapper)."""
+    # Timber yoke / mounting bracket
+    d.rounded_rectangle(_B([0.32, 0.12, 0.68, 0.24], s), radius=_V(0.03, s),
+                        fill=C["wood"], outline=O, width=ow)
 
-    _draw_icon_base_plate(draw, s)
-
-    cx = s // 2
-    cy = int(s * 0.48)
-
-    # Bronze church / town bell
-    # Bell mount loop
-    draw.arc([cx - int(s * 0.07), cy - int(s * 0.28), cx + int(s * 0.07), cy - int(s * 0.14)], start=0, end=360, fill=(140, 105, 50), width=max(2, int(s * 0.04)))
+    # Clapper hanging below
+    d.line(_P([(0.50, 0.60), (0.50, 0.84)], s), fill=O, width=ow + 2)
+    d.ellipse(_B([0.44, 0.76, 0.56, 0.88], s), fill=C["bronze_hi"], outline=O, width=ow)
 
     # Bell body
-    bell_pts = [
-        (cx - int(s * 0.10), cy - int(s * 0.16)),
-        (cx + int(s * 0.10), cy - int(s * 0.16)),
-        (cx + int(s * 0.22), cy + int(s * 0.18)),
-        (cx - int(s * 0.22), cy + int(s * 0.18))
+    bell = [(0.38, 0.24), (0.62, 0.24), (0.76, 0.64), (0.24, 0.64)]
+    d.polygon(_P(bell, s), fill=C["bronze"], outline=O, width=ow)
+
+    # Flared bell rim / lip
+    d.rounded_rectangle(_B([0.20, 0.62, 0.80, 0.72], s), radius=_V(0.03, s),
+                        fill=C["bronze"], outline=O, width=ow)
+    d.line(_P([(0.24, 0.64), (0.76, 0.64)], s), fill=C["bronze_hi"], width=max(2, ow - 1))
+
+    # Sound vibration rings
+    for side in (-1, 1):
+        cx = 0.50 + side * 0.38
+        d.arc(_B([cx - 0.08, 0.52, cx + 0.08, 0.72], s),
+              start=90 - side * 60, end=90 + side * 60, fill=C["bronze_hi"], width=max(1, ow - 1))
+
+
+# ---------------------------------------------------------------------------
+# Command icons (32x32 source)
+# ---------------------------------------------------------------------------
+
+def _glyph_stop(d, s, C, ow, O):
+    """Octagonal red stop heraldic shield with bold ivory X."""
+    pts = []
+    for i in range(8):
+        a = math.radians(22.5 + i * 45.0)
+        pts.append((0.50 + 0.42 * math.cos(a), 0.50 + 0.42 * math.sin(a)))
+    d.polygon(_P(pts, s), fill=C["fill"], outline=O, width=ow)
+
+    # Inner bevel highlight
+    inner_pts = []
+    for i in range(8):
+        a = math.radians(22.5 + i * 45.0)
+        inner_pts.append((0.50 + 0.36 * math.cos(a), 0.50 + 0.36 * math.sin(a)))
+    d.polygon(_P(inner_pts, s), outline=C["hi"], width=max(1, ow - 2))
+
+    # Bold diagonal cross (X)
+    d.line(_P([(0.30, 0.30), (0.70, 0.70)], s), fill=O, width=ow + 4)
+    d.line(_P([(0.70, 0.30), (0.30, 0.70)], s), fill=O, width=ow + 4)
+    d.line(_P([(0.30, 0.30), (0.70, 0.70)], s), fill=C["hi"], width=max(2, ow))
+    d.line(_P([(0.70, 0.30), (0.30, 0.70)], s), fill=C["hi"], width=max(2, ow))
+
+
+def _glyph_move(d, s, C, ow, O):
+    """Forward arrow / directional spearhead (upper-right 45 deg)."""
+    # Shaft
+    d.line(_P([(0.22, 0.78), (0.64, 0.36)], s), fill=O, width=ow + 5)
+    d.line(_P([(0.22, 0.78), (0.64, 0.36)], s), fill=C["fill"], width=max(3, ow + 1))
+    d.line(_P([(0.24, 0.76), (0.62, 0.38)], s), fill=C["hi"], width=max(1, ow - 1))
+
+    # Large arrowhead
+    head = [(0.50, 0.22), (0.86, 0.14), (0.78, 0.50), (0.66, 0.38)]
+    d.polygon(_P(head, s), fill=C["fill"], outline=O, width=ow)
+    d.line(_P([(0.66, 0.38), (0.84, 0.16)], s), fill=C["hi"], width=max(1, ow - 1))
+
+    # Fletching at tail
+    d.polygon(_P([(0.16, 0.84), (0.28, 0.84), (0.22, 0.72)], s), fill=C["fill"], outline=O, width=ow)
+    d.polygon(_P([(0.16, 0.84), (0.16, 0.72), (0.28, 0.78)], s), fill=C["fill"], outline=O, width=ow)
+
+
+def _glyph_attack(d, s, C, ow, O):
+    """Crossed broadswords (razor-sharp blades + gold crossguards)."""
+    for flip in (1, -1):
+        x0, y0 = (0.24, 0.76) if flip == 1 else (0.76, 0.76)
+        x1, y1 = (0.76, 0.24) if flip == 1 else (0.24, 0.24)
+        # Blade
+        d.line(_P([(x0, y0), (x1, y1)], s), fill=O, width=ow + 4)
+        d.line(_P([(x0, y0), (x1, y1)], s), fill=C["blade"], width=max(2, ow + 1))
+        d.line(_P([(x0, y0), (x1, y1)], s), fill=C["hi"], width=max(1, ow - 1))
+
+        # Crossguard
+        gx = (x0 * 2 + x1) / 3
+        gy = (y0 * 2 + y1) / 3
+        dx, dy = (0.10, -0.10) if flip == 1 else (0.10, 0.10)
+        d.line(_P([(gx - dx, gy - dy), (gx + dx, gy + dy)], s), fill=O, width=ow + 2)
+        d.line(_P([(gx - dx, gy - dy), (gx + dx, gy + dy)], s), fill=C["guard"], width=max(1, ow))
+
+        # Pommel
+        d.ellipse(_B([x0 - 0.05, y0 - 0.05, x0 + 0.05, y0 + 0.05], s),
+                  fill=C["guard"], outline=O, width=max(1, ow - 1))
+
+
+def _glyph_patrol(d, s, C, ow, O):
+    """Heraldic flags on a waypoint route with circular patrol arrows."""
+    # S-curve route path
+    pts = [(0.20, 0.78), (0.40, 0.52), (0.60, 0.52), (0.80, 0.26)]
+    d.line(_P(pts, s), fill=O, width=ow + 3)
+    d.line(_P(pts, s), fill=C["path"], width=max(2, ow))
+
+    # Start waypoint flag
+    d.line(_P([(0.20, 0.56), (0.20, 0.82)], s), fill=O, width=ow + 1)
+    d.polygon(_P([(0.20, 0.56), (0.38, 0.63), (0.20, 0.70)], s), fill=C["flag"], outline=O, width=ow)
+
+    # End waypoint flag
+    d.line(_P([(0.80, 0.08), (0.80, 0.34)], s), fill=O, width=ow + 1)
+    d.polygon(_P([(0.80, 0.08), (0.96, 0.15), (0.80, 0.22)], s), fill=C["flag"], outline=O, width=ow)
+
+
+def _glyph_hold(d, s, C, ow, O):
+    """Medieval heater/kite shield with steel umbo/boss (hold ground)."""
+    shield = [
+        (0.50, 0.10),
+        (0.82, 0.18),
+        (0.82, 0.54),
+        (0.50, 0.90),
+        (0.18, 0.54),
+        (0.18, 0.18),
     ]
-    draw.polygon(bell_pts, fill=(215, 168, 64), outline=(110, 80, 30))
+    d.polygon(_P(shield, s), fill=C["fill"], outline=O, width=ow)
 
-    # Flared lip
-    draw.ellipse([cx - int(s * 0.25), cy + int(s * 0.14), cx + int(s * 0.25), cy + int(s * 0.24)], fill=(235, 190, 85), outline=(110, 80, 30))
+    # Inner bevel rim
+    inner_shield = [
+        (0.50, 0.16),
+        (0.76, 0.22),
+        (0.76, 0.52),
+        (0.50, 0.82),
+        (0.24, 0.52),
+        (0.24, 0.22),
+    ]
+    d.polygon(_P(inner_shield, s), outline=C["hi"], width=max(1, ow - 1))
 
-    # Clapper
-    draw.ellipse([cx - int(s * 0.05), cy + int(s * 0.20), cx + int(s * 0.05), cy + int(s * 0.30)], fill=(75, 50, 20))
+    # Center bronze umbo/boss
+    d.ellipse(_B([0.40, 0.38, 0.60, 0.58], s), fill=C["boss"], outline=O, width=ow)
+    d.point((_V(0.48, s), _V(0.46, s)), fill=C["hi"])
 
-    # Zzz sleep indicator or alert badge in top-right
-    badge_x, badge_y = int(s * 0.72), int(s * 0.28)
-    draw.ellipse([badge_x - int(s * 0.12), badge_y - int(s * 0.12), badge_x + int(s * 0.12), badge_y + int(s * 0.12)], fill=(210, 48, 36), outline=(90, 18, 12))
-    # Exclamation mark inside badge
-    draw.line([(badge_x, badge_y - int(s * 0.07)), (badge_x, badge_y + int(s * 0.01))], fill=(255, 255, 240), width=max(2, int(s * 0.035)))
-    draw.point((badge_x, badge_y + int(s * 0.06)), fill=(255, 255, 240))
+    # Spine reinforcement
+    d.line(_P([(0.50, 0.12), (0.50, 0.38)], s), fill=C["hi"], width=max(1, ow - 1))
+    d.line(_P([(0.50, 0.58), (0.50, 0.86)], s), fill=C["hi"], width=max(1, ow - 1))
 
-    return canvas.resize((size, size), Image.Resampling.LANCZOS)
 
+def _glyph_stance(d, s, C, ow, O):
+    """Rank formation chevrons inside a battle shield."""
+    shield = [
+        (0.50, 0.10),
+        (0.84, 0.20),
+        (0.84, 0.54),
+        (0.50, 0.90),
+        (0.16, 0.54),
+        (0.16, 0.20),
+    ]
+    d.polygon(_P(shield, s), fill=C["fill"], outline=O, width=ow)
+
+    # Two stacked chevrons indicating tactical stance
+    for y_off in (-0.08, 0.12):
+        c_pts = [
+            (0.28, 0.44 + y_off),
+            (0.50, 0.28 + y_off),
+            (0.72, 0.44 + y_off),
+            (0.66, 0.48 + y_off),
+            (0.50, 0.36 + y_off),
+            (0.34, 0.48 + y_off),
+        ]
+        d.polygon(_P(c_pts, s), fill=C["chev"], outline=O, width=max(1, ow - 1))
+
+
+def _glyph_garrison(d, s, C, ow, O):
+    """Fortified keep tower with downward sheltering entrance arrow."""
+    # Tower battlements / roof
+    crenels = [
+        (0.22, 0.22), (0.34, 0.22), (0.34, 0.28),
+        (0.44, 0.28), (0.44, 0.22), (0.56, 0.22),
+        (0.56, 0.28), (0.66, 0.28), (0.66, 0.22),
+        (0.78, 0.22), (0.78, 0.36), (0.22, 0.36),
+    ]
+    d.polygon(_P(crenels, s), fill=C["wall"], outline=O, width=ow)
+
+    # Tower body
+    d.rectangle(_B([0.24, 0.36, 0.76, 0.86], s), fill=C["wall"], outline=O, width=ow)
+
+    # Dark portcullis / arched door
+    d.rectangle(_B([0.38, 0.58, 0.62, 0.86], s), fill=C["door"], outline=O, width=ow)
+    d.ellipse(_B([0.38, 0.50, 0.62, 0.66], s), fill=C["door"], outline=O, width=ow)
+
+    # Downward garrison arrow pointing into the door
+    arr = [
+        (0.44, 0.36), (0.56, 0.36), (0.56, 0.48),
+        (0.64, 0.48), (0.50, 0.62), (0.36, 0.48), (0.44, 0.48),
+    ]
+    d.polygon(_P(arr, s), fill=C["arrow"], outline=O, width=ow)
+
+
+def _glyph_repair(d, s, C, ow, O):
+    """Crossed mason's hammer and pick / chisel."""
+    # Hammer haft
+    d.line(_P([(0.24, 0.82), (0.72, 0.24)], s), fill=O, width=ow + 4)
+    d.line(_P([(0.24, 0.82), (0.72, 0.24)], s), fill=C["haft"], width=max(2, ow + 1))
+
+    # Hammer head (steel block)
+    d.rectangle(_B([0.60, 0.14, 0.86, 0.34], s), fill=C["head"], outline=O, width=ow)
+    d.line(_P([(0.62, 0.16), (0.84, 0.16)], s), fill=C["hi"], width=max(1, ow - 1))
+
+    # Chisel haft & blade (crossing the hammer)
+    d.line(_P([(0.76, 0.82), (0.28, 0.24)], s), fill=O, width=ow + 4)
+    d.line(_P([(0.76, 0.82), (0.28, 0.24)], s), fill=C["haft"], width=max(2, ow + 1))
+
+    # Chisel steel head
+    chisel_pts = [(0.22, 0.18), (0.34, 0.18), (0.30, 0.30), (0.24, 0.30)]
+    d.polygon(_P(chisel_pts, s), fill=C["head"], outline=O, width=ow)
+
+
+# ---------------------------------------------------------------------------
+# Minimap frame (thick stone fill, no pocket circles)
+# ---------------------------------------------------------------------------
 
 def generate_minimap_frame(size: int = 256) -> Image.Image:
-    """Generate ornamental medieval compass/stone style border for minimap widget."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    """256x256 chiseled-stone frame FILL with rounded bevels and cardinal
+    medallions. Transparent viewport in the center."""
+    w = h = size
+    margin = 10
+    band = 26
+    outer_radius = 16
+    inner_radius = 10
 
-    margin = 8
-    box = [margin, margin, size - 1 - margin, size - 1 - margin]
+    stone = _stone_texture(w, h, seed=2024, block=26)
+    alpha = np.full((h, w), 255, dtype=np.uint8)
+    img = Image.fromarray(np.dstack([stone, alpha]).astype(np.uint8), "RGBA")
 
-    # Outer aged masonry square frame
-    draw.rounded_rectangle(box, radius=12, fill=(26, 22, 18, 240), outline=STONE_DARK, width=4)
-    # Inner bronze ring inlay
-    draw.rounded_rectangle([box[0] + 4, box[1] + 4, box[2] - 4, box[3] - 4], radius=9, outline=BRONZE_MID, width=2)
-    draw.rounded_rectangle([box[0] + 7, box[1] + 7, box[2] - 7, box[3] - 7], radius=7, outline=(15, 12, 10, 255), width=2)
+    # Frame mask: outer rounded rect minus inner viewport rounded rect
+    mask = Image.new("L", (w, h), 0)
+    md = ImageDraw.Draw(mask)
+    md.rounded_rectangle([margin, margin, w - 1 - margin, h - 1 - margin],
+                         radius=outer_radius, fill=255)
+    vp = [margin + band, margin + band, w - 1 - margin - band, h - 1 - margin - band]
+    md.rounded_rectangle(vp, radius=inner_radius, fill=0)
+    img.putalpha(mask)
 
-    # 4 Corner bosses / compass rose brackets
-    corner_r = 14
-    for cx, cy in [
-        (margin + 6, margin + 6),
-        (size - margin - 7, margin + 6),
-        (margin + 6, size - margin - 7),
-        (size - margin - 7, size - margin - 7)
-    ]:
-        draw.ellipse([cx - corner_r, cy - corner_r, cx + corner_r, cy + corner_r], fill=BRONZE_DARK, outline=(20, 15, 10))
-        draw.ellipse([cx - corner_r + 3, cy - corner_r + 3, cx + corner_r - 3, cy + corner_r - 3], fill=BRONZE_MID, outline=BRONZE_LIGHT)
-        # Gem/rivet center
-        draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=BRONZE_HIGHLIGHT)
+    d = ImageDraw.Draw(img)
 
-    # Compass cardinal indicators (N, S, E, W marks on frame edges)
+    # Outer bevel: highlight top-left, shadow bottom-right
+    d.rounded_rectangle([margin, margin, w - 1 - margin, h - 1 - margin],
+                        radius=outer_radius, outline=_rgb("stone_hi"), width=3)
+    d.rounded_rectangle([margin + 2, margin + 2, w - 3 - margin, h - 3 - margin],
+                        radius=outer_radius - 2, outline=_rgb("stone_dark"), width=1)
+
+    # Inner bevel around the viewport
+    d.rounded_rectangle(vp, radius=inner_radius, outline=_rgb("stone_dark"), width=3)
+    d.rounded_rectangle([vp[0] + 2, vp[1] + 2, vp[2] - 2, vp[3] - 2],
+                        radius=inner_radius - 2, outline=_rgb("stone_hi"), width=1)
+
+    # Bronze bearing inlay inside the stone, hugging the viewport
+    d.rounded_rectangle([vp[0] - 5, vp[1] - 5, vp[2] + 5, vp[3] + 5],
+                        radius=inner_radius + 2, outline=_rgb("bronze_mid"), width=2)
+
     mid = size // 2
-    # North pointer
-    draw.polygon([(mid, margin - 2), (mid - 6, margin + 7), (mid + 6, margin + 7)], fill=BRONZE_HIGHLIGHT, outline=BRONZE_DARK)
-    # South pointer
-    draw.polygon([(mid, size - margin + 2), (mid - 6, size - margin - 7), (mid + 6, size - margin - 7)], fill=BRONZE_MID, outline=BRONZE_DARK)
-    # West pointer
-    draw.polygon([(margin - 2, mid), (margin + 7, mid - 6), (margin + 7, mid + 6)], fill=BRONZE_MID, outline=BRONZE_DARK)
-    # East pointer
-    draw.polygon([(size - margin + 2, mid), (size - margin - 7, mid - 6), (size - margin - 7, mid + 6)], fill=BRONZE_MID, outline=BRONZE_DARK)
+    # N/S/E/W bronze cardinal medallions (edge midpoints)
+    medallion_r = 9
+    for cx, cy in ((mid, margin + 3), (mid, size - margin - 4),
+                   (margin + 3, mid), (size - margin - 4, mid)):
+        d.ellipse([cx - medallion_r, cy - medallion_r, cx + medallion_r, cy + medallion_r],
+                  fill=_rgb("bronze_dark"), outline=_rgb("bronze_hi"), width=1)
+        d.ellipse([cx - medallion_r + 2, cy - medallion_r + 2,
+                   cx + medallion_r - 2, cy + medallion_r - 2],
+                  fill=_rgb("bronze_mid"))
+        d.ellipse([cx - 2, cy - 2, cx + 2, cy + 2], fill=_rgb("bronze_hi"))
 
-    # Punch out transparent center for minimap viewport (leaving clear space for Spring minimap rendering)
-    # Viewport region from margin+12 to size - margin - 13
-    vp = (margin + 10, margin + 10, size - margin - 11, size - margin - 11)
-    # Draw hollow cutout in RGBA
-    center_clear = Image.new("RGBA", (vp[2] - vp[0] + 1, vp[3] - vp[1] + 1), (0, 0, 0, 0))
-    img.paste(center_clear, (vp[0], vp[1]))
+    # Cardinal pointer triangles (N bright, others mid)
+    n_half = 6
+    d.polygon([(mid, margin - 2), (mid - n_half, margin + 6), (mid + n_half, margin + 6)],
+              fill=_rgb("bronze_hi"), outline=_rgb("bronze_dark"))
+    d.polygon([(mid, size - margin + 1), (mid - n_half, size - margin - 7),
+               (mid + n_half, size - margin - 7)],
+              fill=_rgb("bronze_mid"), outline=_rgb("bronze_dark"))
+    d.polygon([(margin - 2, mid), (margin + 6, mid - n_half), (margin + 6, mid + n_half)],
+              fill=_rgb("bronze_mid"), outline=_rgb("bronze_dark"))
+    d.polygon([(size - margin + 1, mid), (size - margin - 7, mid - n_half),
+               (size - margin - 7, mid + n_half)],
+              fill=_rgb("bronze_mid"), outline=_rgb("bronze_dark"))
 
     return img
+
+
+# ---------------------------------------------------------------------------
+# Registry / main
+# ---------------------------------------------------------------------------
+
+RESOURCE_ICONS = (
+    ("icon_food.png", _glyph_food, {
+        "wheat": _rgb("wheat"), "wheat_hi": _rgb("wheat_hi"),
+    }),
+    ("icon_wood.png", _glyph_wood, {
+        "bark": _rgb("wood_bark"), "wood": _rgb("wood_face"), "ring": _rgb("wood_ring"),
+        "haft": (150, 108, 60), "steel": _rgb("steel"), "steel_hi": _rgb("steel_hi"),
+    }),
+    ("icon_stone.png", _glyph_stone, {
+        "block": _rgb("stone_light"), "block_hi": _rgb("stone_hi"),
+    }),
+    ("icon_iron.png", _glyph_iron, {
+        "steel": _rgb("steel"), "iron": (70, 76, 82), "steel_hi": _rgb("steel_hi"),
+    }),
+    ("icon_pop.png", _glyph_pop, {
+        "roof": (156, 72, 38), "roof_hi": (212, 114, 76), "wall": _rgb("ivory"),
+        "door": (68, 40, 22), "window": (118, 152, 172),
+    }),
+    ("icon_idle.png", _glyph_idle, {
+        "wood": (96, 68, 42), "bronze": _rgb("bronze_light"), "bronze_hi": _rgb("bronze_hi"),
+    }),
+)
+
+COMMAND_ICONS = (
+    ("command_stop.png", _glyph_stop, {
+        "fill": _rgb("blood"), "hi": _rgb("ivory"),
+    }),
+    ("command_move.png", _glyph_move, {
+        "fill": _rgb("ivory"), "hi": _rgb("bronze_hi"),
+    }),
+    ("command_attack.png", _glyph_attack, {
+        "blade": _rgb("steel"), "guard": _rgb("bronze_mid"), "hi": _rgb("steel_hi"),
+    }),
+    ("command_patrol.png", _glyph_patrol, {
+        "path": _rgb("ivory"), "flag": _rgb("bronze_light"),
+    }),
+    ("command_hold.png", _glyph_hold, {
+        "fill": (118, 98, 72), "hi": _rgb("ivory"), "boss": _rgb("bronze_light"),
+    }),
+    ("command_stance.png", _glyph_stance, {
+        "fill": (118, 98, 72), "chev": _rgb("bronze_light"),
+    }),
+    ("command_garrison.png", _glyph_garrison, {
+        "wall": _rgb("stone_light"), "door": (40, 34, 28), "arrow": _rgb("bronze_light"),
+    }),
+    ("command_repair.png", _glyph_repair, {
+        "haft": (150, 108, 60), "head": _rgb("steel"), "hi": _rgb("steel_hi"),
+    }),
+)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out-dir", type=Path, default=OUT_DIR, help="Destination directory for textures")
-    parser.add_argument("--icon-size", type=int, default=48, help="Size of resource icons (px)")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR,
+                        help="Destination directory for textures")
+    parser.add_argument("--resource-size", type=int, default=64,
+                        help="Source size of resource icons (px)")
+    parser.add_argument("--command-size", type=int, default=32,
+                        help="Source size of command icons (px)")
     args = parser.parse_args()
 
     out_dir: Path = args.out_dir
     _ensure_dir(out_dir)
+    print(f"Generating UI textures into {out_dir} ...")
 
-    print(f"Generating UI textures into {out_dir}...")
+    emitted = []
 
-    # 1. Bar background
     bar = generate_bar_background(512, 64)
     bar.save(out_dir / "bar_background.png")
-    print("  -> bar_background.png (512x64)")
+    emitted.append(("bar_background.png", bar.size))
+    print(f"  -> bar_background.png {bar.size[0]}x{bar.size[1]}")
 
-    # 2. Panel border & frame corner
-    border = generate_panel_border(128)
-    border.save(out_dir / "panel_border.png")
-    print("  -> panel_border.png (128x128)")
+    panel = generate_panel_border(128)
+    panel.save(out_dir / "panel_border.png")
+    emitted.append(("panel_border.png", panel.size))
+    print(f"  -> panel_border.png {panel.size[0]}x{panel.size[1]}")
 
     corner = generate_frame_corner(64)
     corner.save(out_dir / "frame_corner.png")
-    print("  -> frame_corner.png (64x64)")
+    emitted.append(("frame_corner.png", corner.size))
+    print(f"  -> frame_corner.png {corner.size[0]}x{corner.size[1]}")
 
-    # 3. Resource & status icons
-    icon_gens = [
-        ("icon_food.png", generate_icon_food),
-        ("icon_wood.png", generate_icon_wood),
-        ("icon_stone.png", generate_icon_stone),
-        ("icon_iron.png", generate_icon_iron),
-        ("icon_pop.png", generate_icon_pop),
-        ("icon_idle.png", generate_icon_idle),
-    ]
+    for fname, glyph, colors in RESOURCE_ICONS:
+        img = _render_icon(args.resource_size, glyph, colors)
+        img.save(out_dir / fname)
+        emitted.append((fname, img.size))
+        print(f"  -> {fname} {img.size[0]}x{img.size[1]}")
 
-    for fname, gen in icon_gens:
-        ico = gen(args.icon_size)
-        ico.save(out_dir / fname)
-        print(f"  -> {fname} ({args.icon_size}x{args.icon_size})")
+    for fname, glyph, colors in COMMAND_ICONS:
+        img = _render_icon(args.command_size, glyph, colors)
+        img.save(out_dir / fname)
+        emitted.append((fname, img.size))
+        print(f"  -> {fname} {img.size[0]}x{img.size[1]}")
 
-    # 4. Minimap frame
     minimap = generate_minimap_frame(256)
     minimap.save(out_dir / "minimap_frame.png")
-    print("  -> minimap_frame.png (256x256)")
+    emitted.append(("minimap_frame.png", minimap.size))
+    print(f"  -> minimap_frame.png {minimap.size[0]}x{minimap.size[1]}")
 
-    print("UI texture generation complete!")
+    # Verification: every expected file exists on disk
+    missing = [fname for fname, _ in emitted if not (out_dir / fname).exists()]
+    if missing:
+        print(f"ERROR: missing output files: {missing}")
+        return 1
+
+    print(f"UI texture generation complete! {len(emitted)} files emitted.")
     return 0
 
 

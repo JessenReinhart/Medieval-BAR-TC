@@ -127,6 +127,31 @@ class TestBottomPanelWidget(unittest.TestCase):
         self.assertIn("drawMultiSelect", self.src)
         self.assertIn("getPortraitPath", self.src)
 
+    def test_command_button_icons_and_grid(self):
+        """AAA polish: command buttons use command_*.png icons in a grid."""
+        self.assertIn("COMMAND_BUTTONS", self.src)
+        self.assertIn("drawCommandGrid", self.src)
+        self.assertIn("bitmaps/ui/command_stop.png", self.src)
+        self.assertIn("bitmaps/ui/command_move.png", self.src)
+        self.assertIn("bitmaps/ui/command_attack.png", self.src)
+        self.assertIn("CMD_ICON_SIZE", self.src)
+
+    def test_prominent_health_bar_and_hp_overlay(self):
+        """AAA polish: health bar is wider/taller with HP numbers overlaid."""
+        self.assertIn("HEALTH_BAR_HEIGHT  = 14", self.src)
+        self.assertIn("HEALTH_BAR_WIDTH   = 180", self.src)
+        self.assertIn("math.floor(health)", self.src)
+        self.assertIn("math.floor(maxHP)", self.src)
+
+    def test_mouse_hover_state_tracking(self):
+        """AAA polish: mouse hover highlight on command buttons."""
+        self.assertIn("widget:MouseMove", self.src)
+        self.assertIn("COL_CMD_HOVER", self.src)
+
+    def test_panel_flush_geometry(self):
+        """AAA polish: panel height 150px centered at bottom."""
+        self.assertIn("PANEL_HEIGHT       = 150", self.src)
+
     def test_modoption_declared_in_modoptions_lua(self):
         src = MODOPTIONS_PATH.read_text(encoding="utf-8")
         self.assertIn('key = "medievalbottompanel"', src)
@@ -136,7 +161,7 @@ class TestBottomPanelWidget(unittest.TestCase):
 
 
 class TestMinimapWidget(unittest.TestCase):
-    """Specific contract tests for gui_medieval_minimap.lua."""
+    """Specific contract tests for gui_medieval_minimap.lua (AAA polish)."""
 
     def setUp(self):
         self.src = MINIMAP_PATH.read_text(encoding="utf-8")
@@ -161,6 +186,52 @@ class TestMinimapWidget(unittest.TestCase):
     def test_draws_minimap_frame(self):
         self.assertIn("widget:DrawScreen", self.src)
         self.assertIn("widget:Shutdown", self.src)
+
+    def test_textured_frame_rendering(self):
+        """Frame uses gl.Texture + gl.TexRect to blit the stone frame PNG."""
+        self.assertIn('FRAME_TEX', self.src)
+        self.assertIn('minimap_frame.png', self.src)
+        self.assertIn('glTexture(FRAME_TEX)', self.src)
+        self.assertIn('glTexRect(', self.src)
+        self.assertIn('glTexture(false)', self.src)
+
+    def test_corner_bracket_overlays(self):
+        """Corner brackets drawn at four outer frame corners."""
+        self.assertIn('CORNER_TEX', self.src)
+        self.assertIn('frame_corner.png', self.src)
+        self.assertIn('drawCornerBrackets', self.src)
+
+    def test_viewport_fog_tint(self):
+        """Inner viewport has a translucent fog-of-war tint, not pure black."""
+        self.assertIn('COL_FOG_TINT', self.src)
+        self.assertIn('drawViewportTint', self.src)
+        # Must draw a rect over the minimap area with alpha < 1
+        self.assertRegex(self.src, r'glRect\(mmX.*mmY.*mmW.*mmH\)')
+
+    def test_team_blips_with_halo(self):
+        """Unit blips drawn with owner-color halo ring + solid dot."""
+        self.assertIn('drawBlips', self.src)
+        self.assertIn('updateBlipCache', self.src)
+        self.assertIn('Spring.GetAllUnits', self.src)
+        self.assertIn('Spring.GetUnitPosition', self.src)
+        self.assertIn('Spring.GetTeamColor', self.src)
+        self.assertIn('BLIP_OUTER', self.src)
+        self.assertIn('BLIP_INNER', self.src)
+
+    def test_fallback_frame_when_no_texture(self):
+        """Graceful gl.Rect fallback when texture file is missing."""
+        self.assertIn('drawFallbackFrame', self.src)
+        # Fallback must draw cardinal pointers and corner bosses
+        self.assertIn('COL_BRONZE', self.src)
+
+    def test_geometry_reset_on_shutdown(self):
+        """Shutdown resets minimap to default engine position."""
+        self.assertRegex(self.src, r'minimap geometry 0 0 1 1')
+
+    def test_pure_unsynced_no_gg_writes(self):
+        """Widget must not write to GG (synced global table)."""
+        self.assertNotIn("GG.", self.src)
+        self.assertNotIn("GG[", self.src)
 
     def test_modoption_declared_in_modoptions_lua(self):
         src = MODOPTIONS_PATH.read_text(encoding="utf-8")

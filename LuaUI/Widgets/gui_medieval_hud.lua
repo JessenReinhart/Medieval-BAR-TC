@@ -3,6 +3,9 @@
 -- bronze/gold borders, resource icons for Food, Wood, Stone, Iron, Pop, and
 -- Idle Villagers, starvation alert, and a centered victory/defeat banner.
 --
+-- AAA-quality refactor: 54px bar, 30px icons, text labels with drop shadows
+-- and 1px dark outlines, vertical bronze divider notches between groups.
+--
 -- Reads ONLY team rules params published by gadget_medieval_hud.lua; the widget
 -- never touches a synced GG table. All text comes from the pure formatter in
 -- scripts/medieval_hud.lua so the on-screen strings match the pytest goldens.
@@ -30,16 +33,18 @@ if optionValue == false or optionValue == 0 or optionValue == "0" then return en
 local hud = VFS.Include("scripts/medieval_hud.lua")
 
 -- ---------------------------------------------------------------------------
--- Layout metrics — Age of Empires / 0 A.D. top bar
+-- Layout metrics — AAA top bar (taller, bolder)
 -- ---------------------------------------------------------------------------
-local FONT_SIZE = 12
+local FONT_SIZE = 14
 local BANNER_FONT_SIZE = 28
-local BAR_HEIGHT = 26
-local ICON_SIZE = 18
-local CELL_PAD = 12
-local ICON_GAP = 5
+local BAR_HEIGHT = 54
+local ICON_SIZE = 30
+local CELL_PAD = 16
+local ICON_GAP = 6
 local CHAR_WIDTH = FONT_SIZE * 0.6
-local BORDER_HEIGHT = 2
+local BORDER_HEIGHT = 3
+local DIVIDER_WIDTH = 2
+local DIVIDER_INSET = 8
 
 -- ---------------------------------------------------------------------------
 -- Color palette — matching 0 A.D. / AoE II DE specifications (docs/ui-specs.md)
@@ -55,7 +60,11 @@ local COL_WOOD_INSET = { 0.18, 0.14, 0.10, 0.40 }  -- parchment/wood midtone was
 local COL_BRONZE     = { 0.60, 0.46, 0.24, 0.85 }  -- antique bronze rim
 local COL_GOLD       = { 0.98, 0.82, 0.35, 0.40 }  -- gold inlay highlight
 local COL_SHADOW     = { 0.03, 0.02, 0.02, 0.90 }  -- bottom drop shadow groove
-local COL_DIVIDER    = { 0.40, 0.30, 0.16, 0.50 }  -- subtle vertical notch
+local COL_DIVIDER    = { 0.55, 0.40, 0.22, 0.75 }  -- vertical bronze notch
+
+-- Shadow offset for text drop shadows
+local SHADOW_DX = 1
+local SHADOW_DY = -1
 
 -- Color block fallbacks for icons when textures are absent
 local ICON_FALLBACK_COLORS = {
@@ -161,7 +170,7 @@ local function renderBackground(x1, y1, x2, y2)
     gl.Color(COL_WOOD_BG[1], COL_WOOD_BG[2], COL_WOOD_BG[3], COL_WOOD_BG[4])
     gl.Rect(x1, y1, x2, y2)
     gl.Color(COL_WOOD_INSET[1], COL_WOOD_INSET[2], COL_WOOD_INSET[3], COL_WOOD_INSET[4])
-    gl.Rect(x1, y1 + 2, x2, y2 - 2)
+    gl.Rect(x1, y1 + 3, x2, y2 - 3)
   end
 
   -- Subtle top gold inlay bead
@@ -171,8 +180,10 @@ local function renderBackground(x1, y1, x2, y2)
   -- Bottom bronze rim and shadow groove
   gl.Color(COL_BRONZE[1], COL_BRONZE[2], COL_BRONZE[3], COL_BRONZE[4])
   gl.Rect(x1, y1 - 1, x2, y1)
+  gl.Color(COL_BRONZE[1], COL_BRONZE[2], COL_BRONZE[3], COL_BRONZE[4])
+  gl.Rect(x1, y1 - 2, x2, y1 - 1)
   gl.Color(COL_SHADOW[1], COL_SHADOW[2], COL_SHADOW[3], COL_SHADOW[4])
-  gl.Rect(x1, y1 - BORDER_HEIGHT, x2, y1 - 1)
+  gl.Rect(x1, y1 - BORDER_HEIGHT, x2, y1 - 2)
 end
 
 local function renderIcon(iconKey, x, y, size, alpha)
@@ -182,15 +193,37 @@ local function renderIcon(iconKey, x, y, size, alpha)
     rawTexRectFn(x, y, x + size, y + size)
     rawTexFn(false)
   else
-    -- Fallback: framed color block
+    -- Fallback: framed color block (crisp, no textures)
     local col = ICON_FALLBACK_COLORS[iconKey] or COL_NEUTRAL
+    -- Outer dark frame
     gl.Color(COL_SHADOW[1], COL_SHADOW[2], COL_SHADOW[3], alpha * 0.8)
     gl.Rect(x - 1, y - 1, x + size + 1, y + size + 1)
+    -- Fill color
     gl.Color(col[1], col[2], col[3], alpha * 0.75)
     gl.Rect(x, y, x + size, y + size)
+    -- Highlight on lower half
     gl.Color(1, 1, 1, alpha * 0.25)
     gl.Rect(x + 1, y + math.floor(size * 0.5), x + size - 1, y + size - 1)
   end
+end
+
+local function renderDivider(x, y1, y2, alpha)
+  -- Vertical bronze notch with highlight edge
+  gl.Color(COL_SHADOW[1], COL_SHADOW[2], COL_SHADOW[3], (alpha or 1) * 0.6)
+  gl.Rect(x, y1 + DIVIDER_INSET, x + 1, y2 - DIVIDER_INSET)
+  gl.Color(COL_DIVIDER[1], COL_DIVIDER[2], COL_DIVIDER[3], (alpha or 1))
+  gl.Rect(x + 1, y1 + DIVIDER_INSET, x + DIVIDER_WIDTH, y2 - DIVIDER_INSET)
+  gl.Color(COL_GOLD[1], COL_GOLD[2], COL_GOLD[3], (alpha or 1) * 0.35)
+  gl.Rect(x + DIVIDER_WIDTH, y1 + DIVIDER_INSET, x + DIVIDER_WIDTH + 1, y2 - DIVIDER_INSET)
+end
+
+local function drawTextShadowed(text, x, y, fontSize, opts, color, alpha)
+  -- Drop shadow (dark, offset by 1px down-right)
+  gl.Color(0.02, 0.02, 0.02, alpha * 0.85)
+  gl.Text(text, x + SHADOW_DX, y + SHADOW_DY, fontSize, opts)
+  -- Main text
+  gl.Color(color[1], color[2], color[3], alpha)
+  gl.Text(text, x, y, fontSize, opts)
 end
 
 -- ---------------------------------------------------------------------------
@@ -216,18 +249,22 @@ function widget:DrawScreen()
     local blink = (math.floor((Spring.GetGameSeconds() or 0) * 2) % 2) == 0
     local a = blink and 0.9 or 0.3
     gl.Color(1, 0.15, 0.1, a)
-    gl.Rect(0, barBottom - 2, vsx, barBottom)
-    gl.Rect(0, barTop, vsx, barTop + 2)
-    gl.Rect(0, barBottom, 2, barTop)
-    gl.Rect(vsx - 2, barBottom, vsx, barTop)
+    gl.Rect(0, barBottom - 3, vsx, barBottom)
+    gl.Rect(0, barTop, vsx, barTop + 3)
+    gl.Rect(0, barBottom, 3, barTop)
+    gl.Rect(vsx - 3, barBottom, vsx, barTop)
   end
 
   -- Measure total content width to center items
   local totalWidth = CELL_PAD
-  for _, cell in ipairs(cells) do
+  for idx, cell in ipairs(cells) do
     local cellWidth = textWidth(cell.text) + CELL_PAD
     if cell.icon then
       cellWidth = cellWidth + ICON_SIZE + ICON_GAP
+    end
+    -- Add divider space before Pop group (i=5) and before alert (i=7)
+    if idx == 5 or idx == 7 then
+      cellWidth = cellWidth + DIVIDER_WIDTH + CELL_PAD
     end
     totalWidth = totalWidth + cellWidth
   end
@@ -237,10 +274,11 @@ function widget:DrawScreen()
   local iconY = barBottom + math.floor((BAR_HEIGHT - ICON_SIZE) / 2)
 
   for i, cell in ipairs(cells) do
-    -- Vertical divider notch between major sections (after resources and after pop/idle)
+    -- Vertical bronze divider notch between major sections
+    -- After resources (before Pop at i=5) and after Idle (before alert at i=7)
     if i == 5 or i == 7 then
-      gl.Color(COL_DIVIDER[1], COL_DIVIDER[2], COL_DIVIDER[3], cell.alpha or 0.5)
-      gl.Rect(cursor - math.floor(CELL_PAD / 2), barBottom + 4, cursor - math.floor(CELL_PAD / 2) + 1, barTop - 4)
+      renderDivider(cursor - math.floor(CELL_PAD / 2), barBottom, barTop, cell.alpha or 1)
+      cursor = cursor + DIVIDER_WIDTH + math.floor(CELL_PAD / 2)
     end
 
     -- Draw resource/pop/idle icon
@@ -249,10 +287,8 @@ function widget:DrawScreen()
       cursor = cursor + ICON_SIZE + ICON_GAP
     end
 
-    -- Draw text label
-    local c = cell.color
-    gl.Color(c[1], c[2], c[3], cell.alpha or 1)
-    gl.Text(cell.text, cursor, textY, FONT_SIZE, "o")
+    -- Draw text label with drop shadow for contrast
+    drawTextShadowed(cell.text, cursor, textY, FONT_SIZE, "o", cell.color, cell.alpha or 1)
     cursor = cursor + textWidth(cell.text) + CELL_PAD
   end
   gl.Color(1, 1, 1, 1)
@@ -266,24 +302,26 @@ function widget:DrawScreen()
   local banner = hud.victoryBanner(winner, myAllyTeamID, reason)
   if not banner then return end
 
-  local bannerWidth = textWidth(banner) * (BANNER_FONT_SIZE / FONT_SIZE) + 40
+  local bannerWidth = textWidth(banner) * (BANNER_FONT_SIZE / FONT_SIZE) + 60
   local bx = math.floor((vsx - bannerWidth) / 2)
   local by = math.floor(vsy * 0.5)
 
   -- Aged plaque frame with bronze border
-  gl.Color(COL_WOOD_BG[1], COL_WOOD_BG[2], COL_WOOD_BG[3], 0.88)
-  gl.Rect(bx, by - 14, bx + bannerWidth, by + BANNER_FONT_SIZE + 14)
+  gl.Color(COL_WOOD_BG[1], COL_WOOD_BG[2], COL_WOOD_BG[3], 0.92)
+  gl.Rect(bx, by - 18, bx + bannerWidth, by + BANNER_FONT_SIZE + 18)
   gl.Color(COL_BRONZE[1], COL_BRONZE[2], COL_BRONZE[3], 0.90)
-  gl.Rect(bx, by - 16, bx + bannerWidth, by - 14)
-  gl.Rect(bx, by + BANNER_FONT_SIZE + 14, bx + bannerWidth, by + BANNER_FONT_SIZE + 16)
-  gl.Rect(bx - 2, by - 16, bx, by + BANNER_FONT_SIZE + 16)
-  gl.Rect(bx + bannerWidth, by - 16, bx + bannerWidth + 2, by + BANNER_FONT_SIZE + 16)
+  gl.Rect(bx, by - 20, bx + bannerWidth, by - 18)
+  gl.Rect(bx, by + BANNER_FONT_SIZE + 18, bx + bannerWidth, by + BANNER_FONT_SIZE + 20)
+  gl.Rect(bx - 2, by - 20, bx, by + BANNER_FONT_SIZE + 20)
+  gl.Rect(bx + bannerWidth, by - 20, bx + bannerWidth + 2, by + BANNER_FONT_SIZE + 20)
 
+  -- Banner text with drop shadow
+  local bannerColor
   if string.find(banner, "^VICTORY") then
-    gl.Color(0.45, 0.95, 0.4, 1)
+    bannerColor = { 0.45, 0.95, 0.4 }
   else
-    gl.Color(0.95, 0.3, 0.25, 1)
+    bannerColor = { 0.95, 0.3, 0.25 }
   end
-  gl.Text(banner, bx + 20, by, BANNER_FONT_SIZE, "o")
+  drawTextShadowed(banner, bx + 30, by, BANNER_FONT_SIZE, "o", bannerColor, 1)
   gl.Color(1, 1, 1, 1)
 end
