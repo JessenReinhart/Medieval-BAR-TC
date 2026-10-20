@@ -36,6 +36,15 @@ include("fonts.lua")
 include("layout.lua")   -- contains a simple LayoutButtons()
 include("widgets.lua")  -- the widget handler
 
+-- Default to suppressing the engine's built-in command menu (0 A.D. / AoE style).
+-- The Medieval Bottom Panel widget manages command buttons on the bottom deck.
+if ConfigLayoutHandler then
+  local modOpts = Spring.GetModOptions and Spring.GetModOptions() or {}
+  if modOpts.medievalbottompanel ~= "0" and modOpts.medievalbottompanel ~= 0 and modOpts.medievalbottompanel ~= false then
+    ConfigLayoutHandler(false)
+  end
+end
+
 
 --------------------------------------------------------------------------------
 --

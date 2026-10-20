@@ -627,14 +627,21 @@ function widget:Initialize()
   vsx, vsy = Spring.GetViewGeometry and Spring.GetViewGeometry() or 1920, 1080
   -- Suppress the engine's default left-side command menu so our 0 A.D.-style
   -- bottom command grid is the sole command interface.
-  if ConfigLayoutHandler then
+  -- ConfigLayoutHandler is NOT global inside the widget sandbox; it is a
+  -- widgetHandler method (see engine LuaUI/widgets.lua). Fall back to the
+  -- global form for non-widgetHandler environments.
+  if widgetHandler and widgetHandler.ConfigLayoutHandler then
+    widgetHandler:ConfigLayoutHandler(false)
+  elseif ConfigLayoutHandler then
     ConfigLayoutHandler(false)
   end
 end
 
 function widget:Shutdown()
   -- Restore the engine's default command menu when this widget is removed.
-  if ConfigLayoutHandler then
+  if widgetHandler and widgetHandler.ConfigLayoutHandler then
+    widgetHandler:ConfigLayoutHandler(true)
+  elseif ConfigLayoutHandler then
     ConfigLayoutHandler(true)
   end
 end
