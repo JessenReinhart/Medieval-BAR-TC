@@ -347,6 +347,13 @@ class TestStartscriptGeneration(MenuBase):
         txt = self._gen(mapName="MyCustomMap")
         self.assertIn("MapName=MyCustomMap;", txt)
 
+    def test_procedural_map_resolves_to_installed_base_map(self):
+        """'Procedural Random Map' is a UI label; startscript must resolve to a real map archive."""
+        txt = self._gen(mapName="Procedural Random Map")
+        self.assertIn("MapName=Quicksilver Remake 1.24;", txt)
+        self.assertIn("medievalmapgenseed=", txt)
+        self.assertIn("medievalmapdensity=", txt)
+
     def test_ai_shortname_written(self):
         txt = self._gen(aiType="SkirmishAI")
         self.assertIn("ShortName=SkirmishAI;", txt)

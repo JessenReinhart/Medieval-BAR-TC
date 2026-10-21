@@ -350,6 +350,14 @@ function M.generateStartscript(config)
   local seed         = config.seed or 0
   local density      = config.density or "normal"
 
+  -- "Procedural Random Map" is a UI label, not a real map archive.  When
+  -- procedural mode is selected the engine still needs a real base terrain
+  -- map; the procedural generator gadget spawns resources on top of it.
+  if mapName == "Procedural Random Map" or procMap then
+    mapName = "Quicksilver Remake 1.24"
+    procMap = true
+  end
+
   -- Clamp values.
   numTeams = clamp(numTeams, 2, 4)
   numAI    = clamp(numAI, 1, 3)
