@@ -62,5 +62,6 @@
 		medievalbuildicons=1;
 		medievalbottompanel=1;
 		medievalminimap=1;
+		medievalmainmenu=1;
 	}
 }
