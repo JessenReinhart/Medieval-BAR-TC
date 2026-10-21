@@ -689,6 +689,9 @@ function widget:MousePress(mx, my, button)
 end
 
 function widget:DrawScreen()
+  -- Hide bottom panel when main menu is open
+  if WG and WG.medievalMainMenuOpen then return end
+
   local selected = getSelectedUnits()
   if not selected or #selected == 0 then return end
 

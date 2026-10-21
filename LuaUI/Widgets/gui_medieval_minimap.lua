@@ -283,6 +283,9 @@ function widget:ViewResize(viewSizeX, viewSizeY)
 end
 
 function widget:DrawScreen()
+  -- Hide minimap frame when main menu is open
+  if WG and WG.medievalMainMenuOpen then return end
+
   -- Frame extends beyond the minimap by FRAME_BORDER on each side
   local fx = mmX - FRAME_BORDER
   local fy = mmY - FRAME_BORDER

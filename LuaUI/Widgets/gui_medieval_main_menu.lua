@@ -28,6 +28,19 @@ if optionValue == false or optionValue == 0 or optionValue == "0" then return en
 local menuPolicy = VFS.Include("scripts/medieval_main_menu.lua")
 local menuState  = menuPolicy.newMenuState()
 
+local function syncMenuVisibility()
+  if WG then
+    WG.medievalMainMenuOpen = menuState.isOpen
+  end
+  if Spring and Spring.SendCommands then
+    if menuState.isOpen then
+      Spring.SendCommands("minimap min 1")
+    else
+      Spring.SendCommands("minimap min 0")
+    end
+  end
+end
+
 local vsx, vsy = 1280, 720
 if Spring.GetViewGeometry then
   vsx, vsy = Spring.GetViewGeometry()
@@ -142,6 +155,7 @@ local function drawMainView()
 
   drawButton(btnX, startY - 168, btnW, btnH, "RESUME MATCH", false, function()
     menuPolicy.toggleOpen(menuState)
+    syncMenuVisibility()
   end)
 
   drawButton(btnX, startY - 224, btnW, btnH, "EXIT TO DESKTOP", false, function()
@@ -448,6 +462,20 @@ end
 -- Callins
 --------------------------------------------------------------------------------
 
+function widget:Initialize()
+  syncMenuVisibility()
+end
+
+function widget:Shutdown()
+  -- Restore engine minimap and clear global flag on widget removal
+  if WG then
+    WG.medievalMainMenuOpen = false
+  end
+  if Spring and Spring.SendCommands then
+    Spring.SendCommands("minimap min 0")
+  end
+end
+
 function widget:ViewResize(newX, newY)
   vsx, vsy = newX, newY
 end
@@ -474,6 +502,7 @@ function widget:KeyPress(key, mods, isRepeat, label, unicode)
   -- Escape (key code 27) toggles the menu
   if key == 27 then
     menuPolicy.toggleOpen(menuState)
+    syncMenuVisibility()
     return true
   end
 

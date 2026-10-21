@@ -230,6 +230,9 @@ end
 -- Main draw callin
 -- ---------------------------------------------------------------------------
 function widget:DrawScreen()
+  -- Hide HUD when main menu is open
+  if WG and WG.medievalMainMenuOpen then return end
+
   local myAllyTeamID = Spring.GetMyAllyTeamID and Spring.GetMyAllyTeamID() or nil
   if not myAllyTeamID or myAllyTeamID < 0 then return end
   local teamID = (Spring.GetMyTeamID and Spring.GetMyTeamID()) or myAllyTeamID
