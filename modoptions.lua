@@ -124,4 +124,32 @@ return {
     type = "bool",
     def = false,
   },
+  {
+    key = "medievalmapgen",
+    name = "Procedural Resource Generator",
+    desc = "Spawn procedural resource nodes and fair starting clusters",
+    type = "bool",
+    def = false,
+  },
+  {
+    key = "medievalmapgenseed",
+    name = "Map Gen Seed",
+    desc = "Seed for procedural generation (0 = random)",
+    type = "number",
+    def = 0,
+    min = 0,
+    max = 9999999,
+  },
+  {
+    key = "medievalmapdensity",
+    name = "Resource Density",
+    desc = "Density of wilderness resource nodes",
+    type = "list",
+    def = "normal",
+    items = {
+      { key = "sparse", name = "Sparse", desc = "Fewer resource clusters" },
+      { key = "normal", name = "Normal", desc = "Standard resource density" },
+      { key = "dense",  name = "Dense",  desc = "More resource clusters" },
+    },
+  },
 }
