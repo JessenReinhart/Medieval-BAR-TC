@@ -111,6 +111,13 @@ return {
     def = true,
   },
   {
+    key = "medievalmainmenu",
+    name = "Medieval Main Menu",
+    desc = "Enable the in-game medieval main menu and skirmish launcher (toggled with Escape)",
+    type = "bool",
+    def = true,
+  },
+  {
     key = "medievalanimprobe",
     name = "Death Animation Probe",
     desc = "Headless test hook: spawn and kill one unit per articulated script to verify the baked death clip",
