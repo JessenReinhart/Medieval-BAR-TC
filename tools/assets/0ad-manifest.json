@@ -400,9 +400,9 @@
       "bytes": 2490,
       "sha256": "e702d20d80811cdaf4e3ea487aa9fdd98ecbb165e6dd7fb761352cd364e53678"
     },
-    "art/actors/flora/trees/oak.xml": {
-      "bytes": 1534,
-      "sha256": "a768c65fbb0084b81681cdd8c43cb05d6573de59e89e75e06d61d97884ec02d3"
+    "art/actors/flora/trees/fir_tree.xml": {
+      "bytes": 7007,
+      "sha256": "d9849c4a968f2d9bc3c711a0be47d1308f575cd4e57a2f471c1a8ea40a040e6b"
     },
     "art/actors/geology/metalmine_granite_temperate.xml": {
       "bytes": 1679,
@@ -484,9 +484,9 @@
       "bytes": 965,
       "sha256": "28c4b81f33a886054802a428778ff2647eb159872e3276ce91e79a891c18347a"
     },
-    "art/meshes/gaia/oak_tree_a.dae.cached.pmd": {
-      "bytes": 70701,
-      "sha256": "fb2b70d8de7349f08086b93e25638d0edea13ff33726c0e5d9056b8e05b686bb"
+    "art/meshes/gaia/fir_tree_tall_1.dae.cached.pmd": {
+      "bytes": 71141,
+      "sha256": "499be141d3b2ee03a37c1d843b104ef329d2f05f358ed2101f42ed769ea0fec4"
     },
     "art/meshes/gaia/stonemine_granite_a.dae.cached.pmd": {
       "bytes": 3881,
@@ -572,13 +572,13 @@
       "bytes": 22000,
       "sha256": "7d967e6fa30f50d7687c50bda56fd226aaf9c44ed879184d5a2b4cba56187135"
     },
-    "art/textures/skins/gaia/oak_tree_a.png.cached.dds": {
-      "bytes": 87536,
-      "sha256": "5add7bcb0b43c75c1f006e7bf04f601b55a722b36791afce4b3931725b0bb2cd"
-    },
     "art/textures/skins/gaia/temp_stone.png.cached.dds": {
       "bytes": 349680,
       "sha256": "bb2ad9af422db05b346a67423f0f226a3f03cc4d443c8665add2055308dd00a2"
+    },
+    "art/textures/skins/gaia/tree_fir_tall_1.png.cached.dds": {
+      "bytes": 87536,
+      "sha256": "beff3cbbb7bf021d87980e2a0a0b68bc73979dc9d722e7540eb4295d8ef6dbf9"
     },
     "art/textures/skins/skeletal/animal_deer_01.png.cached.dds": {
       "bytes": 22000,
@@ -740,24 +740,24 @@
       "vertices": 336
     },
     "medieval_tree": {
-      "actor": "art/actors/flora/trees/oak.xml",
+      "actor": "art/actors/flora/trees/fir_tree.xml",
       "bones_ignored": 0,
       "bounds": {
         "x": [
-          -96.261,
-          81.461
+          -30.673,
+          34.964
         ],
         "y": [
-          -2.057,
-          158.152
+          -1.836,
+          139.332
         ],
         "z": [
-          -81.056,
-          94.389
+          -31.395,
+          31.4
         ]
       },
-      "faces": 436,
-      "mesh": "art/meshes/gaia/oak_tree_a.dae.cached.pmd",
+      "faces": 440,
+      "mesh": "art/meshes/gaia/fir_tree_tall_1.dae.cached.pmd",
       "obj": "objects3d/0ad/medieval_tree.obj",
       "pieces": [
         "base"
@@ -765,8 +765,8 @@
       "props_ignored": 0,
       "props_resolved": 0,
       "tex1": "0ad/medieval_tree.dds",
-      "texture": "art/textures/skins/gaia/oak_tree_a.png.cached.dds",
-      "vertices": 1308
+      "texture": "art/textures/skins/gaia/tree_fir_tall_1.png.cached.dds",
+      "vertices": 1316
     }
   },
   "source": "0 A.D. alpha 28 public.zip",

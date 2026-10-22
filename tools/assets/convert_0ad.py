@@ -138,9 +138,9 @@ BUILDINGS = {
 # Resource nodes (gaia flora, geology, fauna)
 RESOURCES = {
     "medieval_tree": {
-        "actor": "art/actors/flora/trees/oak.xml",
-        "mesh": "gaia/oak_tree_a.dae",
-        "texture": "gaia/oak_tree_a.png",
+        "actor": "art/actors/flora/trees/fir_tree.xml",
+        "mesh": "gaia/fir_tree_tall_1.dae",
+        "texture": "gaia/tree_fir_tall_1.png",
     },
     "medieval_stone": {
         "actor": "art/actors/geology/stonemine_granite.xml",
