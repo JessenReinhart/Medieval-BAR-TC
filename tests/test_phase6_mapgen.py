@@ -515,6 +515,42 @@ class TestMapgenGadgetContract(unittest.TestCase):
         self.assertIn("Spring.SetGameRulesParam(", self.src)
         self.assertIn("medieval_mapgen_features", self.src)
 
+    def test_anchored_metal_spots_integration(self):
+        self.assertIn("collectMetalSpots", self.src)
+        self.assertIn("Spring.GetMetalMapSize", self.src)
+        self.assertIn("Spring.GetMetalAmount", self.src)
+
+
+class TestMapgenAnchoredMines(MapgenBase):
+    """Metal-spot anchored mine placement."""
+
+    def test_anchored_metal_spots_receive_veins(self):
+        spots = self.lua.table()
+        spots[1] = self.lua.table(x=2000, z=2000)
+        spots[2] = self.lua.table(x=5000, z=5000)
+        starts = self._make_starts([(1800, 2400)])
+        opts = self.lua.table(
+            mapSizeX=8192,
+            mapSizeZ=8192,
+            seed=42,
+            density="normal",
+            startPositions=starts,
+            metalSpots=spots,
+        )
+        res = _lua_to_py(self.lua, self.m.generate(opts))
+        features = res["features"]
+        # Both iron and stone must be placed
+        names = {f["name"] for f in features}
+        self.assertIn("medieval_iron", names)
+        self.assertIn("medieval_stone", names)
+        self.assertIn("medieval_tree", names)
+
+        # Check that nodes spawned close to the anchor coordinates (within spot jitter ~40-60)
+        near_spot_1 = [f for f in features if math.hypot(f["x"] - 2000, f["z"] - 2000) < 80]
+        near_spot_2 = [f for f in features if math.hypot(f["x"] - 5000, f["z"] - 5000) < 80]
+        self.assertGreater(len(near_spot_1), 0)
+        self.assertGreater(len(near_spot_2), 0)
+
 
 # ---------------------------------------------------------------------------
 # 8. Modoptions

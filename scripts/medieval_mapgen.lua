@@ -173,12 +173,60 @@ local function placeStartPockets(rng, startPositions, sizeX, sizeZ, placed)
 end
 
 ---------------------------------------------------------------------------
+-- Metal-spot mine placement (map-authored resource spots)
+---------------------------------------------------------------------------
+
+-- When the gadget supplies metal-spot anchors read from the map's metal map,
+-- the mines are placed on those anchored positions instead of being sprayed
+-- randomly. Each anchor receives a 2-3 node vein; veins alternate stone/iron
+-- so the map's natural ore fields spread both strategic minerals.
+local SPOT_VEIN_MIN = 2
+local SPOT_VEIN_MAX = 3
+local SPOT_JITTER  = 40
+
+local function placeSpotMines(rng, spots, startPositions, sizeX, sizeZ, placed)
+  if type(spots) ~= "table" then return end
+  for i = 1, #spots do
+    local spot = spots[i]
+    if type(spot) == "table" and type(spot.x) == "number" and type(spot.z) == "number" then
+      -- Alternate the mined mineral across spots; index 1 starts with iron.
+      local name = (i % 2 == 1) and "medieval_iron" or "medieval_stone"
+      local count = rng.randomInt(SPOT_VEIN_MIN, SPOT_VEIN_MAX)
+      for _ = 1, count do
+        local tries = 0
+        local ok = false
+        while tries < 20 and not ok do
+          tries = tries + 1
+          local angle  = rng.random() * 2 * pi
+          local radius = rng.random() * SPOT_JITTER
+          local fx = floor(spot.x + cos(angle) * radius + 0.5)
+          local fz = floor(spot.z + sin(angle) * radius + 0.5)
+          if inBounds(fx, fz, sizeX, sizeZ)
+             and not inExclusionZone(fx, fz, startPositions)
+             and not tooClose(fx, fz, name, placed) then
+            placed[#placed + 1] = {
+              name = name,
+              x = fx,
+              z = fz,
+              heading = rng.random() * 2 * pi,
+            }
+            ok = true
+          end
+        end
+      end
+    end
+  end
+end
+
+---------------------------------------------------------------------------
 -- Wilderness cluster placement
 ---------------------------------------------------------------------------
 
 -- Cluster templates: { name, clusterMin, clusterMax, jitter }
 -- Balance pass: trees are the abundant baseline; stone forms small outcrops;
 -- iron is scarce and only appears in 1-3 node veins; deer roam in scattered herds.
+-- The stone/iron wilderness templates only run in legacy mode (no metal-spot
+-- anchors): when real map ore spots exist they are replaced by placeSpotMines.
 local WILDERNESS_TEMPLATES = {
   { name = "medieval_tree",  clusterMin = 8,  clusterMax = 16, jitter = 40 },
   { name = "medieval_stone", clusterMin = 2,  clusterMax = 4,  jitter = 46 },
@@ -196,41 +244,44 @@ local CLUSTERS_PER_4096 = {
   medieval_deer  = 6,
 }
 
-local function placeWilderness(rng, startPositions, sizeX, sizeZ, densityScale, placed)
+local function placeWilderness(rng, startPositions, sizeX, sizeZ, densityScale, placed, hasAnchoredMines)
   local areaRatio = (sizeX * sizeZ) / (4096 * 4096)
 
   for _, tmpl in ipairs(WILDERNESS_TEMPLATES) do
-    local baseCount = CLUSTERS_PER_4096[tmpl.name] or 6
-    local numClusters = floor(baseCount * areaRatio * densityScale + 0.5)
-    if numClusters < 1 then numClusters = 1 end
+    -- Skip generic stone/iron scattering when spots are already anchored
+    if not (hasAnchoredMines and (tmpl.name == "medieval_stone" or tmpl.name == "medieval_iron")) then
+      local baseCount = CLUSTERS_PER_4096[tmpl.name] or 6
+      local numClusters = floor(baseCount * areaRatio * densityScale + 0.5)
+      if numClusters < 1 then numClusters = 1 end
 
-    for _ = 1, numClusters do
-      -- Pick a cluster center.
-      local cx = EDGE_MARGIN + rng.random() * (sizeX - 2 * EDGE_MARGIN)
-      local cz = EDGE_MARGIN + rng.random() * (sizeZ - 2 * EDGE_MARGIN)
-      cx = floor(cx + 0.5)
-      cz = floor(cz + 0.5)
+      for _ = 1, numClusters do
+        -- Pick a cluster center.
+        local cx = EDGE_MARGIN + rng.random() * (sizeX - 2 * EDGE_MARGIN)
+        local cz = EDGE_MARGIN + rng.random() * (sizeZ - 2 * EDGE_MARGIN)
+        cx = floor(cx + 0.5)
+        cz = floor(cz + 0.5)
 
-      -- Skip cluster if center is in an exclusion zone.
-      if not inExclusionZone(cx, cz, startPositions) then
-        local count = rng.randomInt(tmpl.clusterMin, tmpl.clusterMax)
-        for _ = 1, count do
-          local tries = 0
-          local ok = false
-          while tries < 20 and not ok do
-            tries = tries + 1
-            local angle  = rng.random() * 2 * pi
-            local radius = rng.random() * tmpl.jitter
-            local fx = cx + cos(angle) * radius
-            local fz = cz + sin(angle) * radius
-            fx = floor(fx + 0.5)
-            fz = floor(fz + 0.5)
-            if inBounds(fx, fz, sizeX, sizeZ)
-               and not inExclusionZone(fx, fz, startPositions)
-               and not tooClose(fx, fz, tmpl.name, placed) then
-              local heading = rng.random() * 2 * pi
-              placed[#placed + 1] = { name = tmpl.name, x = fx, z = fz, heading = heading }
-              ok = true
+        -- Skip cluster if center is in an exclusion zone.
+        if not inExclusionZone(cx, cz, startPositions) then
+          local count = rng.randomInt(tmpl.clusterMin, tmpl.clusterMax)
+          for _ = 1, count do
+            local tries = 0
+            local ok = false
+            while tries < 20 and not ok do
+              tries = tries + 1
+              local angle  = rng.random() * 2 * pi
+              local radius = rng.random() * tmpl.jitter
+              local fx = cx + cos(angle) * radius
+              local fz = cz + sin(angle) * radius
+              fx = floor(fx + 0.5)
+              fz = floor(fz + 0.5)
+              if inBounds(fx, fz, sizeX, sizeZ)
+                 and not inExclusionZone(fx, fz, startPositions)
+                 and not tooClose(fx, fz, tmpl.name, placed) then
+                local heading = rng.random() * 2 * pi
+                placed[#placed + 1] = { name = tmpl.name, x = fx, z = fz, heading = heading }
+                ok = true
+              end
             end
           end
         end
@@ -264,6 +315,16 @@ function M.generate(opts)
     end
   end
 
+  local metalSpots = {}
+  if type(opts.metalSpots) == "table" then
+    for i = 1, #opts.metalSpots do
+      local s = opts.metalSpots[i]
+      if type(s) == "table" and type(s.x) == "number" and type(s.z) == "number" then
+        metalSpots[#metalSpots + 1] = { x = s.x, z = s.z }
+      end
+    end
+  end
+
   local rng = M.newRNG(seed)
   local densityScale = M.DENSITY_SCALES[density]
 
@@ -272,8 +333,14 @@ function M.generate(opts)
   -- Phase 1: start pockets.
   local startPockets = placeStartPockets(rng, startPositions, mapSizeX, mapSizeZ, placed)
 
-  -- Phase 2: wilderness clusters.
-  placeWilderness(rng, startPositions, mapSizeX, mapSizeZ, densityScale, placed)
+  -- Phase 2: metal-spot anchored mines (stone and iron on map spots).
+  local hasAnchoredMines = #metalSpots > 0
+  if hasAnchoredMines then
+    placeSpotMines(rng, metalSpots, startPositions, mapSizeX, mapSizeZ, placed)
+  end
+
+  -- Phase 3: wilderness clusters (trees and deer; and legacy mines if unanchored).
+  placeWilderness(rng, startPositions, mapSizeX, mapSizeZ, densityScale, placed, hasAnchoredMines)
 
   return {
     seed         = seed,
@@ -282,6 +349,7 @@ function M.generate(opts)
     density      = density,
     features     = placed,
     startPockets = startPockets,
+    metalSpots   = metalSpots,
   }
 end
 
