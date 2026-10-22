@@ -111,6 +111,13 @@ return {
     def = true,
   },
   {
+    key = "medievalunitrings",
+    name = "Medieval Unit Rings",
+    desc = "Team-colored ground rings under every unit to distinguish friendly and enemy forces",
+    type = "bool",
+    def = true,
+  },
+  {
     key = "medievalmainmenu",
     name = "Medieval Main Menu",
     desc = "Enable the in-game medieval main menu and skirmish launcher (toggled with Escape)",

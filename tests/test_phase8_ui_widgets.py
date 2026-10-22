@@ -170,6 +170,29 @@ class TestBottomPanelWidget(unittest.TestCase):
         self.assertIn("Spring.SetActiveCommand", self.src)
         self.assertIn("Spring.SelectUnitArray", self.src)
 
+    def test_single_click_selects_unit_under_cursor(self):
+        """Left-click hit-tests place 3D units and selects the clicked unit."""
+        self.assertIn('Spring.TraceScreenRay(mx, my, false, false)', self.src)
+        self.assertIn('hitType == "unit"', self.src)
+        self.assertIn("Spring.SelectUnitArray({ unitID })", self.src)
+        self.assertIn('if button ~= 1 then return false end', self.src)
+
+    def test_active_command_does_not_steal_targeting_click(self):
+        """Targeting commands (attack/move/repair) keep their click target."""
+        self.assertIn("Spring.GetActiveCommand", self.src)
+        self.assertIn("return false", self.src)
+
+    def test_shift_click_toggles_selection(self):
+        """Shift+click adds/removes from the current selection."""
+        self.assertIn("Spring.GetModKeyState", self.src)
+        self.assertIn("Spring.SelectUnitArray(nextSel)", self.src)
+
+    def test_panel_background_click_is_consumed(self):
+        """Clicks over the visible bottom deck never leak into the 3D world."""
+        self.assertIn("PANEL_HEIGHT", self.src)
+        self.assertIn("math.min(vsx * 0.7, 900)", self.src)
+        self.assertIn("return true", self.src)
+
     def test_command_catalog_includes_guard_and_wait(self):
         """Full 0 A.D. tactical command coverage."""
         self.assertIn("bitmaps/ui/command_guard.png", self.src)

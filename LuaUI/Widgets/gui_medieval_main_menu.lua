@@ -26,7 +26,12 @@ if optionValue == false or optionValue == 0 or optionValue == "0" then return en
 --------------------------------------------------------------------------------
 
 local menuPolicy = VFS.Include("scripts/medieval_main_menu.lua")
-local menuState  = menuPolicy.newMenuState()
+
+-- The menu is an in-game overlay toggled by Escape: never auto-open over a
+-- running match. Boots straight into a game (launch-game.ps1, lobby start,
+-- or a LAUNCH BATTLE reload) start closed so the player is immediately in
+-- the match, not staring at a "RESUME MATCH" overlay.
+local menuState = menuPolicy.newMenuState(false)
 
 local function syncMenuVisibility()
   if WG then
@@ -322,6 +327,11 @@ local function drawSkirmishView()
 
     local scriptText = menuPolicy.generateStartscript(menuState.skirmishConfig)
     launchStatusMessage = "Launching Skirmish Match..."
+
+    -- Close the overlay immediately so the launched battle is interactive,
+    -- and so the fresh widget instance (after reload) also starts closed.
+    menuState.isOpen = false
+    syncMenuVisibility()
 
     -- In engine: trigger reload or startscript execution
     if Spring and Spring.Reload then

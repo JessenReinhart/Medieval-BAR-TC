@@ -134,6 +134,12 @@ class TestMenuStateMachine(MenuBase):
         state = self._new_state()
         self.assertTrue(state.isOpen)
 
+    def test_explicit_isOpen_param(self):
+        state_open = self.m.newMenuState(True)
+        self.assertTrue(state_open.isOpen)
+        state_closed = self.m.newMenuState(False)
+        self.assertFalse(state_closed.isOpen)
+
     def test_setTab_skirmish(self):
         state = self._new_state()
         ok = self.m.setTab(state, "SKIRMISH")
@@ -347,6 +353,38 @@ class TestStartscriptGeneration(MenuBase):
         txt = self._gen(mapName="MyCustomMap")
         self.assertIn("MapName=MyCustomMap;", txt)
 
+    def test_team0_start_position_on_west_plain(self):
+        txt = self._gen()
+        # Team 0 (human) uses the verified west-valley start coordinate.
+        self.assertIn("StartPosX=1800;", txt)
+        # Match only the TEAM0 block's Z coordinate to avoid assuming TEAM1.
+        block = re.search(r"\[TEAM0\]\s*\{[^}]*\}", txt, re.S)
+        self.assertIsNotNone(block)
+        self.assertIn("StartPosZ=2400;", block.group(0))
+
+    def test_team1_start_position_on_east_plain(self):
+        txt = self._gen()
+        # Team 1 (enemy AI) is on the opposite east side, not a shared center line.
+        block = re.search(r"\[TEAM1\]\s*\{[^}]*\}", txt, re.S)
+        self.assertIsNotNone(block)
+        self.assertIn("StartPosX=4200;", block.group(0))
+        self.assertIn("StartPosZ=2400;", block.group(0))
+
+    def test_team0_and_team1_on_opposite_sides(self):
+        txt = self._gen()
+        t0 = re.search(r"\[TEAM0\]\s*\{[^}]*\}", txt, re.S).group(0)
+        t1 = re.search(r"\[TEAM1\]\s*\{[^}]*\}", txt, re.S).group(0)
+        x0 = int(re.search(r"StartPosX=(\d+);", t0).group(1))
+        x1 = int(re.search(r"StartPosX=(\d+);", t1).group(1))
+        self.assertLess(x0, x1)
+
+    def test_team_allyteam_mapping(self):
+        txt = self._gen()
+        t0 = re.search(r"\[TEAM0\]\s*\{[^}]*\}", txt, re.S).group(0)
+        t1 = re.search(r"\[TEAM1\]\s*\{[^}]*\}", txt, re.S).group(0)
+        self.assertIn("AllyTeam=0;", t0)
+        self.assertIn("AllyTeam=1;", t1)
+
     def test_procedural_map_resolves_to_installed_base_map(self):
         """'Procedural Random Map' is a UI label; startscript must resolve to a real map archive."""
         txt = self._gen(mapName="Procedural Random Map")
@@ -520,6 +558,11 @@ class TestMenuWidgetContract(unittest.TestCase):
 
     def test_gated_on_medievalmainmenu(self):
         self.assertIn("medievalmainmenu", self.src)
+
+    def test_menu_does_not_auto_open_on_boot(self):
+        # The overlay must start closed so a launched match is immediately
+        # playable; Escape toggles it open on demand.
+        self.assertIn("newMenuState(false)", self.src)
 
 
 # ===========================================================================

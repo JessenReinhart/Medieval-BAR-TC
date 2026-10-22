@@ -32,6 +32,21 @@ M.MAPS = {
   "Procedural Random Map",
 }
 
+--- Natural start positions (elmo coordinates) for known maps, in team order.
+--- Sourced from the tested, flat valley lane coordinates verified in
+--- tools/launch/startscript_play.txt and tools/launch/startscript.txt.
+--- Team 0 (human) sits on the west plain (x=1800, z=2400), Team 1 (enemy AI)
+--- on the east plain (x=4200, z=2400), with 3- and 4-team matches placed on the
+--- southern flat fields (z=4800).
+M.MAP_START_POSITIONS = {
+  ["Quicksilver Remake 1.24"] = {
+    { x = 1800, z = 2400 },  -- team 0: West valley (human player)
+    { x = 4200, z = 2400 },  -- team 1: East valley (enemy AI)
+    { x = 4200, z = 4800 },  -- team 2: SE lowland
+    { x = 3000, z = 4800 },  -- team 3: SW lowland
+  },
+}
+
 --- Available factions / civ names.
 M.FACTIONS = { "Britons", "Franks", "Saracens", "Norse" }
 
@@ -162,13 +177,20 @@ end
 -- ---------------------------------------------------------------------------
 
 --- Create a fresh menu state table.
+--- @param initialOpen boolean|nil  Optional starting open state. Defaults true
+---   (used by the title/menu-first path). Callers that boot straight into a
+---   running match pass false so the overlay never auto-opens over the game.
 --- @return table  Menu state with activeTab, skirmishConfig, settingsConfig, isOpen.
-function M.newMenuState()
+function M.newMenuState(initialOpen)
+  local isOpen = true
+  if initialOpen ~= nil then
+    isOpen = not not initialOpen
+  end
   return {
     activeTab      = "MAIN",
     skirmishConfig = shallowCopy(M.DEFAULT_CONFIG),
     settingsConfig = shallowCopy(M.DEFAULT_SETTINGS),
-    isOpen         = true,
+    isOpen         = isOpen,
   }
 end
 
@@ -367,16 +389,32 @@ function M.generateStartscript(config)
     numAI = numTeams - 1
   end
 
-  -- Start positions: spread evenly on a 8192x8192 default map grid.
-  local mapSize = 8192
-  local positions = {}
+  -- Start positions: prefer the map's natural team start positions when known,
+  -- so the human and enemy teams land on the map's designed opposite corners.
+  -- The previous routine spread everyone on a guessed 8192-elmo grid with every
+  -- team on z = 4096, which stranded the enemy on the wrong side of the map.
+  local naturalStarts = M.MAP_START_POSITIONS and M.MAP_START_POSITIONS[mapName]
   local totalSlots = numAI + 1  -- player + AIs
-  for i = 0, totalSlots - 1 do
-    local frac = (i + 0.5) / totalSlots
-    positions[i] = {
-      x = math.floor(mapSize * frac),
-      z = math.floor(mapSize * 0.5),
-    }
+  local positions = {}
+  if naturalStarts and #naturalStarts >= totalSlots then
+    for i = 0, totalSlots - 1 do
+      local sp = naturalStarts[i + 1]  -- Lua arrays are 1-indexed
+      positions[i] = {
+        x = math.floor(sp.x),
+        z = math.floor(sp.z),
+      }
+    end
+  else
+    -- Fallback for maps without a defined start table: spread teams evenly
+    -- across the width so no two teams share a spawn point.
+    local mapSize = 8192
+    for i = 0, totalSlots - 1 do
+      local frac = (i + 0.5) / totalSlots
+      positions[i] = {
+        x = math.floor(mapSize * frac),
+        z = math.floor(mapSize * 0.5),
+      }
+    end
   end
 
   -- ----- Header -----

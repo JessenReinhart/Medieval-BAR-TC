@@ -685,6 +685,86 @@ function widget:MousePress(mx, my, button)
     end
   end
 
+  -- Consume clicks inside the visible bottom panel bounds so they don't click into the 3D world behind it
+  local selected = getSelectedUnits()
+  if selected and #selected > 0 then
+    local panelW = math.min(vsx * 0.7, 900)
+    local panelH = PANEL_HEIGHT
+    local panelX = (vsx - panelW) * 0.5
+    local panelY = 0
+    if mx >= panelX and mx <= panelX + panelW and my >= panelY and my <= panelY + panelH then
+      return true
+    end
+  end
+
+  -- If an active targeting command is in progress (Attack, Move, Patrol, Repair, Garrison, Build),
+  -- do not intercept: let the engine use this click as the command target.
+  if Spring and Spring.GetActiveCommand then
+    local cmdIndex, cmdId = Spring.GetActiveCommand()
+    if cmdId and cmdId ~= 0 then
+      return false
+    end
+  end
+
+  -- Single-click unit selection in the 3D world:
+  -- Hit-test for unit under cursor so left-click directly selects that unit
+  -- without requiring a drag-selection box.
+  if Spring and Spring.TraceScreenRay then
+    local hitType, unitID = Spring.TraceScreenRay(mx, my, false, false)
+
+    if hitType == "unit" and unitID and (not Spring.ValidUnitID or Spring.ValidUnitID(unitID)) then
+      local isShift = false
+      if Spring.GetModKeyState then
+        local alt, ctrl, meta, shift = Spring.GetModKeyState()
+        isShift = not not shift
+      end
+
+      -- Check team ownership: friendly/allied units can always be selected
+      local myTeam = Spring.GetMyTeamID and Spring.GetMyTeamID()
+      local isFriendly = true
+      if myTeam and Spring.GetUnitTeam then
+        local uTeam = Spring.GetUnitTeam(unitID)
+        if uTeam and myTeam ~= uTeam and Spring.AreTeamsAllied then
+          isFriendly = Spring.AreTeamsAllied(myTeam, uTeam)
+        elseif uTeam and myTeam ~= uTeam then
+          isFriendly = false
+        end
+      end
+
+      if isFriendly then
+        if Spring.SelectUnitArray then
+          if isShift then
+            local currentSel = Spring.GetSelectedUnits and Spring.GetSelectedUnits() or {}
+            local nextSel = {}
+            local exists = false
+            for _, uid in ipairs(currentSel) do
+              if uid == unitID then
+                exists = true
+              else
+                nextSel[#nextSel + 1] = uid
+              end
+            end
+            if not exists then
+              nextSel[#nextSel + 1] = unitID
+            end
+            Spring.SelectUnitArray(nextSel)
+          else
+            Spring.SelectUnitArray({ unitID })
+          end
+        end
+        return true  -- consume the click
+      elseif not selected or #selected == 0 then
+        -- Enemy unit clicked with no units selected: select for inspection if engine allows
+        if Spring.SelectUnitArray then
+          Spring.SelectUnitArray({ unitID })
+        end
+        return true
+      end
+      -- If an enemy unit is clicked while player has units selected, return false so the engine
+      -- issues the default Attack command to that target.
+    end
+  end
+
   return false
 end
 
