@@ -17,7 +17,7 @@ Layers under test:
    - Each starting team receives a guaranteed resource pocket.
    - Every pocket contains home economy resources (tree, stone, deer).
    - Iron is wilderness-only so it stays scarce and concentrated.
-   - Resource counts match the M.START_POCKET specification (6 tree, 2 stone, 3 deer).
+   - Resource counts match the M.START_POCKET specification (8 tree, 2 stone, 3 deer).
 5. Density:
    - Total feature count scales strictly: sparse < normal < dense.
 6. Totality & Robustness:
@@ -52,7 +52,7 @@ MODOPTIONS_PATH = ROOT / "modoptions.lua"
 EDGE_MARGIN = 128
 START_EXCLUSION_RADIUS = 100
 MIN_DIST = {
-    "medieval_tree": 24,
+    "medieval_tree": 16,
     "medieval_stone": 36,
     "medieval_iron": 36,
     "medieval_deer": 30,
@@ -64,7 +64,7 @@ EXPECTED_FEATURES = {
     "DEER": "medieval_deer",
 }
 EXPECTED_POCKET_COUNTS = {
-    "medieval_tree": 6,
+    "medieval_tree": 8,
     "medieval_stone": 2,
     "medieval_deer": 3,
 }

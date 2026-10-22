@@ -22,17 +22,18 @@ M.FEATURES = {
 M.DENSITY_SCALES = { sparse = 0.6, normal = 1.0, dense = 1.6 }
 
 M.START_POCKET = {
-  -- Guaranteed home economy: 4-6 trees (150-350 elmos), 1-2 stone nodes,
+  -- Guaranteed home economy: 8 trees (150-350 elmos), 1-2 stone nodes,
   -- 1 deer herd (3 deer) for hunting food, and START_EXCLUSION_RADIUS (100)
   -- so nothing spawns on top of the Town Center. Iron is wilderness-only.
-  { name = "medieval_tree",  count =  6, minRadius = 150, maxRadius = 350 },
+  { name = "medieval_tree",  count =  8, minRadius = 150, maxRadius = 350 },
   { name = "medieval_stone", count =  2, minRadius = 180, maxRadius = 380 },
   { name = "medieval_deer",  count =  3, minRadius = 160, maxRadius = 360 },
 }
 
 -- Minimum distances between features by type to prevent mesh overlap.
+-- Tree spacing is 16 for denser jungle clumps.
 local MIN_DIST = {
-  medieval_tree  = 24,
+  medieval_tree  = 16,
   medieval_stone = 36,
   medieval_iron  = 36,
   medieval_deer  = 30,
@@ -223,22 +224,21 @@ end
 ---------------------------------------------------------------------------
 
 -- Cluster templates: { name, clusterMin, clusterMax, jitter }
--- Balance pass: trees are the abundant baseline; stone forms small outcrops;
--- iron is scarce and only appears in 1-3 node veins; deer roam in scattered herds.
+-- Balance pass: trees form dense jungle groves (16-32 trees per clump with tight 28-elmo jitter);
+-- stone forms small outcrops; iron is scarce (1-3 nodes); deer roam in scattered herds.
 -- The stone/iron wilderness templates only run in legacy mode (no metal-spot
 -- anchors): when real map ore spots exist they are replaced by placeSpotMines.
 local WILDERNESS_TEMPLATES = {
-  { name = "medieval_tree",  clusterMin = 8,  clusterMax = 16, jitter = 40 },
+  { name = "medieval_tree",  clusterMin = 18, clusterMax = 36, jitter = 32 },
   { name = "medieval_stone", clusterMin = 2,  clusterMax = 4,  jitter = 46 },
   { name = "medieval_iron",  clusterMin = 1,  clusterMax = 3,  jitter = 80 },
   { name = "medieval_deer",  clusterMin = 3,  clusterMax = 5,  jitter = 44 },
 }
 
 -- How many clusters per 4096×4096 at normal density, per type.
--- Tuned so a normal-density ~8192×8192 map keeps every harvestable type
--- present in healthy numbers while iron stays scarce and tree dominates.
+-- Tree cluster density increased to 28 so maps have abundant jungle clumps.
 local CLUSTERS_PER_4096 = {
-  medieval_tree  = 16,
+  medieval_tree  = 28,
   medieval_stone = 8,
   medieval_iron  = 3,
   medieval_deer  = 6,
