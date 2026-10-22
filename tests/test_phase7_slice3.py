@@ -29,7 +29,7 @@ import unittest
 
 from lupa import LuaRuntime
 
-from tools.assets.convert_0ad import BUILDINGS, MODELS, UNITS
+from tools.assets.convert_0ad import BUILDINGS, MODELS, RESOURCES, UNITS
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "tools/assets/0ad-manifest.json"
@@ -141,7 +141,7 @@ class TestConverterSources(unittest.TestCase):
                 self.assertEqual(MODELS[name]["actor"], actor)
 
     def test_models_union_covers_units_and_buildings(self):
-        self.assertEqual(set(MODELS), set(UNITS) | set(BUILDINGS))
+        self.assertEqual(set(MODELS), set(UNITS) | set(BUILDINGS) | set(RESOURCES))
 
     def test_no_two_dedicated_models_share_a_source_mesh(self):
         meshes = {name: MODELS[name]["mesh"] for name in DEDICATED}
@@ -163,7 +163,7 @@ class TestManifest(unittest.TestCase):
         self.assertGreater(self.manifest["transform"]["scale"], 0)
 
     def test_manifest_tracks_every_converted_model(self):
-        tracked = set(self.manifest["units"]) | set(self.manifest["buildings"])
+        tracked = set(self.manifest["units"]) | set(self.manifest["buildings"]) | set(self.manifest.get("resources", {}))
         self.assertEqual(tracked, set(MODELS))
 
     def test_buildings_group_covers_the_whole_roster(self):

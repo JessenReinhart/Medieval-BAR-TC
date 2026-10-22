@@ -396,6 +396,22 @@
       "bytes": 1426,
       "sha256": "ef98babd771c206032e005f3d440a1e610df409d9a9191f03e64deaa4abefbd9"
     },
+    "art/actors/fauna/deer.xml": {
+      "bytes": 2490,
+      "sha256": "e702d20d80811cdaf4e3ea487aa9fdd98ecbb165e6dd7fb761352cd364e53678"
+    },
+    "art/actors/flora/trees/oak.xml": {
+      "bytes": 1534,
+      "sha256": "a768c65fbb0084b81681cdd8c43cb05d6573de59e89e75e06d61d97884ec02d3"
+    },
+    "art/actors/geology/metalmine_granite_temperate.xml": {
+      "bytes": 1679,
+      "sha256": "b1cf46c322720d9b521cf7397832d4046d6751893b81db9d04bcffffbeafa7ef"
+    },
+    "art/actors/geology/stonemine_granite.xml": {
+      "bytes": 1097,
+      "sha256": "46f82adf2649893f8b4e42a3e19aaa3ceec013cc14dee4fa12e302326acfa5b7"
+    },
     "art/actors/structures/britons/barracks.xml": {
       "bytes": 1943,
       "sha256": "29f052d089077b2e5a4a653459195337eb257549aa0aa1654197cdfa47fcd69d"
@@ -468,6 +484,22 @@
       "bytes": 965,
       "sha256": "28c4b81f33a886054802a428778ff2647eb159872e3276ce91e79a891c18347a"
     },
+    "art/meshes/gaia/oak_tree_a.dae.cached.pmd": {
+      "bytes": 70701,
+      "sha256": "fb2b70d8de7349f08086b93e25638d0edea13ff33726c0e5d9056b8e05b686bb"
+    },
+    "art/meshes/gaia/stonemine_granite_a.dae.cached.pmd": {
+      "bytes": 3881,
+      "sha256": "468f0848e56deba6e7e2ac25ae636d95faaa3ce72401ce06d1a77fbce1a0ad11"
+    },
+    "art/meshes/gaia/temperate_stone_mine_a.dae.cached.pmd": {
+      "bytes": 18213,
+      "sha256": "25ada66e4426c37c53b17532b90d5fe576895429460b1e16696f01cca4ccfc3f"
+    },
+    "art/meshes/skeletal/deer_mesh.dae.cached.pmd": {
+      "bytes": 15184,
+      "sha256": "ee6611b5e1e761c9696f804a346f852f3783dd99973bd4eae2abbb0bb146ca08"
+    },
     "art/meshes/skeletal/horse_tessalian.dae.cached.pmd": {
       "bytes": 64594,
       "sha256": "3f37ec88960c0f876e34f594094c7e06bdb343f185d20e737c19040cef5829dd"
@@ -536,6 +568,22 @@
       "bytes": 54736,
       "sha256": "208df272006144592791085428529e6c1c6ac3901fee994850eb6b3245a4252c"
     },
+    "art/textures/skins/gaia/metal_temperate_granite.dds.cached.dds": {
+      "bytes": 22000,
+      "sha256": "7d967e6fa30f50d7687c50bda56fd226aaf9c44ed879184d5a2b4cba56187135"
+    },
+    "art/textures/skins/gaia/oak_tree_a.png.cached.dds": {
+      "bytes": 87536,
+      "sha256": "5add7bcb0b43c75c1f006e7bf04f601b55a722b36791afce4b3931725b0bb2cd"
+    },
+    "art/textures/skins/gaia/temp_stone.png.cached.dds": {
+      "bytes": 349680,
+      "sha256": "bb2ad9af422db05b346a67423f0f226a3f03cc4d443c8665add2055308dd00a2"
+    },
+    "art/textures/skins/skeletal/animal_deer_01.png.cached.dds": {
+      "bytes": 22000,
+      "sha256": "eaf1e37fd2f3e22e238bb29e48538544031423f0554f7f1be87a53324eaf8d8f"
+    },
     "art/textures/skins/skeletal/athen/linothorax_01_01.png.cached.dds": {
       "bytes": 87536,
       "sha256": "ebef664af5872aebfb10e91548751b68ab642704cd7fd14a386524589681a0c9"
@@ -583,6 +631,144 @@
     "https://github.com/0ad/0ad/blob/61a3b9507d974084e6badb88a0826bd89a6d5b8b/source/ps/FileIo.cpp"
   ],
   "license": "CC-BY-SA-3.0, Wildfire Games; see licenses/0ad-art.txt",
+  "resources": {
+    "medieval_deer": {
+      "actor": "art/actors/fauna/deer.xml",
+      "bones_ignored": 29,
+      "bounds": {
+        "x": [
+          -5.285,
+          5.251
+        ],
+        "y": [
+          0.06,
+          34.061
+        ],
+        "z": [
+          -16.553,
+          18.489
+        ]
+      },
+      "faces": 372,
+      "mesh": "art/meshes/skeletal/deer_mesh.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_deer.obj",
+      "pieces": [
+        "spine",
+        "spine1",
+        "chest",
+        "shoulder_l",
+        "forearm_l",
+        "hand_l",
+        "finger_l",
+        "shield",
+        "weapon_bow",
+        "ammo",
+        "neck",
+        "head",
+        "helmet",
+        "arm_r",
+        "forearm_r",
+        "hand_r",
+        "fingertip_r",
+        "weapon_r",
+        "projectile",
+        "cape2",
+        "deer_antlers"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 1,
+      "tex1": "0ad/medieval_deer.dds",
+      "texture": "art/textures/skins/skeletal/animal_deer_01.png.cached.dds",
+      "vertices": 421
+    },
+    "medieval_iron": {
+      "actor": "art/actors/geology/metalmine_granite_temperate.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -22.361,
+          22.361
+        ],
+        "y": [
+          -0.363,
+          19.056
+        ],
+        "z": [
+          -29.969,
+          31.912
+        ]
+      },
+      "faces": 46,
+      "mesh": "art/meshes/gaia/stonemine_granite_a.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_iron.obj",
+      "pieces": [
+        "base"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 0,
+      "tex1": "0ad/medieval_iron.dds",
+      "texture": "art/textures/skins/gaia/metal_temperate_granite.dds.cached.dds",
+      "vertices": 68
+    },
+    "medieval_stone": {
+      "actor": "art/actors/geology/stonemine_granite.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -29.969,
+          22.902
+        ],
+        "y": [
+          -6.074,
+          26.151
+        ],
+        "z": [
+          -22.108,
+          29.33
+        ]
+      },
+      "faces": 112,
+      "mesh": "art/meshes/gaia/temperate_stone_mine_a.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_stone.obj",
+      "pieces": [
+        "base"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 0,
+      "tex1": "0ad/medieval_stone.dds",
+      "texture": "art/textures/skins/gaia/temp_stone.png.cached.dds",
+      "vertices": 336
+    },
+    "medieval_tree": {
+      "actor": "art/actors/flora/trees/oak.xml",
+      "bones_ignored": 0,
+      "bounds": {
+        "x": [
+          -96.261,
+          81.461
+        ],
+        "y": [
+          -2.057,
+          158.152
+        ],
+        "z": [
+          -81.056,
+          94.389
+        ]
+      },
+      "faces": 436,
+      "mesh": "art/meshes/gaia/oak_tree_a.dae.cached.pmd",
+      "obj": "objects3d/0ad/medieval_tree.obj",
+      "pieces": [
+        "base"
+      ],
+      "props_ignored": 0,
+      "props_resolved": 0,
+      "tex1": "0ad/medieval_tree.dds",
+      "texture": "art/textures/skins/gaia/oak_tree_a.png.cached.dds",
+      "vertices": 1308
+    }
+  },
   "source": "0 A.D. alpha 28 public.zip",
   "transform": {
     "axes": "Y-up unchanged",

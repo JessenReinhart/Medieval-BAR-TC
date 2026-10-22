@@ -135,10 +135,37 @@ BUILDINGS = {
         "texture": "structural/brit_struct.png",
     },
 }
-MODELS = {**UNITS, **BUILDINGS}
-# Deterministic conversion order: units first, then buildings, both in declaration
+# Resource nodes (gaia flora, geology, fauna)
+RESOURCES = {
+    "medieval_tree": {
+        "actor": "art/actors/flora/trees/oak.xml",
+        "mesh": "gaia/oak_tree_a.dae",
+        "texture": "gaia/oak_tree_a.png",
+    },
+    "medieval_stone": {
+        "actor": "art/actors/geology/stonemine_granite.xml",
+        "mesh": "gaia/temperate_stone_mine_a.dae",
+        "texture": "gaia/temp_stone.png",
+    },
+    "medieval_iron": {
+        "actor": "art/actors/geology/metalmine_granite_temperate.xml",
+        "mesh": "gaia/stonemine_granite_a.dae",
+        "texture": "gaia/metal_temperate_granite.dds",
+    },
+    "medieval_deer": {
+        "actor": "art/actors/fauna/deer.xml",
+        "mesh": "skeletal/deer_mesh.dae",
+        "texture": "skeletal/animal_deer_01.png",
+    },
+}
+MODELS = {**UNITS, **BUILDINGS, **RESOURCES}
+# Deterministic conversion order: units first, then buildings, then resources, in declaration
 # order, so the manifest and the CLI report are stable across runs.
-_MODEL_ORDER = [(name, "unit") for name in UNITS] + [(name, "building") for name in BUILDINGS]
+_MODEL_ORDER = (
+    [(name, "unit") for name in UNITS]
+    + [(name, "building") for name in BUILDINGS]
+    + [(name, "resource") for name in RESOURCES]
+)
 # 0 A.D. PMD is Y-up, matches Recoil's unit-space up axis. 0 A.D. model
 # heights are ~3.85 (human) and ~5.55 (horse); 8 gives ~31 and ~44 units.
 SCALE = 8.0
@@ -968,7 +995,7 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
                       # 0 A.D. diffuses carry no team-color mask, so tex1 alpha is zeroed
                       # everywhere to stop Recoil rendering units as solid team color.
                       "texture_alpha": "texel alpha zeroed (DXT1 rewrapped as DXT5); RGB bytes preserved"},
-        "entries": {}, "units": {}, "buildings": {},
+        "entries": {}, "units": {}, "buildings": {}, "resources": {},
     }
     with zipfile.ZipFile(archive) as zf:
         def source(entry: str) -> bytes:
@@ -1018,7 +1045,8 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
             (output_meshes / (model + ".lua")).write_text(
                 f'return {{ tex1 = "0ad/{texture_name}" }}\n', encoding="utf-8", newline="\n")
             all_positions = [(-p[0], p[1], -p[2]) for piece in pieces for p in piece["positions"]]
-            manifest["units" if kind == "unit" else "buildings"][model] = {
+            target_group = "units" if kind == "unit" else ("buildings" if kind == "building" else "resources")
+            manifest[target_group][model] = {
                 "actor": actor_path, "mesh": mesh_path, "texture": texture_path,
                 "obj": obj_path.relative_to(root).as_posix(),
                 "tex1": f"0ad/{texture_name}",
@@ -1045,7 +1073,7 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args()
     result = build(args.archive, args.root)
-    for group in ("units", "buildings"):
+    for group in ("units", "buildings", "resources"):
         for name, model in result[group].items():
             print(f"{name}: {model['vertices']} vertices, {model['faces']} triangles; {model['obj']}")
     print("Manifest: tools/assets/0ad-manifest.json")

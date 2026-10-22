@@ -63,7 +63,9 @@ local function resolveSeed()
   if frame and frame > 0 then
     return frame
   end
-  return os.time() or math.floor(math.random() * 2147483647)
+  -- `os` is unavailable inside the synced Lua sandbox; use the engine's synced
+  -- RNG as the final fallback so every client derives the same seed.
+  return math.floor(math.random() * 2147483647)
 end
 
 -- ---------------------------------------------------------------------------
