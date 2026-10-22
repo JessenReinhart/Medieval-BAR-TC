@@ -1,0 +1,41 @@
+# Wavefront OBJ — original hand-authored placeholder geometry for Medieval-BAR-TC.
+# License: GPL-v2 / CC-BY-SA. Not converted from BAR or 0 A.D. assets.
+# Y-up, centered near origin. Low broad rock mound: two axis-rotated 45-degree boxes.
+mtllib ./medieval_stone.mtl
+o boulder_a
+v 0.0 0.0 6.0
+v 6.0 0.0 0.0
+v 0.0 0.0 -6.0
+v -6.0 0.0 0.0
+v 0.0 6.5 6.0
+v 6.0 6.5 0.0
+v 0.0 6.5 -6.0
+v -6.0 6.5 0.0
+o boulder_b
+v 0.0 2.5 4.0
+v 4.0 2.5 0.0
+v 0.0 2.5 -4.0
+v -4.0 2.5 0.0
+v 0.0 9.0 4.0
+v 4.0 9.0 0.0
+v 0.0 9.0 -4.0
+v -4.0 9.0 0.0
+vn 0.0 -1.0 0.0
+vn 0.0 1.0 0.0
+vn 0.0 0.0 -1.0
+vn 1.0 0.0 0.0
+vn 0.0 0.0 1.0
+vn -1.0 0.0 0.0
+usemtl medieval_stone
+f 5//2 8//2 7//2 6//2
+f 1//1 4//1 3//1 2//1
+f 1//3 5//3 6//3 2//3
+f 2//4 6//4 7//4 3//4
+f 3//5 7//5 8//5 4//5
+f 4//6 8//6 5//6 1//6
+f 13//2 16//2 15//2 14//2
+f 9//1 12//1 11//1 10//1
+f 9//3 13//3 14//3 10//3
+f 10//4 14//4 15//4 11//4
+f 11//5 15//5 16//5 12//5
+f 12//6 16//6 13//6 9//6

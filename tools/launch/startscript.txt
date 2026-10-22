@@ -52,5 +52,8 @@
 		medievaltest=1;
 		medievaltestcount=200;
 		debugcommands=1:forcestart|1200:quitforce;
+		medievalmapgen=1;
+		medievalmapgenseed=0;
+		medievalmapdensity=normal;
 	}
 }

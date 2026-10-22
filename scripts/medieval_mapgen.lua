@@ -22,10 +22,12 @@ M.FEATURES = {
 M.DENSITY_SCALES = { sparse = 0.6, normal = 1.0, dense = 1.6 }
 
 M.START_POCKET = {
-  { name = "medieval_tree",  count = 12, minRadius = 150, maxRadius = 350 },
-  { name = "medieval_stone", count =  4, minRadius = 180, maxRadius = 380 },
-  { name = "medieval_iron",  count =  3, minRadius = 220, maxRadius = 420 },
-  { name = "medieval_deer",  count =  4, minRadius = 160, maxRadius = 360 },
+  -- Guaranteed home economy: 4-6 trees (150-350 elmos), 1-2 stone nodes,
+  -- 1 deer herd (3 deer) for hunting food, and START_EXCLUSION_RADIUS (100)
+  -- so nothing spawns on top of the Town Center. Iron is wilderness-only.
+  { name = "medieval_tree",  count =  6, minRadius = 150, maxRadius = 350 },
+  { name = "medieval_stone", count =  2, minRadius = 180, maxRadius = 380 },
+  { name = "medieval_deer",  count =  3, minRadius = 160, maxRadius = 360 },
 }
 
 -- Minimum distances between features by type to prevent mesh overlap.
@@ -175,19 +177,23 @@ end
 ---------------------------------------------------------------------------
 
 -- Cluster templates: { name, clusterMin, clusterMax, jitter }
+-- Balance pass: trees are the abundant baseline; stone forms small outcrops;
+-- iron is scarce and only appears in 1-3 node veins; deer roam in scattered herds.
 local WILDERNESS_TEMPLATES = {
   { name = "medieval_tree",  clusterMin = 8,  clusterMax = 16, jitter = 40 },
-  { name = "medieval_stone", clusterMin = 3,  clusterMax = 6,  jitter = 50 },
-  { name = "medieval_iron",  clusterMin = 2,  clusterMax = 5,  jitter = 60 },
-  { name = "medieval_deer",  clusterMin = 3,  clusterMax = 5,  jitter = 45 },
+  { name = "medieval_stone", clusterMin = 2,  clusterMax = 4,  jitter = 46 },
+  { name = "medieval_iron",  clusterMin = 1,  clusterMax = 3,  jitter = 80 },
+  { name = "medieval_deer",  clusterMin = 3,  clusterMax = 5,  jitter = 44 },
 }
 
 -- How many clusters per 4096×4096 at normal density, per type.
+-- Tuned so a normal-density ~8192×8192 map keeps every harvestable type
+-- present in healthy numbers while iron stays scarce and tree dominates.
 local CLUSTERS_PER_4096 = {
-  medieval_tree  = 14,
-  medieval_stone = 6,
-  medieval_iron  = 4,
-  medieval_deer  = 5,
+  medieval_tree  = 16,
+  medieval_stone = 8,
+  medieval_iron  = 3,
+  medieval_deer  = 6,
 }
 
 local function placeWilderness(rng, startPositions, sizeX, sizeZ, densityScale, placed)

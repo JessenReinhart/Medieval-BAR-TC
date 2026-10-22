@@ -15,8 +15,9 @@ Layers under test:
    - All features of the same type satisfy MIN_DIST spacing to avoid mesh overlap.
 4. Fairness:
    - Each starting team receives a guaranteed resource pocket.
-   - Every pocket contains all 4 resource types (tree, stone, iron, deer).
-   - Resource counts match the M.START_POCKET specification (12 tree, 4 stone, 3 iron, 4 deer).
+   - Every pocket contains home economy resources (tree, stone, deer).
+   - Iron is wilderness-only so it stays scarce and concentrated.
+   - Resource counts match the M.START_POCKET specification (6 tree, 2 stone, 3 deer).
 5. Density:
    - Total feature count scales strictly: sparse < normal < dense.
 6. Totality & Robustness:
@@ -63,10 +64,9 @@ EXPECTED_FEATURES = {
     "DEER": "medieval_deer",
 }
 EXPECTED_POCKET_COUNTS = {
-    "medieval_tree": 12,
-    "medieval_stone": 4,
-    "medieval_iron": 3,
-    "medieval_deer": 4,
+    "medieval_tree": 6,
+    "medieval_stone": 2,
+    "medieval_deer": 3,
 }
 
 
@@ -256,7 +256,7 @@ class TestMapgenBoundsAndClearance(MapgenBase):
 
 
 class TestMapgenFairness(MapgenBase):
-    def test_each_start_gets_all_four_resources_and_exact_counts(self):
+    def test_each_start_gets_all_pocket_resources_and_exact_counts(self):
         start_pts = [(800, 800), (3200, 800), (2000, 3200)]
         starts = self._make_starts(start_pts)
 
@@ -272,7 +272,7 @@ class TestMapgenFairness(MapgenBase):
 
         self.assertEqual(len(pockets), len(start_pts))
 
-        expected_total_per_pocket = sum(EXPECTED_POCKET_COUNTS.values())  # 12 + 4 + 3 + 4 = 23
+        expected_total_per_pocket = sum(EXPECTED_POCKET_COUNTS.values())  # 6 + 2 + 3 = 11
 
         for i, pocket in enumerate(pockets):
             self.assertEqual(pocket["x"], start_pts[i][0])
@@ -285,7 +285,7 @@ class TestMapgenFairness(MapgenBase):
             for f in p_feats:
                 counts[f["name"]] = counts.get(f["name"], 0) + 1
 
-            # All 4 resources must exist in the pocket
+            # Home-economy resources must exist in the pocket (iron stays wilderness-only).
             for res_name, expected_count in EXPECTED_POCKET_COUNTS.items():
                 self.assertIn(res_name, counts, f"Pocket {i} missing resource {res_name}")
                 self.assertEqual(
@@ -293,6 +293,7 @@ class TestMapgenFairness(MapgenBase):
                     expected_count,
                     f"Pocket {i} resource {res_name} count mismatch",
                 )
+            self.assertNotIn("medieval_iron", counts, f"Pocket {i} should not contain iron")
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +332,64 @@ class TestMapgenDensity(MapgenBase):
 
 
 # ---------------------------------------------------------------------------
-# 6. Totality & Robustness
+# 6. Play-map balance (Quicksilver 8192x8192, real start positions)
+# ---------------------------------------------------------------------------
+
+
+class TestMapgenPlaymapBalance(MapgenBase):
+    """Phase-6 balance pass on the 8192x8192 Quicksilver play map."""
+
+    PLAY_STARTS = [(1800, 2400), (4200, 2400)]
+    SEED = 2026
+    POCKET_RADIUS = 400
+
+    def _generate(self, density="normal", seed=None, map_size=8192):
+        starts = self._make_starts(self.PLAY_STARTS)
+        opts = self.lua.table(
+            mapSizeX=map_size,
+            mapSizeZ=map_size,
+            seed=self.SEED if seed is None else seed,
+            density=density,
+            startPositions=starts,
+        )
+        return _lua_to_py(self.lua, self.m.generate(opts))
+
+    def test_all_four_resources_present_at_normal_density(self):
+        res = self._generate()
+        names = {f["name"] for f in res["features"]}
+        for expected in EXPECTED_FEATURES.values():
+            self.assertIn(expected, names, f"Missing {expected} at normal density on Quicksilver")
+
+    def test_deterministic_seed_reproduction_on_playmap(self):
+        first = self._generate()
+        second = self._generate()
+        self.assertEqual(first["seed"], second["seed"])
+        self.assertEqual(first["features"], second["features"])
+        self.assertEqual(first["startPockets"], second["startPockets"])
+
+    def test_each_start_has_home_wood_stone_and_deer_and_clear_build_spot(self):
+        res = self._generate()
+        for sx, sz in self.PLAY_STARTS:
+            near = [
+                f
+                for f in res["features"]
+                if math.hypot(f["x"] - sx, f["z"] - sz) <= self.POCKET_RADIUS
+            ]
+            names = {f["name"] for f in near}
+            self.assertIn("medieval_tree", names, f"Start ({sx},{sz}) lacks nearby wood")
+            self.assertIn("medieval_stone", names, f"Start ({sx},{sz}) lacks nearby stone")
+            self.assertIn("medieval_deer", names, f"Start ({sx},{sz}) lacks nearby deer")
+            for f in near:
+                dist = math.hypot(f["x"] - sx, f["z"] - sz)
+                self.assertGreaterEqual(
+                    dist,
+                    START_EXCLUSION_RADIUS,
+                    f"Feature {f['name']} at ({f['x']},{f['z']}) too close to start ({sx},{sz})",
+                )
+
+
+# ---------------------------------------------------------------------------
+# 7. Totality & Robustness
 # ---------------------------------------------------------------------------
 
 

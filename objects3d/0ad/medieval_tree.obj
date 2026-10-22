@@ -1,0 +1,45 @@
+# Wavefront OBJ — original hand-authored placeholder geometry for Medieval-BAR-TC.
+# License: GPL-v2 / CC-BY-SA. Not converted from BAR or 0 A.D. assets.
+# Y-up, centered near origin. Tall narrow tree: thin trunk + 8-sided canopy cone.
+mtllib ./medieval_tree.mtl
+o trunk
+v -1.0 0.0 -1.0
+v 1.0 0.0 -1.0
+v 1.0 0.0 1.0
+v -1.0 0.0 1.0
+v -1.0 6.0 -1.0
+v 1.0 6.0 -1.0
+v 1.0 6.0 1.0
+v -1.0 6.0 1.0
+o canopy
+v 0.0 6.0 3.5
+v 2.475 6.0 2.475
+v 3.5 6.0 0.0
+v 2.475 6.0 -2.475
+v 0.0 6.0 -3.5
+v -2.475 6.0 -2.475
+v -3.5 6.0 0.0
+v -2.475 6.0 2.475
+v 0.0 28.0 0.0
+vn 0.0 -1.0 0.0
+vn 0.0 1.0 0.0
+vn 0.0 0.0 -1.0
+vn 1.0 0.0 0.0
+vn 0.0 0.0 1.0
+vn -1.0 0.0 0.0
+usemtl medieval_tree
+f 5//2 8//2 7//2 6//2
+f 1//1 4//1 3//1 2//1
+f 1//3 5//3 6//3 2//3
+f 2//4 6//4 7//4 3//4
+f 3//5 7//5 8//5 4//5
+f 4//6 8//6 5//6 1//6
+f 9//2 10//2 17//2
+f 10//2 11//2 17//2
+f 11//2 12//2 17//2
+f 12//2 13//2 17//2
+f 13//2 14//2 17//2
+f 14//2 15//2 17//2
+f 15//2 16//2 17//2
+f 16//2 9//2 17//2
+f 9//1 16//1 15//1 14//1 13//1 12//1 11//1 10//1

@@ -1,0 +1,30 @@
+# Wavefront OBJ — original hand-authored placeholder geometry for Medieval-BAR-TC.
+# License: GPL-v2 / CC-BY-SA. Not converted from BAR or 0 A.D. assets.
+# Y-up, centered near origin. Tall angular mineral vein with sharp triangular ridges.
+mtllib ./medieval_iron.mtl
+o vein
+v -8.0 0.0 5.0
+v 8.0 0.0 5.0
+v 8.0 0.0 -5.0
+v -8.0 0.0 -5.0
+v 0.0 13.0 0.0
+v -3.0 8.0 3.0
+v 3.0 8.0 3.0
+v 3.0 8.0 -3.0
+v -3.0 8.0 -3.0
+vn 0.0 -1.0 0.0
+vn 0.0 0.0 1.0
+vn 1.0 0.0 0.0
+vn 0.0 0.0 -1.0
+vn -1.0 0.0 0.0
+vn 0.0 1.0 0.0
+usemtl medieval_iron
+f 1//1 4//1 3//1 2//1
+f 1//2 6//2 7//2 2//2
+f 2//3 7//3 8//3 3//3
+f 3//4 8//4 9//4 4//4
+f 1//5 4//5 9//5 6//5
+f 6//2 7//2 5//2
+f 7//3 8//3 5//3
+f 8//4 9//4 5//4
+f 9//5 6//5 5//5

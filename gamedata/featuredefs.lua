@@ -1,13 +1,13 @@
 return {
   medieval_tree = {
     description = "Harvestable timber stand",
+    object = "0ad/medieval_tree.obj",
     blocking = false,
     reclaimable = true,
     reclaimTime = 10,
     damage = 1000,
     footprintX = 2,
     footprintZ = 2,
-    object = "0ad/medieval_infantry.obj",
     customparams = { resource = "wood", capacity = 500 },
   },
   medieval_stone = {
@@ -18,7 +18,7 @@ return {
     damage = 1000,
     footprintX = 2,
     footprintZ = 2,
-    object = "0ad/medieval_infantry.obj",
+    object = "0ad/medieval_stone.obj",
     customparams = { resource = "stone", capacity = 400 },
   },
   medieval_iron = {
@@ -29,7 +29,7 @@ return {
     damage = 1000,
     footprintX = 2,
     footprintZ = 2,
-    object = "0ad/medieval_infantry.obj",
+    object = "0ad/medieval_iron.obj",
     customparams = { resource = "iron", capacity = 300 },
   },
   medieval_road = {
@@ -54,7 +54,7 @@ return {
     damage = 1000,
     footprintX = 2,
     footprintZ = 2,
-    object = "0ad/medieval_infantry.obj",
+    object = "0ad/medieval_deer.obj",
     customparams = { resource = "food", capacity = 250 },
   },
 }
