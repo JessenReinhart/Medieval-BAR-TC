@@ -56,6 +56,7 @@ local COL_BRONZE     = { 0.60, 0.46, 0.24, 1.00 }
 local COL_SHADOW     = { 0.00, 0.00, 0.00, 0.80 }
 local COL_QUEUE_BG   = { 0.14, 0.12, 0.10, 0.90 }
 local COL_QUEUE_BAR  = { 0.30, 0.60, 0.95, 1.00 }
+local COL_IDLE       = { 0.75, 0.85, 1.00, 1.00 }
 local COL_CMD_BG     = { 0.18, 0.14, 0.10, 0.92 }
 local COL_CMD_HOVER  = { 0.35, 0.28, 0.16, 0.80 }
 local COL_CMD_ACTIVE = { 0.50, 0.42, 0.22, 0.90 }
@@ -87,17 +88,17 @@ local _CMD = CMD or {
 
 local COMMAND_BUTTONS = {
   -- Row 1: core movement and combat
-  { id = _CMD.STOP,      label = "Stop",     tex = "bitmaps/ui/command_stop.png",    instant = true },
-  { id = _CMD.MOVE,      label = "Move",     tex = "bitmaps/ui/command_move.png"     },
-  { id = _CMD.ATTACK,    label = "Attack",   tex = "bitmaps/ui/command_attack.png"   },
-  { id = _CMD.PATROL,    label = "Patrol",   tex = "bitmaps/ui/command_patrol.png"   },
-  { id = _CMD.GUARD,     label = "Guard",    tex = "bitmaps/ui/command_guard.png"    },
+  { id = _CMD.STOP,      label = "Stop",     desc = "Halt and clear current order",     tex = "bitmaps/ui/command_stop.png",    instant = true },
+  { id = _CMD.MOVE,      label = "Move",     desc = "Move to a target location",         tex = "bitmaps/ui/command_move.png"     },
+  { id = _CMD.ATTACK,    label = "Attack",   desc = "Attack a selected target",          tex = "bitmaps/ui/command_attack.png"   },
+  { id = _CMD.PATROL,    label = "Patrol",   desc = "Patrol between two points",         tex = "bitmaps/ui/command_patrol.png"   },
+  { id = _CMD.GUARD,     label = "Guard",    desc = "Guard a friendly unit",              tex = "bitmaps/ui/command_guard.png"    },
   -- Row 2: stance and utility
-  { id = _CMD.WAIT,      label = "Wait",     tex = "bitmaps/ui/command_wait.png",    instant = true },
-  { id = _CMD.HOLD_POS,  label = "Hold",     tex = "bitmaps/ui/command_hold.png",    instant = true },
-  { id = _CMD.FIGHT,     label = "Fight",    tex = "bitmaps/ui/command_attack.png"   },
-  { id = _CMD.LOAD_UNITS, label = "Garrison", tex = "bitmaps/ui/command_garrison.png" },
-  { id = _CMD.REPAIR,    label = "Repair",   tex = "bitmaps/ui/command_repair.png"   },
+  { id = _CMD.WAIT,      label = "Wait",     desc = "Pause until given another order",    tex = "bitmaps/ui/command_wait.png",    instant = true },
+  { id = _CMD.HOLD_POS,  label = "Hold",     desc = "Hold position while attacking",      tex = "bitmaps/ui/command_hold.png",    instant = true },
+  { id = _CMD.FIGHT,     label = "Fight",    desc = "Engage enemies in melee",            tex = "bitmaps/ui/command_attack.png"   },
+  { id = _CMD.LOAD_UNITS, label = "Garrison", desc = "Garrison into a building",          tex = "bitmaps/ui/command_garrison.png" },
+  { id = _CMD.REPAIR,    label = "Repair",   desc = "Repair a damaged unit or building",  tex = "bitmaps/ui/command_repair.png"   },
 }
 
 -- Cache for unit portrait textures (unitDef name -> path, or false if missing)
@@ -180,6 +181,103 @@ local function getFactoryCommands(unitID, count)
   return nil
 end
 
+-- Production-queue slot hitboxes for right-click cancelling.
+local queueSlotHitboxes = {}
+
+-- Currently hovered command button (rebuilt every drawCommandGrid pass).
+local hoveredCmd = nil
+
+-- Small, safe click feedback. Unsynced widgets may call PlaySoundFile; wrap in
+-- pcall so a missing sound file or a headless harness never errors the widget.
+local function playCommandClickSound()
+  if Spring and Spring.PlaySoundFile then
+    pcall(Spring.PlaySoundFile, "sounds/ui/unit_select.ogg", 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+  elseif Spring and Spring.Echo then
+    Spring.Echo("Medieval bottom panel: command clicked")
+  end
+end
+
+local function myTeamID()
+  if Spring and Spring.GetMyTeamID then
+    return Spring.GetMyTeamID()
+  end
+  return nil
+end
+
+-- Idle villager count, readable from the team rules param published by
+-- gadget_medieval_hud.lua (key "idle_villagers"). Falls back to 0 when absent.
+local function getIdleVillagers()
+  local team = myTeamID()
+  if not team then return 0 end
+  local ok, value = pcall(Spring.GetTeamRulesParam, team, "idle_villagers")
+  if not ok or value == nil then return 0 end
+  return tonumber(value) or 0
+end
+
+local function bottomTextWidth(text, size)
+  return (#text or 0) * (size or 9) * 0.5
+end
+
+local function cancelQueuedItem(unitID, index)
+  if not unitID or not index then return end
+  if not (Spring and Spring.GiveOrderToUnit) then return end
+  if CMD and CMD.REMOVE then
+    pcall(Spring.GiveOrderToUnit, unitID, CMD.REMOVE, { index }, 0)
+    playCommandClickSound()
+  elseif Spring.Echo then
+    -- Defensive fallback for engine builds without CMD.REMOVE. Do not issue an
+    -- invented command id; surface the limitation instead.
+    Spring.Echo("Medieval bottom panel: cannot cancel queue item (CMD.REMOVE unavailable)")
+  end
+end
+
+local function drawIdleIndicator(px, py, ph)
+  local idle = getIdleVillagers()
+  local label = "Idle: " .. tostring(idle)
+  local x = px + 18
+  local y = py + ph - 16  -- near the top edge of the panel
+  gl.Color(COL_SHADOW)
+  gl.Text(label, x + 1, y - 1, 12, "o")
+  gl.Color(COL_IDLE)
+  gl.Text(label, x, y, 12, "o")
+end
+
+local function drawNoSelectionPrompt(px, py, pw, ph)
+  local cx = px + pw * 0.5
+  local cy = py + ph * 0.5
+  gl.Color(COL_SHADOW)
+  gl.Text("No selection", cx + 1, cy - 1, 18, "oc")
+  gl.Color(COL_GOLD)
+  gl.Text("No selection", cx, cy, 18, "oc")
+  local hint = "Left-click a unit, or drag a box to select"
+  gl.Color(COL_STAT)
+  gl.Text(hint, cx, cy - 24, 12, "oc")
+end
+
+local function drawCommandTooltip()
+  if not hoveredCmd then return end
+  local label = hoveredCmd.label or ""
+  local desc = hoveredCmd.desc or ""
+  local text = label
+  if desc ~= "" then text = text .. " - " .. desc end
+
+  local fs = 11
+  local tw = bottomTextWidth(text, fs) + 20
+  local th = fs + 12
+  local tx = math.min(mouseX + 14, math.max(0, (vsx or 0) - tw - 6))
+  local ty = math.min(mouseY + 18, math.max(0, (vsy or 0) - th - 6))
+
+  gl.Color(0.0, 0.0, 0.0, 0.88)
+  gl.Rect(tx, ty, tx + tw, ty + th)
+  gl.Color(COL_BRONZE)
+  gl.Rect(tx, ty, tx + tw, ty + 1)
+  gl.Rect(tx, ty + th - 1, tx + tw, ty + th)
+  gl.Rect(tx, ty, tx + 1, ty + th)
+  gl.Rect(tx + tw - 1, ty, tx + tw, ty + th)
+  gl.Color(COL_PARCHMENT)
+  gl.Text(text, tx + 10, ty + 5, fs, "o")
+end
+
 --------------------------------------------------------------------------------
 -- 9-slice border rendering
 --------------------------------------------------------------------------------
@@ -252,6 +350,7 @@ local function drawCommandGrid(px, py, pw, ph)
 
   -- Rebuild hitboxes each frame
   cmdButtonHitboxes = {}
+  hoveredCmd = nil
 
   for i, btn in ipairs(COMMAND_BUTTONS) do
     if i > CMD_COLS * CMD_ROWS then break end
@@ -265,6 +364,7 @@ local function drawCommandGrid(px, py, pw, ph)
     -- Button background
     local isHover = mouseX >= bx and mouseX <= bx + cellW
                     and mouseY >= by and mouseY <= by + cellH
+    if isHover then hoveredCmd = btn end
     if isHover then
       gl.Color(COL_CMD_HOVER)
     else
@@ -438,9 +538,17 @@ function drawProductionQueue(unitID, qx, qy, qw, qh)
 
   local startY = qy + qh - 14 - STAT_FONT_SIZE - pad
 
+  queueSlotHitboxes = {}
+
   for i, cmd in ipairs(cmds) do
     local cx = qx + col * (slotSize + pad)
     local cy = startY - row * (slotSize + pad)
+
+    -- Record slot for right-click cancelling (index into the factory queue)
+    queueSlotHitboxes[#queueSlotHitboxes + 1] = {
+      x0 = cx, y0 = cy - slotSize, x1 = cx + slotSize, y1 = cy,
+      unitID = unitID, index = i,
+    }
 
     -- Slot background
     gl.Color(COL_QUEUE_BG)
@@ -651,6 +759,17 @@ end
 --------------------------------------------------------------------------------
 
 function widget:MousePress(mx, my, button)
+  if button == 3 then
+    -- Right-click a production queue slot to cancel that queued unit.
+    for _, hit in ipairs(queueSlotHitboxes) do
+      if mx >= hit.x0 and mx <= hit.x1 and my >= hit.y0 and my <= hit.y1 then
+        cancelQueuedItem(hit.unitID, hit.index)
+        return true  -- consume the click
+      end
+    end
+    return false
+  end
+
   if button ~= 1 then return false end
 
   -- Check command button clicks
@@ -669,6 +788,7 @@ function widget:MousePress(mx, my, button)
           Spring.SetActiveCommand(btn.id)
         end
       end
+      playCommandClickSound()
       return true  -- consume the click
     end
   end
@@ -773,7 +893,6 @@ function widget:DrawScreen()
   if WG and WG.medievalMainMenuOpen then return end
 
   local selected = getSelectedUnits()
-  if not selected or #selected == 0 then return end
 
   -- Panel geometry: centered at bottom, spanning most of the screen width
   local panelW = math.min(vsx * 0.7, 900)
@@ -797,10 +916,23 @@ function widget:DrawScreen()
   -- Corner brackets
   drawCornerBrackets(panelX - 4, panelY - 4, panelX + panelW + 4, panelY + panelH + 4, 16)
 
+  -- Idle villager indicator (top-left of the panel; always visible)
+  drawIdleIndicator(panelX, panelY, panelH)
+
+  -- Clear fallback when nothing is selected (no blank panel).
+  if not selected or #selected == 0 then
+    drawNoSelectionPrompt(panelX, panelY, panelW, panelH)
+    drawCommandTooltip()
+    return
+  end
+
   -- Content: single unit vs multi-select
   if #selected == 1 then
     drawSingleUnit(selected[1], panelX, panelY, panelW, panelH)
   else
     drawMultiSelect(selected, panelX, panelY, panelW, panelH)
   end
+
+  -- Command button tooltip (hovered command name + short description)
+  drawCommandTooltip()
 end
