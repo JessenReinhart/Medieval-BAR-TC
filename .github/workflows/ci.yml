@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main, medieval-total-conversion]
+  pull_request:
+    branches: [main, medieval-total-conversion]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install pytest lupa
+      - name: Check Lua syntax
+        run: python tests/check_lua_syntax.py
+      - name: Run tests
+        run: python -m pytest tests -q

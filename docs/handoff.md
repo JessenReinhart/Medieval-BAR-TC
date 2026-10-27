@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Branch: `medieval-total-conversion`
-Status: Phases 1–7 complete. **1566 tests pass** (Phase 6 baseline + Phase 7 + slice-9 rendering fixes + slice-10 skeletal articulation + slice-11 0 A.D. skeletal animation port), 80 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
+Status: Phases 1–7 complete. **v0.7.0**. **1825 tests pass**, 81 Lua files clean (0 syntax errors), 6/6 engine probe verdicts PASS.
 
 ### Phase 5 Status by Slice
 
@@ -839,6 +839,6 @@ The death probe now verifies both animation paths.
 
 Engine result: baked 9/9 PASS, procedural 9/9 PASS (`PHASE7 DEATH PROBE: ALL MODES PASSED`).
 
-Verification: `python -m pytest tests -q` -> **1620 passed**;
+Verification: `python -m pytest tests -q` -> **1825 passed**;
 `python tests/check_lua_syntax.py` -> **81 files, 0 errors**;
 `python tools/launch/run_phase7_death_probe.py` -> **both modes PASS**.

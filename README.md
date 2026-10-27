@@ -16,8 +16,9 @@ built from BAR GPL code without BAR's restricted CC-BY-NC-ND art assets. Art is 
   all 22 units and buildings, lightweight LUS piece animation, build icons/minimap symbols,
   and UI polish (see `docs/phase-7.md`).
 
-Verification gate (current): **1620 tests passing** and the headless integration probe
-emitting **6/6 PASS** verdicts — see "Local verification" below.
+**v0.7.0** marks the complete total conversion. Verification gate (current): **1825 tests
+passing** and the headless integration probe emitting **6/6 PASS** verdicts — see "Local
+verification" below.
 
 Map scope remains **Quicksilver Remake 1.24**.
 
@@ -130,7 +131,7 @@ Install Python dependencies `lupa` and `pytest`, then run:
 # 1. Lua syntax check (0 errors expected)
 python tests/check_lua_syntax.py
 
-# 2. Full pytest suite (1620 tests)
+# 2. Full pytest suite (1825 tests)
 python -m pytest tests -q
 
 # 3. Headless skirmish integration probe (expects "6/6 PASS" verdicts)
