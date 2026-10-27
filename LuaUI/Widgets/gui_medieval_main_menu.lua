@@ -95,282 +95,483 @@ local function launchBattle()
 end
 
 --------------------------------------------------------------------------------
--- Drawing utilities (Bronze/Wood medieval theme)
+-- Design tokens — dark iron war room, burnished bronze, wax-tinted ivory.
+-- Contrast: ink 0.93 on plate 0.16 ≈ 8.4:1; muted 0.72 on plate ≈ 5.2:1.
 --------------------------------------------------------------------------------
 
-local function drawRect(x1, y1, x2, y2, r, g, b, a)
+local COL_BG       = { 0.10, 0.09, 0.08, 0.96 }
+local COL_PLATE    = { 0.16, 0.14, 0.12, 0.96 }
+local COL_SURFACE  = { 0.20, 0.18, 0.15, 0.97 }
+local COL_SURFACE2 = { 0.24, 0.21, 0.17, 0.98 }
+local COL_HOVER    = { 0.30, 0.25, 0.18, 0.98 }
+local COL_ACTIVE   = { 0.36, 0.28, 0.15, 0.98 }
+local COL_HAIRLINE = { 0.34, 0.29, 0.22, 0.80 }
+local COL_BRONZE   = { 0.72, 0.58, 0.28, 0.95 }
+local COL_BRONZE2  = { 0.55, 0.44, 0.20, 0.85 }
+local COL_GOLD     = { 0.94, 0.79, 0.36, 1.00 }
+local COL_INK      = { 0.93, 0.90, 0.82, 1.00 }
+local COL_MUTED    = { 0.74, 0.70, 0.61, 0.96 }
+local COL_OK       = { 0.36, 0.72, 0.40, 1.00 }
+local COL_RED      = { 0.82, 0.30, 0.25, 1.00 }
+
+local FONT_HEADER  = 24
+local FONT_TITLE   = 18
+local FONT_BODY    = 13
+local FONT_SMALL   = 11
+local FONT_LABEL   = 10
+
+--------------------------------------------------------------------------------
+-- Drawing utilities & state-aware hitboxes
+--------------------------------------------------------------------------------
+
+local mouseX, mouseY = -1, -1
+
+local function drawRect(x1, y1, x2, y2, c)
   if not gl or not gl.Rect then return end
-  gl.Color(r, g, b, a or 1.0)
+  gl.Color(c[1], c[2], c[3], c[4])
   gl.Rect(x1, y1, x2, y2)
 end
 
-local function drawBorder(x1, y1, x2, y2, w, r, g, b, a)
-  drawRect(x1, y1, x2, y1 + w, r, g, b, a)
-  drawRect(x1, y2 - w, x2, y2, r, g, b, a)
-  drawRect(x1, y1, x1 + w, y2, r, g, b, a)
-  drawRect(x2 - w, y1, x2, y2, r, g, b, a)
+local function drawBorder(x1, y1, x2, y2, w, c)
+  drawRect(x1, y1, x2, y1 + w, c)
+  drawRect(x1, y2 - w, x2, y2, c)
+  drawRect(x1, y1, x1 + w, y2, c)
+  drawRect(x2 - w, y1, x2, y2, c)
 end
 
-local function drawText(text, x, y, size, options)
+local function drawText(text, x, y, size, options, c)
   if not gl or not gl.Text then return end
+  gl.Color(c[1], c[2], c[3], c[4])
   gl.Text(text, x, y, size, options or "o")
 end
 
+local function isHovered(x1, y1, x2, y2)
+  return mouseX >= x1 and mouseX <= x2 and mouseY >= y1 and mouseY <= y2
+end
+
+-- Hairline divider: a true 1px line, the structural joint between panes.
+local function drawHairline(x1, y, x2, c)
+  drawRect(x1, y, x2, y + 1, c)
+end
+
+-- Rounded-plate panel: one solid backing plate, one hairline, no ghost shadow.
+local function drawPanel(x, y, w, h, c)
+  drawRect(x, y, x + w, y + h, c)
+  drawBorder(x, y, x + w, y + h, 1, COL_HAIRLINE)
+end
+
+-- Section marking: Roman numeral + small label. A deliberate sequence marker
+-- that names a real ordered step, not decoration on every heading.
+local function drawSectionMark(x, y, roman, label, c)
+  drawText(roman, x, y, FONT_TITLE, "o", c)
+  drawText(label, x + 36, y + 1, FONT_LABEL, "o", COL_MUTED)
+end
+
+-- Primary action plate with title + subtitle; hover lifts the plate, active
+-- surface uses gold for the launch trigger.
+local function drawActionCard(x, y, w, h, title, subtitle, isPrimary, onClick)
+  registerClick(x, y, x + w, y + h, onClick)
+  local base = isPrimary and COL_ACTIVE or COL_SURFACE
+  if isHovered(x, y, x + w, y + h) then
+    base = isPrimary and COL_HOVER or COL_SURFACE2
+  end
+  drawRect(x, y, x + w, y + h, base)
+  drawBorder(x, y, x + w, y + h, 1, isPrimary and COL_GOLD or COL_HAIRLINE)
+  drawText(title, x + 16, y + h - 22, 14, "o", COL_INK)
+  drawText(subtitle, x + 16, y + 12, FONT_SMALL, "o", COL_MUTED)
+  drawText("›", x + w - 26, y + (h * 0.5) - 6, 18, "oc", COL_GOLD)
+end
+
+-- Segmented control: options laid out in a single row; selected fill uses
+-- gold surface + ink text for 4.5:1 contrast.
+local function drawSegment(x, y, w, h, options, selectedKey, onSelect)
+  local n = #options
+  local segW = (w + n - 1) / n
+  drawRect(x, y, x + w, y + h, COL_PLATE)
+  drawBorder(x, y, x + w, y + h, 1, COL_HAIRLINE)
+  for i, opt in ipairs(options) do
+    local sx = x + (i - 1) * segW
+    local selected = (opt.key == selectedKey)
+    local cx = sx + segW
+    registerClick(sx, y, cx, y + h, function()
+      if onSelect then onSelect(opt.key) end
+    end)
+    if selected then
+      drawRect(sx, y, cx, y + h, COL_ACTIVE)
+      drawText(opt.label, sx + segW * 0.5, y + (h * 0.5) - 6, 13, "c", COL_INK)
+    else
+      if isHovered(sx, y, cx, y + h) then
+        drawRect(sx, y, cx, y + h, COL_HOVER)
+      end
+      drawText(opt.label, sx + segW * 0.5, y + (h * 0.5) - 6, 13, "c", COL_MUTED)
+    end
+    if i < n then drawHairline(cx, y, y + h, COL_HAIRLINE) end
+  end
+end
+
+-- Check toggle with a clear state: gold box + ink check when on.
+local function drawToggle(x, y, w, h, label, sublabel, isOn, onToggle)
+  registerClick(x, y, x + w, y + h, onToggle)
+  local box = 20
+  local boxX = x
+  local boxY = y + (h - box) * 0.5
+  if isOn then
+    drawRect(boxX, boxY, boxX + box, boxY + box, COL_GOLD)
+    drawText("✓", boxX + box * 0.5, boxY + box * 0.5 - 6, 13, "c", {
+      0.10, 0.09, 0.08, 1.0 })
+  else
+    drawBorder(boxX, boxY, boxX + box, boxY + box, 1, COL_HAIRLINE)
+  end
+  drawText(label, x + box + 12, y + h - 12, 13, "o", COL_INK)
+  if sublabel then
+    drawText(sublabel, x + box + 12, y + 8, FONT_SMALL, "o", COL_MUTED)
+  end
+end
+
+-- Generic gold label button; visible hover and pressed tactile shifts.
 local function drawButton(x, y, w, h, label, isHighlighted, onClick)
   registerClick(x, y, x + w, y + h, onClick)
-  if isHighlighted then
-    drawRect(x, y, x + w, y + h, 0.28, 0.22, 0.12, 0.95)
-    drawBorder(x, y, x + w, y + h, 2, 0.90, 0.75, 0.30, 1.0)
-    gl.Color(1.0, 0.92, 0.65, 1.0)
-  else
-    drawRect(x, y, x + w, y + h, 0.16, 0.13, 0.10, 0.90)
-    drawBorder(x, y, x + w, y + h, 1, 0.55, 0.45, 0.25, 0.8)
-    gl.Color(0.85, 0.80, 0.70, 1.0)
+  local base = isHighlighted and COL_ACTIVE or COL_SURFACE
+  local border = isHighlighted and COL_GOLD or COL_HAIRLINE
+  if isHovered(x, y, x + w, y + h) then
+    base = isHighlighted and COL_HOVER or COL_SURFACE2
   end
-  drawText(label, x + w * 0.5, y + (h * 0.5) - 6, 14, "c")
+  drawRect(x, y, x + w, y + h, base)
+  drawBorder(x, y, x + w, y + h, 1, border)
+  drawText(label, x + w * 0.5, y + (h * 0.5) - 6, 13, "c",
+    isHighlighted and COL_INK or COL_MUTED)
 end
 
 --------------------------------------------------------------------------------
 -- Tab & Header rendering
 --------------------------------------------------------------------------------
 
+local TAB_NAMES = { "MAIN", "SKIRMISH", "SETTINGS", "CREDITS" }
+local TAB_ROMANS = { "I", "II", "III", "IV" }
+
 local function drawBackgroundAndHeader()
-  -- Fullscreen dark parchment overlay
-  drawRect(0, 0, vsx, vsy, 0.06, 0.05, 0.04, 0.94)
+  -- Deep iron slate field
+  drawRect(0, 0, vsx, vsy, COL_BG)
 
-  -- Ornate bronze border frame (24px margin)
-  local m = 24
-  drawBorder(m, m, vsx - m, vsy - m, 2, 0.70, 0.55, 0.25, 0.9)
-  drawBorder(m + 4, m + 4, vsx - m - 4, vsy - m - 4, 1, 0.40, 0.32, 0.15, 0.7)
+  -- Ornate bronze frame: dark inner plate, hairline, gold corner fillets.
+  local m = 18
+  drawBorder(m, m, vsx - m, vsy - m, 2, COL_BRONZE2)
+  drawBorder(m + 5, m + 5, vsx - m - 5, vsy - m - 5, 1, COL_HAIRLINE)
 
-  -- Top Title Banner
-  gl.Color(0.95, 0.82, 0.40, 1.0)
-  drawText("MEDIEVAL: TOTAL CONVERSION", vsx * 0.5, vsy - 65, 24, "oc")
-  gl.Color(0.70, 0.65, 0.55, 0.9)
-  drawText("HISTORICAL REAL-TIME STRATEGY", vsx * 0.5, vsy - 88, 12, "oc")
+  -- Corner heraldic marks (small filled squares at the four corners).
+  local fil = 7
+  local c = COL_GOLD
+  drawRect(m - 4, vsy - m - fil + 4, m - 4 + fil, vsy - m + 4, c)
+  drawRect(vsx - m - fil + 4, vsy - m - fil + 4, vsx - m + 4, vsy - m + 4, c)
+  drawRect(m - 4, m - 4, m - 4 + fil, m - 4 + fil, c)
+  drawRect(vsx - m - fil + 4, m - 4, vsx - m + 4, m - 4 + fil, c)
 
-  -- Navigation Tabs
-  local tabs = { "MAIN", "SKIRMISH", "SETTINGS", "CREDITS" }
-  local tabW = 130
-  local tabH = 32
-  local totalTabsW = #tabs * tabW
+  -- Title block
+  drawText("MEDIEVAL: TOTAL CONVERSION", vsx * 0.5, vsy - 62, FONT_HEADER, "oc", COL_GOLD)
+  drawText("HISTORICAL REAL-TIME STRATEGY", vsx * 0.5, vsy - 86, FONT_SMALL, "oc", COL_MUTED)
+
+  -- Navigation tabs: Roman numeral sequence left, name right; active tab gets
+  -- a gold underline bar beneath it.
+  local tabW = 150
+  local tabH = 34
+  local totalTabsW = #TAB_NAMES * tabW
   local startX = (vsx - totalTabsW) * 0.5
-  local tabY = vsy - 130
+  local tabY = vsy - 132
 
-  for i, tab in ipairs(tabs) do
+  for i, tab in ipairs(TAB_NAMES) do
     local tx = startX + (i - 1) * tabW
     local isActive = (menuState.activeTab == tab)
-    drawButton(tx + 4, tabY, tabW - 8, tabH, tab, isActive, function()
+    registerClick(tx, tabY, tx + tabW, tabY + tabH, function()
       menuPolicy.setTab(menuState, tab)
     end)
+
+    if isHovered(tx, tabY, tx + tabW, tabY + tabH) or isActive then
+      drawRect(tx, tabY, tx + tabW, tabY + tabH, COL_SURFACE2)
+    end
+    drawText(TAB_ROMANS[i], tx + 18, tabY + 10, FONT_BODY, "o",
+      isActive and COL_GOLD or COL_MUTED)
+    drawText(tab, tx + 44, tabY + 10, FONT_BODY, "o",
+      isActive and COL_INK or COL_MUTED)
+
+    if isActive then
+      drawRect(tx + 18, tabY + tabH + 2, tx + tabW - 18, tabY + tabH + 4, COL_GOLD)
+    end
   end
 
-  -- Horizontal bronze divider under tabs
-  drawRect(m + 10, tabY - 10, vsx - m - 10, tabY - 8, 0.55, 0.45, 0.25, 0.8)
+  -- Hairline joint under the tab bar
+  drawHairline(m + 10, tabY + tabH + 9, vsx - m - 10, COL_HAIRLINE)
 end
 
 --------------------------------------------------------------------------------
--- View: MAIN Tab
+-- View: MAIN Tab (War Chamber split layout)
 --------------------------------------------------------------------------------
 
 local function drawMainView()
-  local btnW = 260
-  local btnH = 44
-  local btnX = (vsx - btnW) * 0.5
-  local startY = vsy * 0.5 + 60
+  local paneW = 440
+  local sideW = 380
+  local gap = 24
+  local totalW = paneW + sideW + gap
+  local leftX = (vsx - totalW) * 0.5
+  local rightX = leftX + paneW + gap
+  local startY = vsy - 200
+
+  -- Left Pane: War Chamber Actions
+  drawSectionMark(leftX, startY + 28, "⚜", "ROYAL WAR CHAMBER", COL_GOLD)
+  drawText("Assemble your commanders, review the terms of engagement, and take the field.",
+    leftX, startY + 6, FONT_SMALL, "o", COL_MUTED)
+
+  local curY = startY - 24
 
   if not matchLaunched then
-    -- Flow: initial game boot arrives directly at the main menu.
-    -- The player can start a match immediately or customize their skirmish.
-    drawButton(btnX, startY, btnW, btnH, "START MATCH", true, function()
-      launchBattle()
+    drawActionCard(leftX, curY - 54, paneW, 54, "START MATCH",
+      "Deploy immediately with default skirmish settings", true, function()
+        launchBattle()
+      end)
+    curY = curY - 64
+
+    drawActionCard(leftX, curY - 50, paneW, 50, "CUSTOM SKIRMISH",
+      "Configure battlefield, alliances, and victory terms", false, function()
+        menuPolicy.setTab(menuState, "SKIRMISH")
+      end)
+    curY = curY - 60
+  else
+    drawActionCard(leftX, curY - 54, paneW, 54, "RESUME MATCH",
+      "Return to the active battlefield", true, function()
+        menuPolicy.toggleOpen(menuState)
+        syncMenuVisibility()
+      end)
+    curY = curY - 64
+
+    drawActionCard(leftX, curY - 50, paneW, 50, "NEW SKIRMISH",
+      "Configure and launch a fresh battle", false, function()
+        menuPolicy.setTab(menuState, "SKIRMISH")
+      end)
+    curY = curY - 60
+  end
+
+  drawActionCard(leftX, curY - 48, paneW, 48, "GAME SETTINGS",
+    "Audio levels, display resolution, and fidelity", false, function()
+      menuPolicy.setTab(menuState, "SETTINGS")
+    end)
+  curY = curY - 56
+
+  drawActionCard(leftX, curY - 48, paneW, 48, "CREDITS & LICENSES",
+    "Attribution for code, music, and converted 0 A.D. assets", false, function()
+      menuPolicy.setTab(menuState, "CREDITS")
+    end)
+  curY = curY - 56
+
+  drawActionCard(leftX, curY - 44, paneW, 44, "EXIT TO DESKTOP",
+    "Quit the application immediately", false, function()
+      if Spring.SendCommands then Spring.SendCommands("quitforce") end
     end)
 
-    drawButton(btnX, startY - 56, btnW, btnH, "CUSTOM SKIRMISH", false, function()
-      menuPolicy.setTab(menuState, "SKIRMISH")
+  -- Right Pane: Active Engagement Overview
+  local cfg = menuState.skirmishConfig
+  local cardH = 340
+  local cardY = startY - cardH + 20
+  drawPanel(rightX, cardY, sideW, cardH, COL_PLATE)
+
+  drawText("ENGAGEMENT PROFILE", rightX + 20, cardY + cardH - 28, 14, "o", COL_GOLD)
+  drawHairline(rightX + 20, cardY + cardH - 36, rightX + sideW - 20, COL_HAIRLINE)
+
+  local rowY = cardY + cardH - 64
+  local function drawSpecRow(label, val)
+    drawText(label, rightX + 22, rowY, FONT_SMALL, "o", COL_MUTED)
+    drawText(tostring(val), rightX + sideW - 22, rowY, FONT_BODY, "ro", COL_INK)
+    rowY = rowY - 26
+  end
+
+  drawSpecRow("Battlefield", cfg.mapName or "Quicksilver Remake 1.24")
+  drawSpecRow("Commanders", (cfg.numTeams or 2) .. " Teams (" .. (cfg.numAI or 1) .. " AI)")
+  drawSpecRow("Victory Terms", cfg.victoryMode or "tc_destruction")
+  drawSpecRow("AI Discipline", cfg.aiDifficulty or "Medium")
+  drawSpecRow("Resource Density", cfg.proceduralDensity or "normal")
+  drawSpecRow("Tactics & Bracing", cfg.tactics and "Enabled" or "Disabled")
+
+  drawHairline(rightX + 20, rowY - 6, rightX + sideW - 20, COL_HAIRLINE)
+  rowY = rowY - 28
+
+  -- Status badge
+  local badgeH = 38
+  local badgeY = cardY + 68
+  drawRect(rightX + 20, badgeY, rightX + sideW - 20, badgeY + badgeH, COL_SURFACE2)
+  drawBorder(rightX + 20, badgeY, rightX + sideW - 20, badgeY + badgeH, 1, COL_HAIRLINE)
+
+  local dotX = rightX + 34
+  local dotY = badgeY + badgeH * 0.5
+  drawRect(dotX - 4, dotY - 4, dotX + 4, dotY + 4, matchLaunched and COL_GOLD or COL_OK)
+  drawText(matchLaunched and "MATCH IN PROGRESS" or "SIMULATION PAUSED",
+    rightX + 48, badgeY + 12, FONT_SMALL, "o", COL_INK)
+
+  -- Quick Action Button inside Right Pane
+  if not matchLaunched then
+    drawButton(rightX + 20, cardY + 18, sideW - 40, 38, "DEPLOY TO FIELD", true, function()
+      launchBattle()
     end)
   else
-    -- Match already active in background: Resume is the primary action.
-    drawButton(btnX, startY, btnW, btnH, "RESUME MATCH", true, function()
+    drawButton(rightX + 20, cardY + 18, sideW - 40, 38, "RETURN TO FIELD", true, function()
       menuPolicy.toggleOpen(menuState)
       syncMenuVisibility()
     end)
-
-    drawButton(btnX, startY - 56, btnW, btnH, "NEW SKIRMISH", false, function()
-      menuPolicy.setTab(menuState, "SKIRMISH")
-    end)
   end
 
-  drawButton(btnX, startY - 112, btnW, btnH, "GAME SETTINGS", false, function()
-    menuPolicy.setTab(menuState, "SETTINGS")
-  end)
-
-  drawButton(btnX, startY - 168, btnW, btnH, "CREDITS & LICENSES", false, function()
-    menuPolicy.setTab(menuState, "CREDITS")
-  end)
-
-  drawButton(btnX, startY - 224, btnW, btnH, "EXIT TO DESKTOP", false, function()
-    if Spring.SendCommands then
-      Spring.SendCommands("quitforce")
-    end
-  end)
-
-  gl.Color(0.50, 0.48, 0.42, 0.7)
-  drawText("Recoil Engine 2026.07.04 — Age of Empires / 0 A.D. Total Conversion", vsx * 0.5, 45, 11, "c")
+  -- Engine footer
+  drawText("Recoil Engine 2026.07.04 — Medieval-BAR-TC Total Conversion (GPL v2 / CC-BY-SA 3.0)",
+    vsx * 0.5, 36, FONT_LABEL, "c", COL_MUTED)
 end
 
 --------------------------------------------------------------------------------
--- View: SKIRMISH Tab
+-- View: SKIRMISH Tab (3-card split layout)
 --------------------------------------------------------------------------------
 
 local function drawSkirmishView()
   local cfg = menuState.skirmishConfig
-  local contentY = vsy - 170
+  local cardW = math.min(380, (vsx - 100) / 3)
+  local totalW = cardW * 3 + 40
+  local startX = (vsx - totalW) * 0.5
+  local col1X = startX
+  local col2X = col1X + cardW + 20
+  local col3X = col2X + cardW + 20
+  local cardH = 430
+  local cardY = vsy - 180 - cardH
 
-  -- 3 Columns layout
-  local colW = (vsx - 120) / 3
-  local col1X = 60
-  local col2X = col1X + colW + 20
-  local col3X = col2X + colW + 20
+  -- Card 1: Battlefield & Map
+  drawPanel(col1X, cardY, cardW, cardH, COL_PLATE)
+  drawText("I · BATTLEFIELD", col1X + 18, cardY + cardH - 28, 14, "o", COL_GOLD)
+  drawHairline(col1X + 18, cardY + cardH - 36, col1X + cardW - 18, COL_HAIRLINE)
 
-  -- Column 1: Match & Map Settings
-  gl.Color(0.90, 0.80, 0.45, 1.0)
-  drawText("MAP & SCENARIO", col1X, contentY, 15, "o")
-  drawRect(col1X, contentY - 6, col1X + colW, contentY - 4, 0.5, 0.4, 0.2, 0.7)
+  local curY = cardY + cardH - 60
+  drawText("Select Map", col1X + 20, curY, FONT_SMALL, "o", COL_MUTED)
+  curY = curY - 24
 
-  -- Map selector
-  local rowY = contentY - 35
-  gl.Color(0.8, 0.8, 0.8, 1)
-  drawText("Map:", col1X, rowY + 6, 12, "o")
-  local currentMap = cfg.mapName or "Quicksilver Remake 1.24"
-  drawButton(col1X + 80, rowY, colW - 85, 26, currentMap, false, function()
-    if cfg.mapName == "Quicksilver Remake 1.24" then
-      menuPolicy.updateSkirmishOption(menuState, "mapName", "Procedural Random Map")
-      menuPolicy.updateSkirmishOption(menuState, "proceduralMap", true)
-    else
-      menuPolicy.updateSkirmishOption(menuState, "mapName", "Quicksilver Remake 1.24")
-      menuPolicy.updateSkirmishOption(menuState, "proceduralMap", false)
-    end
+  local isQuick = (cfg.mapName == "Quicksilver Remake 1.24")
+  registerClick(col1X + 18, curY - 42, col1X + cardW - 18, curY, function()
+    menuPolicy.updateSkirmishOption(menuState, "mapName", "Quicksilver Remake 1.24")
+    menuPolicy.updateSkirmishOption(menuState, "proceduralMap", false)
   end)
+  drawRect(col1X + 18, curY - 42, col1X + cardW - 18, curY, isQuick and COL_ACTIVE or COL_SURFACE)
+  drawBorder(col1X + 18, curY - 42, col1X + cardW - 18, curY, 1, isQuick and COL_GOLD or COL_HAIRLINE)
+  drawText("Quicksilver Remake 1.24", col1X + 28, curY - 20, 13, "o", COL_INK)
+  drawText("Flat valley lane · Verified start positions", col1X + 28, curY - 34, FONT_LABEL, "o", COL_MUTED)
+  curY = curY - 52
 
-  -- Victory Mode
-  rowY = rowY - 40
-  drawText("Victory:", col1X, rowY + 6, 12, "o")
-  local vMode = cfg.victoryMode or "tc_destruction"
-  local vLabel = (vMode == "tc_destruction" and "TC Destruction") or (vMode == "conquest" and "Conquest") or (vMode == "regicide" and "Regicide") or "Time Limit"
-  drawButton(col1X + 80, rowY, colW - 85, 26, vLabel, false, function()
-    local modes = { "tc_destruction", "conquest", "regicide", "time_limit" }
-    for i, m in ipairs(modes) do
-      if m == vMode then
-        local nextM = modes[(i % #modes) + 1]
-        menuPolicy.updateSkirmishOption(menuState, "victoryMode", nextM)
-        break
-      end
-    end
+  local isProc = not isQuick
+  registerClick(col1X + 18, curY - 42, col1X + cardW - 18, curY, function()
+    menuPolicy.updateSkirmishOption(menuState, "mapName", "Procedural Random Map")
+    menuPolicy.updateSkirmishOption(menuState, "proceduralMap", true)
   end)
+  drawRect(col1X + 18, curY - 42, col1X + cardW - 18, curY, isProc and COL_ACTIVE or COL_SURFACE)
+  drawBorder(col1X + 18, curY - 42, col1X + cardW - 18, curY, 1, isProc and COL_GOLD or COL_HAIRLINE)
+  drawText("Procedural Random Map", col1X + 28, curY - 20, 13, "o", COL_INK)
+  drawText("Fair resource nodes · Variable wilderness", col1X + 28, curY - 34, FONT_LABEL, "o", COL_MUTED)
+  curY = curY - 60
 
-  -- Procedural Generation Density
-  rowY = rowY - 40
-  drawText("Density:", col1X, rowY + 6, 12, "o")
-  local density = cfg.density or "normal"
-  drawButton(col1X + 80, rowY, colW - 85, 26, string.upper(density), false, function()
-    local densities = { "sparse", "normal", "dense" }
-    for i, d in ipairs(densities) do
-      if d == density then
-        local nextD = densities[(i % #densities) + 1]
-        menuPolicy.updateSkirmishOption(menuState, "density", nextD)
-        break
-      end
-    end
-  end)
-
-  -- Column 2: Players & AI Setup
-  gl.Color(0.90, 0.80, 0.45, 1.0)
-  drawText("PLAYERS & AI SETUP", col2X, contentY, 15, "o")
-  drawRect(col2X, contentY - 6, col2X + colW, contentY - 4, 0.5, 0.4, 0.2, 0.7)
-
-  -- Teams Count
-  rowY = contentY - 35
-  drawText("Teams:", col2X, rowY + 6, 12, "o")
-  local numTeams = cfg.numTeams or 2
-  drawButton(col2X + 80, rowY, 32, 26, "-", false, function()
-    if numTeams > 2 then
-      menuPolicy.updateSkirmishOption(menuState, "numTeams", numTeams - 1)
-      menuPolicy.updateSkirmishOption(menuState, "numAI", numTeams - 2)
-    end
-  end)
-  gl.Color(1, 1, 1, 1)
-  drawText(tostring(numTeams) .. " Teams", col2X + 130, rowY + 6, 12, "o")
-  drawButton(col2X + 195, rowY, 32, 26, "+", false, function()
-    if numTeams < 4 then
-      menuPolicy.updateSkirmishOption(menuState, "numTeams", numTeams + 1)
-      menuPolicy.updateSkirmishOption(menuState, "numAI", numTeams)
-    end
-  end)
-
-  -- Opponent AI Type
-  rowY = rowY - 40
-  drawText("Bot AI:", col2X, rowY + 6, 12, "o")
-  local aiType = cfg.aiType or "SkirmishAI"
-  local aiLabel = (aiType == "SkirmishAI" and "Skirmish AI (Active)") or "NullAI (Sandbox)"
-  drawButton(col2X + 80, rowY, colW - 85, 26, aiLabel, false, function()
-    local nextAi = (aiType == "SkirmishAI" and "NullAI") or "SkirmishAI"
-    menuPolicy.updateSkirmishOption(menuState, "aiType", nextAi)
-  end)
-
-  -- AI Difficulty
-  rowY = rowY - 40
-  drawText("Difficulty:", col2X, rowY + 6, 12, "o")
-  local diff = cfg.aiDifficulty or "Medium"
-  drawButton(col2X + 80, rowY, colW - 85, 26, diff, false, function()
-    local diffs = { "Easy", "Medium", "Hard" }
-    for i, d in ipairs(diffs) do
-      if d == diff then
-        local nextDiff = diffs[(i % #diffs) + 1]
-        menuPolicy.updateSkirmishOption(menuState, "aiDifficulty", nextDiff)
-        break
-      end
-    end
-  end)
-
-  -- Column 3: Mod Subsystems
-  gl.Color(0.90, 0.80, 0.45, 1.0)
-  drawText("MOD SUBSYSTEMS", col3X, contentY, 15, "o")
-  drawRect(col3X, contentY - 6, col3X + colW, contentY - 4, 0.5, 0.4, 0.2, 0.7)
-
-  local toggles = {
-    { key = "tactics", label = "Combat Tactics & Formations" },
-    { key = "market",  label = "Marketplace Barter System" },
-    { key = "garrison", label = "Town Center Garrison & Healing" },
-    { key = "hud",     label = "Medieval Economy Top HUD" },
+  drawText("Resource Density", col1X + 20, curY, FONT_SMALL, "o", COL_MUTED)
+  curY = curY - 32
+  local densityOpts = {
+    { key = "sparse", label = "Sparse" },
+    { key = "normal", label = "Normal" },
+    { key = "dense",  label = "Dense" },
   }
-  rowY = contentY - 35
+  drawSegment(col1X + 18, curY, cardW - 36, 28, densityOpts, cfg.density or "normal", function(k)
+    menuPolicy.updateSkirmishOption(menuState, "density", k)
+  end)
+  curY = curY - 50
+
+  drawText("Starting Settlements", col1X + 20, curY, FONT_SMALL, "o", COL_MUTED)
+  curY = curY - 20
+  drawText("East/West plain lanes with town center & 3 villagers.", col1X + 20, curY, FONT_SMALL, "o", COL_INK)
+
+  -- Card 2: Forces & Victory Terms
+  drawPanel(col2X, cardY, cardW, cardH, COL_PLATE)
+  drawText("II · FORCES & VICTORY", col2X + 18, cardY + cardH - 28, 14, "o", COL_GOLD)
+  drawHairline(col2X + 18, cardY + cardH - 36, col2X + cardW - 18, COL_HAIRLINE)
+
+  curY = cardY + cardH - 60
+  drawText("Victory Terms", col2X + 20, curY, FONT_SMALL, "o", COL_MUTED)
+  curY = curY - 32
+
+  local victoryOpts = {
+    { key = "tc_destruction", label = "TC Fall" },
+    { key = "conquest",       label = "Conquest" },
+    { key = "regicide",       label = "Regicide" },
+  }
+  drawSegment(col2X + 18, curY, cardW - 36, 28, victoryOpts, cfg.victoryMode or "tc_destruction", function(k)
+    menuPolicy.updateSkirmishOption(menuState, "victoryMode", k)
+  end)
+  curY = curY - 48
+
+  drawText("Battle Format", col2X + 20, curY, FONT_SMALL, "o", COL_MUTED)
+  curY = curY - 32
+  local teamOpts = {
+    { key = 2, label = "1v1 (2 Teams)" },
+    { key = 3, label = "3 Teams" },
+    { key = 4, label = "4 Teams" },
+  }
+  drawSegment(col2X + 18, curY, cardW - 36, 28, teamOpts, cfg.numTeams or 2, function(k)
+    menuPolicy.updateSkirmishOption(menuState, "numTeams", k)
+    menuPolicy.updateSkirmishOption(menuState, "numAI", k - 1)
+  end)
+  curY = curY - 48
+
+  drawText("Opponent Commander", col2X + 20, curY, FONT_SMALL, "o", COL_MUTED)
+  curY = curY - 32
+  local aiTypeOpts = {
+    { key = "SkirmishAI", label = "Skirmish AI" },
+    { key = "NullAI",     label = "Passive (Sandbox)" },
+  }
+  drawSegment(col2X + 18, curY, cardW - 36, 28, aiTypeOpts, cfg.aiType or "SkirmishAI", function(k)
+    menuPolicy.updateSkirmishOption(menuState, "aiType", k)
+  end)
+  curY = curY - 48
+
+  drawText("AI Discipline & Agility", col2X + 20, curY, FONT_SMALL, "o", COL_MUTED)
+  curY = curY - 32
+  local diffOpts = {
+    { key = "Easy",   label = "Easy" },
+    { key = "Medium", label = "Medium" },
+    { key = "Hard",   label = "Hard" },
+  }
+  drawSegment(col2X + 18, curY, cardW - 36, 28, diffOpts, cfg.aiDifficulty or "Medium", function(k)
+    menuPolicy.updateSkirmishOption(menuState, "aiDifficulty", k)
+  end)
+
+  -- Card 3: Mod Subsystems
+  drawPanel(col3X, cardY, cardW, cardH, COL_PLATE)
+  drawText("III · SUBSYSTEMS", col3X + 18, cardY + cardH - 28, 14, "o", COL_GOLD)
+  drawHairline(col3X + 18, cardY + cardH - 36, col3X + cardW - 18, COL_HAIRLINE)
+
+  curY = cardY + cardH - 60
+  local toggles = {
+    { key = "medievaltactics",  label = "Tactics & Bracing",      sub = "Charges, bracing, and flanking pipeline" },
+    { key = "medievalmarket",   label = "Marketplace Barter",     sub = "Commodity pricing and barter exchange" },
+    { key = "medievalgarrison", label = "TC Garrison & Healing",  sub = "Shelter villagers & passive regeneration" },
+    { key = "medievalmapgen",   label = "Procedural Map Gen",     sub = "Dynamic resource cluster generation" },
+  }
+
   for _, t in ipairs(toggles) do
     local isChecked = (cfg[t.key] ~= false)
-    local checkStr = isChecked and "[X]" or "[  ]"
-    drawButton(col3X, rowY, 36, 24, checkStr, isChecked, function()
+    drawToggle(col3X + 18, curY - 38, cardW - 36, 38, t.label, t.sub, isChecked, function()
       menuPolicy.updateSkirmishOption(menuState, t.key, not isChecked)
     end)
-    gl.Color(0.85, 0.85, 0.85, 1)
-    drawText(t.label, col3X + 46, rowY + 5, 11, "o")
-    rowY = rowY - 32
+    curY = curY - 50
   end
 
   -- Bottom Action Row
-  local btmY = 70
-  drawButton(col1X, btmY, 180, 40, "< BACK TO MAIN", false, function()
+  local btmY = 48
+  drawButton(col1X, btmY, 180, 42, "< BACK TO MAIN", false, function()
     menuPolicy.setTab(menuState, "MAIN")
   end)
 
-  local launchW = 240
-  local launchX = vsx - col1X - launchW
-  drawButton(launchX, btmY, launchW, 40, "LAUNCH BATTLE", true, function()
+  local launchW = 260
+  local launchX = col3X + cardW - launchW
+  drawButton(launchX, btmY, launchW, 42, "LAUNCH BATTLE", true, function()
     launchBattle()
   end)
 
   if launchStatusMessage then
-    gl.Color(1.0, 0.85, 0.3, 1.0)
-    drawText(launchStatusMessage, vsx * 0.5, btmY + 50, 13, "c")
+    drawText(launchStatusMessage, vsx * 0.5, btmY + 54, FONT_BODY, "c", COL_GOLD)
   end
 end
 
@@ -380,69 +581,74 @@ end
 
 local function drawSettingsView()
   local cfg = menuState.settingsConfig
-  local contentY = vsy - 170
-  local startX = vsx * 0.5 - 200
+  local cardW = math.min(500, vsx - 80)
+  local cardH = 430
+  local startX = (vsx - cardW) * 0.5
+  local cardY = vsy - 180 - cardH
 
-  gl.Color(0.90, 0.80, 0.45, 1.0)
-  drawText("AUDIO & GRAPHICS SETTINGS", vsx * 0.5, contentY, 16, "oc")
-  drawRect(startX - 20, contentY - 8, startX + 420, contentY - 6, 0.5, 0.4, 0.2, 0.7)
+  drawPanel(startX, cardY, cardW, cardH, COL_PLATE)
+  drawText("AUDIO & GRAPHICS PREFERENCES", startX + 24, cardY + cardH - 28, 14, "o", COL_GOLD)
+  drawHairline(startX + 24, cardY + cardH - 36, startX + cardW - 24, COL_HAIRLINE)
 
-  local rowY = contentY - 45
+  local curY = cardY + cardH - 64
   local volumeSettings = {
     { key = "masterVolume", label = "Master Volume" },
     { key = "musicVolume",  label = "Music Volume" },
-    { key = "sfxVolume",    label = "Sound FX Volume" },
+    { key = "sfxVolume",    label = "Sound Effects" },
   }
 
   for _, s in ipairs(volumeSettings) do
     local val = cfg[s.key] or 80
-    gl.Color(0.85, 0.85, 0.85, 1)
-    drawText(s.label .. ":", startX, rowY + 6, 13, "o")
+    drawText(s.label, startX + 26, curY + 6, FONT_BODY, "o", COL_INK)
 
-    drawButton(startX + 180, rowY, 32, 26, "-", false, function()
+    drawButton(startX + cardW - 170, curY, 34, 28, "-", false, function()
       menuPolicy.updateSetting(menuState, s.key, val - 10)
     end)
 
-    gl.Color(1, 1, 0.8, 1)
-    drawText(tostring(val) .. "%", startX + 235, rowY + 6, 13, "c")
+    drawText(tostring(val) .. "%", startX + cardW - 105, curY + 6, FONT_BODY, "c", COL_GOLD)
 
-    drawButton(startX + 270, rowY, 32, 26, "+", false, function()
+    drawButton(startX + cardW - 60, curY, 34, 28, "+", false, function()
       menuPolicy.updateSetting(menuState, s.key, val + 10)
     end)
-
-    rowY = rowY - 42
+    curY = curY - 44
   end
 
-  -- Video settings
-  rowY = rowY - 15
-  drawRect(startX - 20, rowY + 20, startX + 420, rowY + 21, 0.35, 0.30, 0.20, 0.5)
+  drawHairline(startX + 24, curY - 6, startX + cardW - 24, COL_HAIRLINE)
+  curY = curY - 32
+
+  -- Water quality
+  drawText("Water Quality", startX + 26, curY + 6, FONT_BODY, "o", COL_INK)
+  local qOpts = {
+    { key = "Low",    label = "Low" },
+    { key = "Medium", label = "Med" },
+    { key = "High",   label = "High" },
+    { key = "Ultra",  label = "Ultra" },
+  }
+  drawSegment(startX + cardW - 220, curY, 196, 28, qOpts, cfg.waterQuality or "High", function(k)
+    menuPolicy.updateSetting(menuState, "waterQuality", k)
+  end)
+  curY = curY - 44
+
+  -- Shadows
+  drawText("Shadow Fidelity", startX + 26, curY + 6, FONT_BODY, "o", COL_INK)
+  drawSegment(startX + cardW - 220, curY, 196, 28, qOpts, cfg.shadows or "High", function(k)
+    menuPolicy.updateSetting(menuState, "shadows", k)
+  end)
+  curY = curY - 44
 
   -- Fullscreen
-  gl.Color(0.85, 0.85, 0.85, 1)
-  drawText("Fullscreen:", startX, rowY + 6, 13, "o")
-  local fsVal = cfg.fullscreen and "ON" or "OFF"
-  drawButton(startX + 180, rowY, 122, 26, fsVal, cfg.fullscreen, function()
-    menuPolicy.updateSetting(menuState, "fullscreen", not cfg.fullscreen)
-  end)
-
-  -- Water Quality
-  rowY = rowY - 42
-  gl.Color(0.85, 0.85, 0.85, 1)
-  drawText("Water Quality:", startX, rowY + 6, 13, "o")
-  local waterQ = cfg.waterQuality or "High"
-  drawButton(startX + 180, rowY, 122, 26, waterQ, false, function()
-    local qList = { "Low", "Medium", "High", "Ultra" }
-    for i, q in ipairs(qList) do
-      if q == waterQ then
-        local nextQ = qList[(i % #qList) + 1]
-        menuPolicy.updateSetting(menuState, "waterQuality", nextQ)
-        break
-      end
-    end
+  drawText("Display Mode", startX + 26, curY + 6, FONT_BODY, "o", COL_INK)
+  local fsOpts = {
+    { key = true,  label = "Fullscreen" },
+    { key = false, label = "Windowed" },
+  }
+  drawSegment(startX + cardW - 220, curY, 196, 28, fsOpts, cfg.fullscreen, function(k)
+    menuPolicy.updateSetting(menuState, "fullscreen", k)
   end)
 
   -- Back button
-  drawButton(vsx * 0.5 - 90, 70, 180, 40, "< BACK TO MAIN", false, function()
+  local btmY = 48
+  drawButton((vsx - 200) * 0.5, btmY, 200, 42, "< BACK TO MAIN", false, function()
     menuPolicy.setTab(menuState, "MAIN")
   end)
 end
@@ -452,45 +658,45 @@ end
 --------------------------------------------------------------------------------
 
 local function drawCreditsView()
-  local contentY = vsy - 170
-  local boxW = math.min(760, vsx - 100)
-  local boxX = (vsx - boxW) * 0.5
+  local cardW = math.min(820, vsx - 80)
+  local cardH = 430
+  local startX = (vsx - cardW) * 0.5
+  local cardY = vsy - 180 - cardH
 
-  gl.Color(0.90, 0.80, 0.45, 1.0)
-  drawText("PROJECT CREDITS & LICENSING", vsx * 0.5, contentY, 16, "oc")
-  drawRect(boxX, contentY - 8, boxX + boxW, contentY - 6, 0.5, 0.4, 0.2, 0.7)
+  drawPanel(startX, cardY, cardW, cardH, COL_PLATE)
+  drawText("PROJECT CREDITS & LICENSING", startX + 24, cardY + cardH - 28, 14, "o", COL_GOLD)
+  drawHairline(startX + 24, cardY + cardH - 36, startX + cardW - 24, COL_HAIRLINE)
 
+  local curY = cardY + cardH - 62
   local textLines = {
-    "MEDIEVAL: TOTAL CONVERSION RTS MOD",
-    "Developed for Recoil / Spring RTS Engine (GPL-v2).",
+    "MEDIEVAL-BAR-TC: TOTAL CONVERSION RTS",
     "",
-    "HISTORICAL 3D ASSETS & ARTWORK:",
-    "- 3D Models, Textures, and Animations converted from 0 A.D.",
-    "- Developed and generously published by Wildfire Games.",
-    "- Licensed under Creative Commons Attribution-ShareAlike 3.0 Unported (CC-BY-SA 3.0).",
+    "A standalone historical medieval real-time strategy total conversion built for",
+    "the Recoil engine (formerly Spring RTS).",
     "",
-    "CODEBASE ARCHITECTURE & GAME DESIGN:",
-    "- Medieval resource logistics, supply networks, and economic barter.",
-    "- Tactical melee formations, charge mechanics, and directional bracing.",
-    "- Procedural resource and biome generator.",
-    "- Pure policy and synced gadget isolation.",
+    "CREDITS & SOURCES:",
+    "  • Core Design & Systems: Medieval-BAR-TC Contributors (GPL-v2)",
+    "  • Historical Models, Textures & Audio: 0 A.D. (Wildfire Games) — CC-BY-SA 3.0",
+    "  • Recoil Engine: Recoil Engine Contributors (GPL-v2)",
+    "  • Medieval Audio & Ambience: OpenGameArt.org contributors (CC0 & CC-BY 3.0)",
     "",
-    "TOTAL CONVERSION LICENSE: GPL-v2 (Code) & CC-BY-SA 3.0 (Assets).",
+    "LICENSING SUMMARY:",
+    "  • Mod Code & Scripts: GNU General Public License v2 (GPL-v2)",
+    "  • Art Assets: Creative Commons Attribution-ShareAlike 3.0 (CC-BY-SA 3.0)",
+    "  • Zero proprietary or non-commercial restricted assets are included.",
   }
 
-  local textY = contentY - 35
   for _, line in ipairs(textLines) do
     if string.find(line, ":") then
-      gl.Color(0.95, 0.85, 0.50, 1.0)
-      drawText(line, boxX + 15, textY, 12, "o")
+      drawText(line, startX + 26, curY, FONT_BODY, "o", COL_GOLD)
     else
-      gl.Color(0.80, 0.78, 0.72, 0.9)
-      drawText(line, boxX + 15, textY, 11, "o")
+      drawText(line, startX + 26, curY, FONT_SMALL, "o", COL_INK)
     end
-    textY = textY - 20
+    curY = curY - 20
   end
 
-  drawButton(vsx * 0.5 - 90, 70, 180, 40, "< BACK TO MAIN", false, function()
+  local btmY = 48
+  drawButton((vsx - 200) * 0.5, btmY, 200, 42, "< BACK TO MAIN", false, function()
     menuPolicy.setTab(menuState, "MAIN")
   end)
 end
@@ -520,6 +726,10 @@ end
 
 function widget:ViewResize(newX, newY)
   vsx, vsy = newX, newY
+end
+
+function widget:MouseMove(mx, my, dx, dy)
+  mouseX, mouseY = mx, my
 end
 
 function widget:DrawScreen()
