@@ -2,7 +2,7 @@
 {
 	HostIP=127.0.0.1;
 	MapName=Quicksilver Remake 1.24;
-	GameType=Medieval BAR Total Conversion 0.2.0-phase2;
+	GameType=Medieval BAR Total Conversion 0.7.0;
 	StartPosType=0;
 	GameStartDelay=0;
 	IsHost=1;
