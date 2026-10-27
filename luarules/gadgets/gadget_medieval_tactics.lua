@@ -30,7 +30,11 @@ local damageTypes = VFS.Include("scripts/medieval_damage_types.lua")
 local function modOptionOn(key)
   local mo = Spring.GetModOptions and Spring.GetModOptions() or {}
   local v = mo[key]
-  return v == 1 or v == true or v == "1" or v == "true"
+  -- Default to enabled when the option is unset (covers the unit-test harnesses
+  -- that stub GetModOptions to {}); only an explicit "0"/false disables it.
+  if v == nil then return true end
+  if v == false or tostring(v) == "0" then return false end
+  return true
 end
 
 local TACTICS_PROBE = modOptionOn("medievaltactics")
@@ -41,6 +45,7 @@ local TACTICS_PROBE = modOptionOn("medievaltactics")
 -- stances[unitID]  = "aggressive" | "hold" | "standground"
 local movers = {}
 local stances = {}
+local lastAugScan = -1
 
 local function finite(n)
   return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge
@@ -100,8 +105,12 @@ local function speedOf(unitID)
 end
 
 local function isStationary(unitID)
-  local s = speedOf(unitID)
-  return s ~= nil and s <= 0.0
+  -- Unmoved / untracked units are stationary; a tiny epsilon avoids treating a
+  -- near-zero EMA as "moving" when a unit has just stopped.
+  local m = movers[unitID]
+  if not m then return true end
+  local s = m.speed
+  return (s == nil) or (s <= 0.01)
 end
 
 local function stanceOf(unitID)
@@ -112,27 +121,74 @@ end
 -- Charge motion sampling
 -- ---------------------------------------------------------------------------
 
-function gadget:GameFrame(n)
-  if not (Spring and Spring.GetAllUnits and Spring.GetUnitPosition and Spring.GetUnitDefID) then
+-- Per-frame position deltas are converted into the same units as Def::speed.
+-- At full tilt a unit moves maxVelocity elmos/sec => ~0.12 elmos/frame, while
+-- Def::speed = maxVelocity * SPEED_CONVENTION. CHARGE_HEADROOM lets a sustained
+-- approach read as a 2× charge ahead the module's max-charge point) so the
+-- bonus actually activates on a fast approach instead of staying pinned at base
+-- speed forever. The constant is unit-independent (maxVelocity cancels).
+local SPRING_FPS = 30
+local SPEED_CONVENTION = 15     -- Def::speed = maxVelocity * 15
+local CHARGE_HEADROOM = 2       -- full-tilt reads as 2× base speed
+local PER_FRAME_TO_SPEED = CHARGE_HEADROOM * SPEED_CONVENTION * SPRING_FPS
+
+local SPEED_DECAY = 0.6         -- EMA factor applied per frame (recent speed)
+
+local function positionOf(unitID)
+  if not (Spring and Spring.GetUnitPosition) then return nil end
+  local x, _, z = Spring.GetUnitPosition(unitID)
+  if not (finite(x) and finite(z)) then return nil end
+  return x, z
+end
+
+function gadget:UnitCreated(unitID, unitDefID, teamID)
+  local def = unitDef(unitDefID)
+  if not (def and def.canMove and finite(def.speed) and def.speed > 0) then
     return
   end
-  for _, uid in ipairs(Spring.GetAllUnits() or {}) do
+  movers[unitID] = { fx = nil, fz = nil, speed = 0 }
+end
+
+function gadget:GameFrame(n)
+  if not (Spring and Spring.GetUnitPosition and Spring.GetUnitDefID) then
+    return
+  end
+  -- Fallback for harnesses that never fire UnitCreated: re-scan the live unit
+  -- list occasionally (not every frame) and register any missing movers.
+  if n >= lastAugScan + 600 then
+    lastAugScan = n
+    for _, uid in ipairs(Spring.GetAllUnits and Spring.GetAllUnits() or {}) do
+      local did = Spring.GetUnitDefID(uid)
+      local d = unitDef(did)
+      if d and d.canMove and finite(d.speed) and d.speed > 0 then
+        movers[uid] = movers[uid] or { fx = nil, fz = nil, speed = 0 }
+      end
+    end
+  end
+  -- Iterate the event-tracked mover set; never rescan GetAllUnits() every frame.
+  for uid, m in pairs(movers) do
     local defID = Spring.GetUnitDefID(uid)
     local def = unitDef(defID)
-    if def and def.canMove and finite(def.speed) and def.speed > 0 then
-      local x, _, z = Spring.GetUnitPosition(uid)
-      if finite(x) and finite(z) then
-        local m = movers[uid]
-        if not m then
-          m = { fx = x, fz = z, dist = 0, frames = 0, speed = 0 }
-        end
+    if not (def and def.canMove and finite(def.speed) and def.speed > 0) then
+      movers[uid] = nil
+    else
+      local x, z = positionOf(uid)
+      if not x then
+        m.speed = 0
+      elseif m.fx == nil then
+        m.fx, m.fz = x, z
+        m.speed = 0
+      else
         local dx = x - m.fx
         local dz = z - m.fz
-        m.dist = m.dist + math.sqrt(dx * dx + dz * dz)
-        m.frames = m.frames + 1
         m.fx, m.fz = x, z
-        m.speed = m.frames > 0 and (m.dist / m.frames) or 0
-        movers[uid] = m
+        local d = math.sqrt(dx * dx + dz * dz)
+        if d <= 0.0001 then
+          m.speed = 0
+        else
+          local inst = d * PER_FRAME_TO_SPEED
+          m.speed = m.speed * SPEED_DECAY + inst * (1 - SPEED_DECAY)
+        end
       end
     end
   end
@@ -176,6 +232,18 @@ function gadget:Initialize()
 
   GG.MedievalTactics.Compose = function(parts)
     return tactics.composeDamage(parts)
+  end
+
+  -- Seed the charge tracker with units already alive so charges register
+  -- without waiting for UnitCreated (covers probe harnesses and reloads).
+  if Spring and Spring.GetAllUnits and Spring.GetUnitDefID then
+    for _, uid in ipairs(Spring.GetAllUnits() or {}) do
+      local did = Spring.GetUnitDefID(uid)
+      local d = unitDef(did)
+      if d and d.canMove and finite(d.speed) and d.speed > 0 then
+        movers[uid] = movers[uid] or { fx = nil, fz = nil, speed = 0 }
+      end
+    end
   end
 
   if TACTICS_PROBE and Spring.Echo then
@@ -223,26 +291,51 @@ function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, w
   end
 
   -- 5. Tactics (Slice 5) ------------------------------------------------------
-  local chargeMult = tactics.chargeMult(speedOf(attackerID), attackerDef.speed)
-  local flankMult = 1.0
-  if Spring and Spring.GetUnitHeading then
-    local ah = Spring.GetUnitHeading(attackerID)
-    local dh = Spring.GetUnitHeading(unitID)
-    flankMult = tactics.flankMult(ah, dh)
-  end
-  local braceMult = tactics.braceMult(isStationary(unitID), braceClassOf(unitDefID))
-  local stanceMult = tactics.stanceMult(stanceOf(attackerID))
-  local attackerClass = braceClassOf(attackerDefID) or attackerDef.name
-  local defenderClass = isCavalryDef(unitDefID) and "cavalry" or unitArmorClass(unitDefID)
-  local counterMult = tactics.counterCavalryMult(attackerClass, defenderClass)
+  local tacticsMult = 1.0
+  if modOptionOn("medievaltactics") then
+    local chargeMult = tactics.chargeMult(speedOf(attackerID), attackerDef.speed)
+    local flankMult = 1.0
+    if Spring and Spring.GetUnitHeading then
+      local ah = Spring.GetUnitHeading(attackerID)
+      local dh = Spring.GetUnitHeading(unitID)
+      -- Spring.GetUnitHeading returns 16-bit heading ticks; convert to radians.
+      -- Preserve direct radian values (unit tests and mocked engines pass them).
+      if ah and math.abs(ah) > 2 * math.pi then ah = ah * math.pi / 32768 end
+      if dh and math.abs(dh) > 2 * math.pi then dh = dh * math.pi / 32768 end
+      -- If unit positions exist, attack direction is relative to defender facing:
+      local ax, az = positionOf(attackerID)
+      local ux, uz = positionOf(unitID)
+      if ax and az and ux and uz and dh then
+        local vx, vz = ux - ax, uz - az
+        if vx * vx + vz * vz > 1.0 then
+          local attackHeading = math.atan2(vx, vz)
+          if finite(attackHeading) then ah = attackHeading end
+        end
+      end
+      flankMult = tactics.flankMult(ah, dh)
+    end
+    -- Brace only degrades melee cavalry charges, not arrows or siege boulders.
+    local braceMult = 1.0
+    local wc = weaponDamageClass(weaponDefID)
+    local attackerIsCharge =
+      (wc == "melee" and isCavalryDef(attackerDefID)) or
+      (speedOf(attackerID) or 0) > (attackerDef.speed or 0)
+    if attackerIsCharge then
+      braceMult = tactics.braceMult(isStationary(unitID), braceClassOf(unitDefID))
+    end
+    local stanceMult = tactics.stanceMult(stanceOf(attackerID))
+    local attackerClass = braceClassOf(attackerDefID) or attackerDef.name
+    local defenderClass = isCavalryDef(unitDefID) and "cavalry" or unitArmorClass(unitDefID)
+    local counterMult = tactics.counterCavalryMult(attackerClass, defenderClass)
 
-  local tacticsMult = tactics.composeDamage({
-    charge = chargeMult,
-    flank = flankMult,
-    brace = braceMult,
-    stance = stanceMult,
-    counter = counterMult,
-  })
+    tacticsMult = tactics.composeDamage({
+      charge = chargeMult,
+      flank = flankMult,
+      brace = braceMult,
+      stance = stanceMult,
+      counter = counterMult,
+    })
+  end
 
   local final = damage
     * techMult
@@ -251,7 +344,8 @@ function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, w
     * garrisonMult
     * tacticsMult
 
-  if final < 0 then final = 0 end
+  -- NaN ~= NaN in Lua, so this exact check also catches and clamps NaN to 0.
+  if final ~= final or final < 0 then final = 0 end
 
   if Spring and Spring.Echo then
     Spring.Echo(string.format(

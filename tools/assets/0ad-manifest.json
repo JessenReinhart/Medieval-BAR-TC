@@ -1,5 +1,5 @@
 {
-  "archive": "C:\\Users\\LGSM228\\AppData\\Local\\0 A.D. Empires Ascendant\\binaries\\data\\mods\\public\\public.zip",
+  "archive": "mods/public/public.zip",
   "archive_sha256": "ccb24dedee399e6d2810ccb62b0b1b77a937999d9f1dedffbc189b3e359f2429",
   "buildings": {
     "medieval_barracks": {

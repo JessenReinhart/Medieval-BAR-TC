@@ -9,11 +9,16 @@ ENGINE = ROOT / "tools" / "engine" / "recoil_2026.07.04" / "spring-headless.exe"
 STARTSCRIPT = ROOT / "tools" / "launch" / "startscript_phase2.txt"
 
 print(f"Syncing source to {GAME_SDD}...")
-subprocess.run(
+res = subprocess.run(
     ["robocopy", str(ROOT), str(GAME_SDD), "/MIR", "/XD", str(ROOT / ".git"), str(ROOT / "tools"), "/XF", ".gitignore"],
     capture_output=True,
 )
+if res.returncode >= 8:
+    raise RuntimeError(f"robocopy failed: {res.returncode}")
 
+infolog = RUNTIME / "infolog.txt"
+if infolog.exists():
+    infolog.unlink()
 print(f"Launching Recoil engine: {ENGINE}...")
 cmd = [str(ENGINE), "--isolation", "--write-dir", str(RUNTIME), str(STARTSCRIPT)]
 try:

@@ -72,6 +72,29 @@ local function equipmentBlocked(teamID, defName)
   return not recruit.hasEquipment(stock, defName)
 end
 
+-- Consume one piece of the equipment a unit requires from the team's stock,
+-- published as GG.MedievalLogistics.equipmentStock[teamID][kind] = count. Falls
+-- back to a ConsumeEquipment hook when a producer publishes one, so a finished
+-- unit cannot be trained forever off a single piece of gear.
+local function consumeEquipment(teamID, defName)
+  local required = recruit and recruit.equipmentFor and recruit.equipmentFor(defName)
+  if not required then return end
+
+  local api = GG and GG.MedievalLogistics
+  if api and type(api.ConsumeEquipment) == "function" then
+    api.ConsumeEquipment(teamID, required)
+    return
+  end
+
+  local stock = api and type(api.equipmentStock) == "table" and api.equipmentStock or nil
+  if not stock then return end
+  local team = type(stock[teamID]) == "table" and stock[teamID] or stock
+  local cur = tonumber(team and team[required])
+  if cur and cur > 0 then
+    team[required] = cur - 1
+  end
+end
+
 -- Tech gate: advanced units stay locked until the tech that unlocks them is
 -- researched. The prerequisite is resolved through the logistics API
 -- (GG.MedievalLogistics.TechUnlockPrereq / IsTechUnlocked) when available and
@@ -136,6 +159,7 @@ function gadget:UnitFinished(unitID, unitDefID, unitTeam)
     Spring.DestroyUnit(unitID, true, true)
     return
   end
+  consumeEquipment(unitTeam, internalName(unitDefID))
   chargedUnits[unitID] = true
 end
 
@@ -162,6 +186,7 @@ function gadget:UnitFromFactory(unitID, unitDefID, unitTeam, factID, factDefID, 
       return
     end
   end
+  consumeEquipment(unitTeam, name)
   chargedUnits[unitID] = true
 end
 

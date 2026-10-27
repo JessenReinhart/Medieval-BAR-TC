@@ -18,13 +18,17 @@ WIDGET_SRC = (ROOT / 'LuaUI' / 'Widgets' / 'gui_medieval_formation_preview.lua')
 SETUP = """
 widget = {}
 calls = {}
-trace_mode = "ground"  -- "ground" returns a valid hit; "fail" returns a non-ground hit
+trace_mode = "ground"  -- "ground" returns a valid hit; "table_dict" returns .x/.z; "fail" returns non-ground
 selected = { 1, 2, 3, 4 }
 spectating = false
 
 local function ground_for(x, y)
   if trace_mode == "fail" then return "feature", { id = 1 } end
-  return "ground", { x = x * 10, y = 0, z = y * 10 }
+  if trace_mode == "table_dict" then
+    return "ground", { x = x * 10, y = 0, z = y * 10 }
+  end
+  -- Default Recoil/Spring engine array coordinate format
+  return "ground", { [1] = x * 10, [2] = 0, [3] = y * 10 }
 end
 
 Spring = {
@@ -122,6 +126,29 @@ def test_drag_preview_issues_formation_command():
     assert p2[4] == 1
     assert p2[5] == 4
     assert _order_ids(calls[2], 4) == [1, 2, 3, 4]
+
+
+def test_drag_preview_table_dict_coordinates_fallback():
+    lua = _boot()
+    g = lua.globals()
+    w = g.widget
+    formation = lua.execute(FORMATION_SRC)
+
+    g.trace_mode = "table_dict"  # Returns { x = ..., y = ..., z = ... } fallback format
+    assert w.MousePress(w, 100, 100, 1) is True
+    assert w.MouseMove(w, 200, 150, 100, 50, 1) is True
+    assert w.MouseRelease(w, 200, 150, 1) is True
+
+    calls = g.calls
+    assert len(calls) == 1
+    rec = calls[1]
+    assert rec.cmd == formation.CMD_ID
+    assert rec.params[1] == 2000
+    assert rec.params[2] == 1500
+    assert rec.params[3] == 48
+    assert rec.params[4] == 0
+    assert rec.params[5] == 4
+    assert _order_ids(rec, 4) == [1, 2, 3, 4]
 
 
 def test_mousepress_rejects_non_left_button():

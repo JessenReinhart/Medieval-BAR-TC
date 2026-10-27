@@ -314,11 +314,12 @@ local function economyVerdict(frame)
   local after = stockpilesOf(TEAM0)
   local pulsed = before ~= nil and after ~= nil and (after.food or 0) > (before.food or 0)
 
-  emit("economy-flow", true, string.format(
+  local live = (live0 == true) or (live1 == true)
+  local src = live and "live" or (pulsed and "scripted-pulse" or "no-movement")
+  emit("economy-flow", live or pulsed, string.format(
     "f=%d live0=%s live1=%s pulse=%s src=%s food0=%s food1=%s",
     frame, tostring(live0 == true), tostring(live1 == true), tostring(pulsed),
-    (live0 or live1) and "live" or "scripted",
-    tostring(after and after.food), tostring(now1 and now1.food)))
+    src, tostring(after and after.food), tostring(now1 and now1.food)))
 end
 
 local function engagementVerdict(frame)
@@ -333,9 +334,9 @@ local function engagementVerdict(frame)
   end
 
   local observed = damageObserved or (attacks >= 1)
-  emit("military-engagement", true, string.format(
+  emit("military-engagement", observed, string.format(
     "f=%d damage=%s attacks=%d src=%s",
-    frame, tostring(damageObserved), attacks, observed and "observed" or "synthetic"))
+    frame, tostring(damageObserved), attacks, observed and "observed" or "none"))
 end
 
 local function tcDestroyedVerdict(frame)

@@ -231,11 +231,21 @@ local function awardBonuses(teamID)
     return
   end
 
+  -- Bonus only follows a valid completed route: the team must actually own at
+  -- least one market-to-market trade route. Delivered hauls with no route to
+  -- credit (no markets built, routes torn down) must never mint surplus out
+  -- of thin air.
+  local list = routes[teamID]
+  if type(list) ~= "table" or #list == 0 then
+    s.delivered = delivered
+    s.lastDelivered = delivered
+    return
+  end
+
   local econ = economy()
   local connected = firstConnectedRoute(teamID)
-  local list = routes[teamID]
   for _ = s.lastDelivered + 1, delivered do
-    local route = connected or (list and list[(s.bonuses % math.max(#list, 1)) + 1])
+    local route = connected or list[(s.bonuses % #list) + 1]
     local resource = route and route.surplus
     if resource and econ and type(econ.Deposit) == "function" then
       econ.Deposit(teamID, resource, market.TRADE_SURPLUS[resource] or 0)

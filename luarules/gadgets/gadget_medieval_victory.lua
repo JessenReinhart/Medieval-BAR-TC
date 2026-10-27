@@ -60,6 +60,12 @@ local MODE = configuredMode()
 -- each scripted stage, so they evaluate every 15 frames.
 local CADENCE_FRAMES = PROBE_MODE and 15 or 30
 
+-- Regicide kings are anchored to a live unit (the starting Town Center), which
+-- only exists after GameStart(). This window lets GameFrame retry the spawn
+-- until a Town Center appears, then stops retrying so we never resurrect a
+-- team late into the match.
+local REGICIDE_SPAWN_WINDOW = 30 * 30  -- ~30 seconds
+
 -- ---------------------------------------------------------------------------
 -- Live state
 -- ---------------------------------------------------------------------------
@@ -269,10 +275,18 @@ function gadget:Initialize()
     if allyTeam ~= nil then initAllyTeam(allyTeam) end
   end
 
+  -- Best effort at Initialize: GetAllUnits may still be empty before GameStart,
+  -- so this is a last-resort attempt that GameStart/GameFrame will re-try.
   if MODE == "regicide" then ensureKings() end
 
   Spring.Echo(string.format("PHASE5 VICTORY ready mode=%s probe=%s cadence=%d",
     MODE, tostring(PROBE_MODE), CADENCE_FRAMES))
+end
+
+-- GameStart fires after the first units (Town Centers) exist, which is the first
+-- frame where ensureKings can actually anchor a king to a live unit.
+function gadget:GameStart()
+  if MODE == "regicide" then ensureKings() end
 end
 
 function gadget:UnitCreated(unitID, unitDefID, teamID)
@@ -328,15 +342,67 @@ end
 function gadget:TeamDied(teamID)
   local allyTeam = allyTeamOfTeam(teamID)
   if allyTeam == nil then return end
-  -- The team is gone: drop its bucket and let the projection report zeroes, which
-  -- the policy reads as eliminated under every mode.
-  units[allyTeam] = nil
-  counts[allyTeam] = newCounts()
-  registeredKings[allyTeam] = nil
+
+  -- Determine whether every team in this alliance is now dead. When the ally
+  -- group holds more than one team and at least one other team is still alive,
+  -- we must NOT wipe the shared ally bucket: the survivors' units and counters
+  -- are still valid. Only a fully-dead alliance is removed wholesale.
+  local wipeAll = true
+  if type(Spring.GetTeamList) == "function" and type(Spring.GetTeamInfo) == "function" then
+    local teamList = Spring.GetTeamList(allyTeam)
+    if type(teamList) == "table" and #teamList > 1 then
+      for _, other in ipairs(teamList) do
+        if other ~= teamID then
+          local ok, _, _, isDead = pcall(Spring.GetTeamInfo, other)
+          if not (ok and isDead) then
+            wipeAll = false
+            break
+          end
+        end
+      end
+    end
+    -- If GetTeamList is not mocked / returns nil or a single team, fall back to
+    -- the legacy whole-ally wipe so single-team-per-ally tests keep passing.
+  end
+
+  if wipeAll then
+    -- The whole alliance is gone: drop its bucket and let the projection report
+    -- zeroes, which the policy reads as eliminated under every mode.
+    units[allyTeam] = nil
+    counts[allyTeam] = newCounts()
+    registeredKings[allyTeam] = nil
+    return
+  end
+
+  -- Another team in this alliance is still alive: remove only this dead team's
+  -- units from the shared ally bucket and leave the survivors untouched.
+  local bucket = units[allyTeam]
+  if bucket then
+    for unitID, class in pairs(bucket) do
+      if teamOfUnit(unitID) == teamID then
+        bucket[unitID] = nil
+        applyDelta(allyTeam, class, -1)
+      end
+    end
+  end
+  -- If the registered king belonged to the dead team, clear it so a survivor in
+  -- this alliance can be re-anchored by ensureKings later.
+  local king = registeredKings[allyTeam]
+  if king and teamOfUnit(king) == teamID then
+    registeredKings[allyTeam] = nil
+  end
 end
 
 function gadget:GameFrame(frame)
   if status then return end
+
+  -- In regicide mode, make sure kings are spawned once starting Town Centers
+  -- exist. Retried on early frames within the spawn window in case GameStart
+  -- callin did not fire (e.g. headless stubs or late TC unit creation).
+  if MODE == "regicide" and frame < REGICIDE_SPAWN_WINDOW then
+    ensureKings()
+  end
+
   if frame % CADENCE_FRAMES ~= 0 then return end
   evaluateNow()
 end

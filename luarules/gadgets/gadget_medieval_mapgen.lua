@@ -52,8 +52,8 @@ local function collectStartPositions()
 end
 
 -- Resolve the seed: a configured non-zero seed is authoritative; otherwise
--- derive one from the current sim frame, falling back to wall-clock time and
--- then to math.random.
+-- derive one from the current sim frame, falling back to a deterministic integer
+-- derived from map dimensions (or constant 133742) so all clients match on frame 0.
 local function resolveSeed()
   local seed = tonumber(options.medievalmapgenseed)
   if seed and seed ~= 0 then
@@ -63,9 +63,12 @@ local function resolveSeed()
   if frame and frame > 0 then
     return frame
   end
-  -- `os` is unavailable inside the synced Lua sandbox; use the engine's synced
-  -- RNG as the final fallback so every client derives the same seed.
-  return math.floor(math.random() * 2147483647)
+  local sx = Game and tonumber(Game.mapSizeX) or 0
+  local sz = Game and tonumber(Game.mapSizeZ) or 0
+  if sx > 0 and sz > 0 then
+    return sx * 100003 + sz * 31 + 133742
+  end
+  return 133742
 end
 
 -- Collect map-authored metal spots by flood-filling the metal map. Every

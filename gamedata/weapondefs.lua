@@ -105,6 +105,30 @@ return {
       damage_class = "melee",
     },
   },
+  crossbow = {
+    name = "Crossbow",
+    weaponType = "Cannon",
+    range = 400,
+    reloadtime = 2.4,
+    turret = true,
+    tolerance = 8000,
+    damage = {default = 140},
+    areaOfEffect = 8,
+    craterBoost = 0,
+    craterMult = 0,
+    weaponVelocity = 500,
+    myGravity = 0.4,
+    heightBoostFactor = 1.2,
+    size = 1.8,
+    rgbColor = {0.55, 0.42, 0.25},
+    smokeTrail = false,
+    soundStart = "crossbow_shoot",
+    soundHit = "bolt_hit",
+    explosionGenerator = "custom:bolt_hit_fx",
+    customparams = {
+      damage_class = "ranged",
+    },
+  },
   -- Phase 4 Slice 1 siege engine: slow, heavy, ballistic, with a dead zone
   -- (minRange) so the catapult cannot defend itself at melee distance.
   --

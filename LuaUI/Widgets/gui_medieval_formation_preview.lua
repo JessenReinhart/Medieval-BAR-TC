@@ -92,10 +92,16 @@ function widget:MousePress(x, y, button)
   if #ids == 0 then return false end
 
   local hitType, value = Spring.TraceScreenRay(x, y)
-  if hitType ~= "ground" or type(value) ~= "table"
-    or not formation.finite(value.x) or not formation.finite(value.z) then
+  if hitType ~= "ground" or type(value) ~= "table" then
     return false
   end
+  -- Recoil returns indexed { [1]=x, [2]=y, [3]=z }; accept table .x/.z keys as fallback.
+  local gx = value[1] or value.x
+  local gz = value[3] or value.z
+  if not formation.finite(gx) or not formation.finite(gz) then
+    return false
+  end
+  value = { x = gx, y = (value[2] or value.y or 0), z = gz }
 
   dragging = true
   dragStartGround = value
@@ -108,11 +114,15 @@ end
 function widget:MouseMove(x, y, dx, dy, button)
   if not dragging then return false end
   local hitType, value = Spring.TraceScreenRay(x, y)
-  if hitType ~= "ground" or type(value) ~= "table"
-    or not formation.finite(value.x) or not formation.finite(value.z) then
+  if hitType ~= "ground" or type(value) ~= "table" then
     return false
   end
-  dragEndGround = value
+  local gx = value[1] or value.x
+  local gz = value[3] or value.z
+  if not formation.finite(gx) or not formation.finite(gz) then
+    return false
+  end
+  dragEndGround = { x = gx, y = (value[2] or value.y or 0), z = gz }
   RecomputePreview()
   return true
 end

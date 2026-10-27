@@ -288,9 +288,21 @@ local function runTeamHaul(teamID)
     and GG.MedievalEconomy.GetStockpiles(teamID) or {}
   haul.setRouteContext(hubs[teamID], stocks, haul.DEFAULT_CART_CAPACITY)
 
-  -- Advance carts already under way.
+  -- Advance carts already under way. Only this team's jobs advance here (the
+  -- per-team caller used to run over the shared jobs map, N tickets every
+  -- interval). Sort key iteration for deterministic ordering.
+  local order = {}
   for unitID, job in pairs(jobs) do
-    if not aliveUnit(unitID) then
+    if (job.teamID == teamID or job.team == teamID) then
+      order[#order + 1] = unitID
+    end
+  end
+  table.sort(order)
+  for _, unitID in ipairs(order) do
+    local job = jobs[unitID]
+    if not job then
+      -- nothing
+    elseif not aliveUnit(unitID) then
       jobs[unitID] = nil
     else
       advanceJob(unitID, job)

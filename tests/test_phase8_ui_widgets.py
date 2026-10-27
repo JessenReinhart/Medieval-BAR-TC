@@ -18,6 +18,12 @@ import re
 import unittest
 from pathlib import Path
 
+try:
+    from lupa import LuaRuntime
+    HAS_LUPA = True
+except ImportError:
+    HAS_LUPA = False
+
 ROOT = Path(__file__).resolve().parents[1]
 HUD_PATH = ROOT / "LuaUI" / "Widgets" / "gui_medieval_hud.lua"
 BOTTOM_PANEL_PATH = ROOT / "LuaUI" / "Widgets" / "gui_medieval_bottom_panel.lua"
@@ -57,6 +63,18 @@ class TestWidgetSourceContracts(unittest.TestCase):
         self.assertTrue(HUD_PATH.is_file(), f"Missing {HUD_PATH}")
         self.assertTrue(BOTTOM_PANEL_PATH.is_file(), f"Missing {BOTTOM_PANEL_PATH}")
         self.assertTrue(MINIMAP_PATH.is_file(), f"Missing {MINIMAP_PATH}")
+
+    @unittest.skipUnless(HAS_LUPA, "lupa not installed")
+    def test_all_widgets_compile(self):
+        """Bytecode-level compile check ensuring no syntax or parse errors in widget Lua."""
+        lua = LuaRuntime(unpack_returned_tuples=True)
+        for name, src in self.all_widgets:
+            with self.subTest(widget=name):
+                lua.globals().c = src
+                res = lua.execute("local fn, err = load(c); return { fn = fn, err = err }")
+                self.assertIsNotNone(
+                    res["fn"], f"Widget {name} failed Lua compilation: {res['err']}"
+                )
 
     def test_widget_getinfo_metadata(self):
         for name, src in self.all_widgets:

@@ -16,3 +16,4 @@ __pycache__/
 .benchmarks/
 # Local scratch copy of engine C++ sources used for contract verification
 /.engine-src/
+.freebuff/

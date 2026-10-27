@@ -6,7 +6,8 @@ Covers three layers, each against the real repository files:
 1. `units/medieval_cart.lua` — identity (unarmed, mobile civilian), the
    `customparams` that bind it to the hauling policy (`carry_capacity = 400`,
    `unit_role = "hauler"`) and its population contract: the cart is registered
-   at 0 slots in `scripts/medieval_housing.lua` and pays no military upkeep in
+   at 1 slot in `scripts/medieval_housing.lua` (so carts cannot be spammed past
+   the pop cap for free) and pays no military upkeep in
    `scripts/medieval_recruitment.lua`.
 2. Haul policy — `scripts/medieval_haul.lua`: `canHaul` accepts the cart only,
    and `chooseHaulRoute` maps a surplus hub to a deficit hub, returning
@@ -126,11 +127,9 @@ class TestSlice5CartUnitDef(unittest.TestCase):
 
     # -- population -----------------------------------------------------------
 
-    def test_cart_consumes_no_population(self):
-        self.assertEqual(self.housing.unitConsumesPop(CART_UNIT_NAME), 0)
-        # 0 is truthy in Lua, so the explicit registry entry must win over the
-        # `popUnits[defName] or 0` fallback rather than reading as "unregistered".
-        self.assertFalse(self.housing.unitConsumesPop(CART_UNIT_NAME))
+    def test_cart_consumes_population(self):
+        # Carts cost 1 population slot so they cannot be spammed for free.
+        self.assertEqual(self.housing.unitConsumesPop(CART_UNIT_NAME), 1)
 
     def test_cart_pays_no_military_upkeep(self):
         self.assertFalse(self.recruit.isMilitary(CART_UNIT_NAME))
@@ -617,15 +616,13 @@ class TestSlice5HaulingGadget(unittest.TestCase):
         self._setup_haul()
         self._g("FireGameFrame")(30)
         orders = self._orders(CART_ID)
-        # runTeamHaul runs once per team and its advance pass iterates the shared
-        # job table, so the cart is ordered to the source and then, in the same
-        # frame, advanced to the sink it is already standing next to.
-        self.assertEqual(len(orders), 2)
+        # runTeamHaul advances only its own team's jobs and assigns fresh routes
+        # after that pass, so on the first frame the cart is ordered to the
+        # source hub only; it is not yet advanced to the sink in the same frame.
+        self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0]["cmd"], CMD_MOVE)
         self.assertAlmostEqual(orders[0]["params"][0], 1000.0)  # lumber camp x
         self.assertAlmostEqual(orders[0]["params"][2], 1000.0)  # lumber camp z
-        self.assertAlmostEqual(orders[1]["params"][0], 1200.0)  # blacksmith x
-        self.assertAlmostEqual(orders[1]["params"][2], 1000.0)  # blacksmith z
 
     def test_capacity_clamps_the_assigned_amount(self):
         # A cart whose customparams carry_capacity is 10 hauls 10, not HAUL_STEP.

@@ -105,6 +105,10 @@ function M.bestCandidate(candidates, ux, uz)
       local cost = M.pathCost(ux, uz, c.x, c.z, c.supplied)
       if cost ~= nil and (bestCost == nil or cost < bestCost) then
         bestKey, bestCost = c.key, cost
+      elseif cost ~= nil and cost == bestCost then
+        -- Deterministic tie-break: prefer the lowest key so selection does not
+        -- depend on iteration order.
+        if c.key < bestKey then bestKey = c.key end
       end
     end
   end

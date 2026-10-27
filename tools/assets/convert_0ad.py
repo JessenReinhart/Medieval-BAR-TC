@@ -12,14 +12,18 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import random
+import os
 import re
 import struct
 import xml.etree.ElementTree as ET
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_ARCHIVE = Path.home() / "AppData/Local/0 A.D. Empires Ascendant/binaries/data/mods/public/public.zip"
+DEFAULT_ARCHIVE = Path(
+    os.environ.get("ZEROAD_ARCHIVE")
+    or os.environ.get("0AD_ARCHIVE_PATH")
+    or (Path.home() / "AppData/Local/0 A.D. Empires Ascendant/binaries/data/mods/public/public.zip")
+)
 MESH_PREFIX = "art/meshes/"
 SKIN_PREFIX = "art/textures/skins/"
 # 0 A.D. actors live in art/actors/, but a <variant file="..."> indirection and a
@@ -225,10 +229,15 @@ def _children(node, tag: str) -> list:
     return [c for c in node if _strip_ns(c.tag) == tag]
 
 
-def _stable_rng(seed_text: str) -> random.Random:
-    """Seeded RNG whose stream does not depend on PYTHONHASHSEED."""
-    digest = hashlib.sha256(seed_text.encode("utf-8")).digest()
-    return random.Random(int.from_bytes(digest[:8], "big"))
+def _read_entry(zf: zipfile.ZipFile, name: str) -> bytes:
+    """Read an archive entry using an in-memory cache per ZipFile instance."""
+    cache: dict[str, bytes] | None = getattr(zf, "_entry_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(zf, "_entry_cache", cache)
+    if name not in cache:
+        cache[name] = zf.read(name)
+    return cache[name]
 
 
 # Actor documents that only describe behaviour (animation sets, death poses) or
@@ -583,7 +592,7 @@ def _normalise_bone_name(raw: str) -> str:
 
 def parse_skeleton(zf: zipfile.ZipFile, xml_path: str) -> list:
     """Read ``art/skeletons/<name>.xml`` and return its bone names in document order."""
-    document = ET.fromstring(zf.read(xml_path).decode("utf-8-sig"))
+    document = ET.fromstring(_read_entry(zf, xml_path).decode("utf-8-sig"))
     standard = next((node for node in document.iter() if _strip_ns(node.tag) == "standard_skeleton"), None)
     if standard is None:
         raise ValueError(f"{xml_path} has no <standard_skeleton>")
@@ -730,7 +739,7 @@ def _actor_document(zf: zipfile.ZipFile, reference: str, ctx: _MergeContext):
     """Read a prop actor/variant XML, trying both archive roots."""
     for prefix in (ACTOR_PREFIX, VARIANT_PREFIX):
         try:
-            raw = zf.read(prefix + reference)
+            raw = _read_entry(zf, prefix + reference)
         except KeyError:
             continue
         try:
@@ -775,7 +784,7 @@ def _merge_actor(zf: zipfile.ZipFile, reference: str, matrix, host_mesh: dict,
         for mesh_path in _variant_meshes(variant):
             pmd_path = MESH_PREFIX + mesh_path + ".cached.pmd"
             try:
-                mesh = parse_pmd(zf.read(pmd_path))
+                mesh = parse_pmd(_read_entry(zf, pmd_path))
             except KeyError:
                 ctx.warn(f"missing cached mesh {pmd_path}")
                 ctx.skipped.append(reference)
@@ -814,7 +823,7 @@ def _first_prop_mesh(zf: zipfile.ZipFile, reference: str, ctx: _MergeContext, de
                 return found
         for mesh_path in _variant_meshes(variant):
             try:
-                return parse_pmd(zf.read(MESH_PREFIX + mesh_path + ".cached.pmd"))
+                return parse_pmd(_read_entry(zf, MESH_PREFIX + mesh_path + ".cached.pmd"))
             except KeyError:
                 ctx.warn(f"missing cached mesh {MESH_PREFIX + mesh_path}.cached.pmd")
     return None
@@ -827,13 +836,13 @@ def resolve_model_pieces(zf: zipfile.ZipFile, actor_path: str, want_mesh: str) -
     from the actor's live variants is merged in, each placed by the prop point it
     is attached to, in PMD space and before the OBJ scale is applied.
     """
-    document = ET.fromstring(zf.read(actor_path).decode("utf-8-sig"))
+    document = ET.fromstring(_read_entry(zf, actor_path).decode("utf-8-sig"))
     variants = _selected_variants(document)
     root_pmd = None
     root_path = MESH_PREFIX + want_mesh + ".cached.pmd"
     for variant in variants:
         if want_mesh in _variant_meshes(variant):
-            root_pmd = parse_pmd(zf.read(root_path))
+            root_pmd = parse_pmd(_read_entry(zf, root_path))
             break
     if root_pmd is None:
         raise ValueError(f"{actor_path} has no variant selecting mesh {want_mesh}")
@@ -964,12 +973,26 @@ def zero_dds_alpha(data: bytes) -> bytes:
     return bytes(out)
 
 
+_ARCHIVE_HASH_CACHE: dict[tuple[str, int, float], str] = {}
+
+
 def _archive_sha256(path: Path, chunk: int = 16 * 1024 * 1024) -> str:
+    try:
+        stat = path.stat()
+        key = (str(path.resolve()), stat.st_size, stat.st_mtime)
+        if key in _ARCHIVE_HASH_CACHE:
+            return _ARCHIVE_HASH_CACHE[key]
+    except OSError:
+        key = None
+
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while block := f.read(chunk):
             h.update(block)
-    return h.hexdigest()
+    digest = h.hexdigest()
+    if key is not None:
+        _ARCHIVE_HASH_CACHE[key] = digest
+    return digest
 
 
 def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
@@ -980,7 +1003,7 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
     output_textures.mkdir(parents=True, exist_ok=True)
     output_docs.mkdir(parents=True, exist_ok=True)
     manifest = {
-        "archive": str(archive), "archive_sha256": _archive_sha256(archive),  # entry hashes avoid hashing multi-GB archive
+        "archive": "mods/public/public.zip", "archive_sha256": _archive_sha256(archive),
         "source": "0 A.D. alpha 28 public.zip",
         "format_sources": [
             "https://github.com/0ad/0ad/blob/61a3b9507d974084e6badb88a0826bd89a6d5b8b/source/collada/PMDConvert.cpp",
@@ -999,7 +1022,7 @@ def build(archive: Path = DEFAULT_ARCHIVE, root: Path = ROOT) -> dict:
     }
     with zipfile.ZipFile(archive) as zf:
         def source(entry: str) -> bytes:
-            data = zf.read(entry)  # exact entry; no archive-wide extraction
+            data = _read_entry(zf, entry)  # exact entry; no archive-wide extraction
             manifest["entries"][entry] = {"sha256": _sha256(data), "bytes": len(data)}
             return data
 

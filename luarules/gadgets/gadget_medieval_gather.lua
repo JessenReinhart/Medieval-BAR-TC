@@ -134,7 +134,11 @@ local function nearestDropoff(ux, uz, resource, teamID)
   -- past an unsupplied shed to a road-connected one.
   local candidates = {}
   for dropTeamID, list in pairs(dropoffs) do
-    if resource == nil or (allowsResource[dropTeamID] and allowsResource[dropTeamID][resource]) then
+    -- Villagers may only deposit at their own team's dropoffs; a nil teamID
+    -- (auto-assignment) skips the filter so selection stays unopinionated.
+    if teamID ~= nil and dropTeamID ~= teamID then
+      -- skip enemy/other-team dropoffs
+    elseif resource == nil or (allowsResource[dropTeamID] and allowsResource[dropTeamID][resource]) then
       for unitID in pairs(list) do
         local x, _, z = unitPos(unitID)
         if x then

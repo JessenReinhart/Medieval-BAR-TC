@@ -74,6 +74,38 @@ function gadget:UnitDestroyed(unitID, unitDefID, teamID)
   end
 end
 
+-- Captured houses/TCs/units change teams via UnitTaken / UnitGiven. Decrement
+-- oldTeam pop/cap and increment newTeam pop/cap so housing caps never leak.
+function gadget:UnitTaken(unitID, unitDefID, oldTeam, newTeam)
+  if oldTeam == newTeam then return end
+  initTeam(oldTeam)
+  initTeam(newTeam)
+  local def = UnitDefs[unitDefID]
+  if not def then return end
+  local name = def.name
+
+  if housing.POP_PROVIDERS[name] then
+    local curOld = teamBuildings[oldTeam][name] or 0
+    if curOld > 0 then teamBuildings[oldTeam][name] = curOld - 1 end
+    teamBuildings[newTeam][name] = (teamBuildings[newTeam][name] or 0) + 1
+    syncParams(oldTeam)
+    syncParams(newTeam)
+  end
+
+  if housing.unitConsumesPop(name) == 1 then
+    local curOld = teamPopulation[oldTeam] or 0
+    if curOld > 0 then teamPopulation[oldTeam] = curOld - 1 end
+    teamPopulation[newTeam] = (teamPopulation[newTeam] or 0) + 1
+    syncParams(oldTeam)
+    syncParams(newTeam)
+  end
+end
+
+function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
+  -- Signature is (unitID, unitDefID, newTeam, oldTeam) for UnitGiven.
+  gadget:UnitTaken(unitID, unitDefID, oldTeam, newTeam)
+end
+
 function gadget:AllowUnitCreation(unitDefID, builderID, builderTeam, x, y, z, facing)
   initTeam(builderTeam)
   local def = UnitDefs[unitDefID]

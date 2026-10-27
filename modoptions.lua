@@ -132,6 +132,13 @@ return {
     def = false,
   },
   {
+    key = "skirmishai",
+    name = "Enable Medieval Skirmish AI",
+    desc = "Enable the built-in medieval skirmish AI commander",
+    type = "bool",
+    def = true,
+  },
+  {
     key = "medievalanimfallback",
     name = "Death Animation Fallback Probe",
     desc = "Headless test hook: with the death probe on, force the procedural tumble instead of the baked death clip",

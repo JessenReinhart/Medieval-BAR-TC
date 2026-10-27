@@ -99,16 +99,32 @@ local function unitPos(unitID)
   return x, y or 0, z or 0
 end
 
--- First live unit of a tracking bucket, with its position.
+local function sortedKeys(set)
+  local list = {}
+  if not set then return list end
+  for k in pairs(set) do
+    list[#list + 1] = k
+  end
+  table.sort(list)
+  return list
+end
+
+-- First live unit of a tracking bucket (lowest unitID), with its position.
 local function firstUnit(bucket, teamID)
   local set = bucket[teamID]
   if not set then return nil end
+  local best = nil
   for unitID in pairs(set) do
     if unitAlive(unitID) then
-      local x, y, z = unitPos(unitID)
-      if x then return unitID, x, y, z end
-      return unitID
+      if best == nil or unitID < best then
+        best = unitID
+      end
     end
+  end
+  if best ~= nil then
+    local x, y, z = unitPos(best)
+    if x then return best, x, y, z end
+    return best
   end
   return nil
 end
@@ -143,7 +159,7 @@ local function doHarvest(teamID)
   local gather = gatherApi()
   if not gather or type(gather.AssignGather) ~= "function" then return end
   local jobOf = type(gather.GetJob) == "function" and gather.GetJob or nil
-  for unitID in pairs(villagers[teamID]) do
+  for _, unitID in ipairs(sortedKeys(villagers[teamID])) do
     if unitAlive(unitID) then
       local job = nil
       if jobOf then
@@ -294,7 +310,7 @@ local function doAttack(teamID, armyCount)
   if not tcX then return end
   local tx, ty, tz = findEnemyTarget(teamID, tcX, tcZ)
   if not tx then return end
-  for unitID in pairs(military[teamID]) do
+  for _, unitID in ipairs(sortedKeys(military[teamID])) do
     if unitAlive(unitID) then
       local ok = pcall(Spring.GiveOrderToUnit, unitID, CMD.FIGHT, { tx, ty, tz }, 0)
       if ok then
@@ -408,7 +424,7 @@ end
 function gadget:GameFrame(frame)
   if not AI_ENABLED then return end
   if frame % ai.CADENCE_FRAMES ~= 0 then return end
-  for teamID in pairs(enabledTeams) do
+  for _, teamID in ipairs(sortedKeys(enabledTeams)) do
     if enabledTeams[teamID] == true then
       runAITurn(teamID)
     end

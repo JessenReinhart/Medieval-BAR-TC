@@ -18,12 +18,16 @@ RESOURCES = ["rate", "barter"]
 def run_probe() -> int:
     dest = ROOT / "tools" / "runtime" / "games" / "Medieval-BAR-TC.sdd"
     print(f"Syncing source to {dest}...")
-    subprocess.run(
+    res = subprocess.run([
         "robocopy", str(ROOT), str(dest),
-        "/MIR", "/XD", str(ROOT / ".git"), str(ROOT / "tools"), "/XF", ".gitignore",
-        capture_output=True,
-    )
+        "/MIR", "/XD", str(ROOT / ".git"), str(ROOT / "tools"), "/XF", ".gitignore"
+    ], capture_output=True)
+    if res.returncode >= 8:
+        raise RuntimeError(f"robocopy failed: {res.returncode}")
 
+    infolog = RUNTIME / "infolog.txt"
+    if infolog.exists():
+        infolog.unlink()
     print(f"Launching Recoil engine: {ENGINE}...")
     cmd = [str(ENGINE), "--isolation", "--write-dir", str(RUNTIME), str(STARTSCRIPT)]
 

@@ -360,17 +360,25 @@ function M.generateStartscript(config)
   local lines = {}
   local function L(s) lines[#lines + 1] = s end
 
+  -- Sanitize any string that will be interpolated into the startscript. Control
+  -- characters (incl. newlines), and the `; [ ] { }` delimiters are stripped so
+  -- a hostile player name cannot inject extra startscript statements/blocks.
+  local function sanitize(s)
+    if type(s) ~= "string" then return s end
+    return (s:gsub("[%c;%[%]{}]", ""))
+  end
+
   -- Resolve optional / aliased keys.
-  local victoryMode  = config.victoryMode or config.gameMode or "tc_destruction"
+  local victoryMode  = sanitize(config.victoryMode or config.gameMode or "tc_destruction")
   local numTeams     = config.numTeams or 2
   local numAI        = config.numAI or (numTeams - 1)
-  local aiType       = config.aiType or "NullAI"
-  local aiDiff       = config.aiDifficulty or "Medium"
-  local playerName   = config.myPlayerName or "Player"
-  local mapName      = config.mapName or "Quicksilver Remake 1.24"
+  local aiType       = sanitize(config.aiType or "NullAI")
+  local aiDiff       = sanitize(config.aiDifficulty or "Medium")
+  local playerName   = sanitize(config.myPlayerName or "Player")
+  local mapName      = sanitize(config.mapName or "Quicksilver Remake 1.24")
   local procMap      = config.proceduralMap
   local seed         = config.seed or 0
-  local density      = config.density or "normal"
+  local density      = sanitize(config.density or "normal")
 
   -- "Procedural Random Map" is a UI label, not a real map archive.  When
   -- procedural mode is selected the engine still needs a real base terrain

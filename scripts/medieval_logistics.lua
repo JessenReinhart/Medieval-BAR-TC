@@ -367,10 +367,21 @@ function M.roadRoutePreferred(openCost, roadCost)
   return roadCost < openCost
 end
 
+local function sortedTechKeys(unlocked)
+  local keys = {}
+  for techID in pairs(unlocked) do
+    keys[#keys + 1] = techID
+  end
+  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+  return keys
+end
+
 function M.damageMultiplier(unlocked, unitName)
   if not unlocked or type(unlocked) ~= "table" then return 1.0 end
   local mult = 1.0
-  for techID, active in pairs(unlocked) do
+  local keys = sortedTechKeys(unlocked)
+  for _, techID in ipairs(keys) do
+    local active = unlocked[techID]
     if active and M.TECHS[techID] and M.TECHS[techID].damage_mult then
       local bonus = M.TECHS[techID].damage_mult[unitName]
       if bonus then mult = mult * bonus end
@@ -382,7 +393,9 @@ end
 function M.healthMultiplier(unlocked, unitName)
   if not unlocked or type(unlocked) ~= "table" then return 1.0 end
   local mult = 1.0
-  for techID, active in pairs(unlocked) do
+  local keys = sortedTechKeys(unlocked)
+  for _, techID in ipairs(keys) do
+    local active = unlocked[techID]
     if active and M.TECHS[techID] and M.TECHS[techID].health_mult then
       local bonus = M.TECHS[techID].health_mult[unitName]
       if bonus then mult = mult * bonus end

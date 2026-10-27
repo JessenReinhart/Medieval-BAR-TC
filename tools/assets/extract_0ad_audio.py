@@ -10,12 +10,14 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import os
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_ARCHIVE = (
-    Path.home()
-    / "AppData/Local/0 A.D. Empires Ascendant/binaries/data/mods/public/public.zip"
+DEFAULT_ARCHIVE = Path(
+    os.environ.get("ZEROAD_ARCHIVE")
+    or os.environ.get("0AD_ARCHIVE_PATH")
+    or (Path.home() / "AppData/Local/0 A.D. Empires Ascendant/binaries/data/mods/public/public.zip")
 )
 
 # Map target relative destination -> source zip path
@@ -58,7 +60,7 @@ def extract_sounds(
 
     manifest: dict = {
         "source": "0 A.D. alpha 28 public.zip",
-        "archive": str(archive),
+        "archive": "mods/public/public.zip",
         "license": "CC-BY-SA-3.0 (Wildfire Games)",
         "sounds": {},
     }

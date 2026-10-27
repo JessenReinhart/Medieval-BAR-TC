@@ -31,10 +31,21 @@ def sync_sdd() -> None:
         "/XD",
         str(ROOT / ".git"),
         str(ROOT / "tools"),
+        "tests",
+        "docs",
+        "__pycache__",
+        ".pytest_cache",
+        ".benchmarks",
+        ".freebuff",
         "/XF",
         ".gitignore",
     ]
-    subprocess.run(cmd, capture_output=True)
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode >= 8:
+        raise RuntimeError(f"robocopy failed with exit code {proc.returncode}")
+
+
+sync_game_to_runtime = sync_sdd
 
 
 def main() -> int:

@@ -67,6 +67,7 @@ import json
 import math
 import struct
 import sys
+import os
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,9 +77,10 @@ EXPECTED_VERSION = 1
 HEADER_SIZE = 12        # magic(4) + version(4) + payloadSize(4)
 KEY_SIZE = 28           # 7 x f32
 FLOATS_PER_KEY = 7
-DEFAULT_ZIP = (
-    Path.home()
-    / "AppData/Local/0 A.D. Empires Ascendant/binaries/data/mods/public/public.zip"
+DEFAULT_ZIP = Path(
+    os.environ.get("ZEROAD_ARCHIVE")
+    or os.environ.get("0AD_ARCHIVE_PATH")
+    or (Path.home() / "AppData/Local/0 A.D. Empires Ascendant/binaries/data/mods/public/public.zip")
 )
 
 

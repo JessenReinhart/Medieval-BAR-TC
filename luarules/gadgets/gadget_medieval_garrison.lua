@@ -199,6 +199,7 @@ function gadget:Initialize()
   end
 
   GG.MedievalGarrison.GetDamageMult = function(transportID)
+    if not GARRISON_ENABLED then return 1.0 end
     return garrison.garrison_damage_multiplier(occupancyOf(transportID))
   end
 
@@ -223,6 +224,22 @@ end
 
 function gadget:UnitUnloaded(unitID, unitDefID, unitTeam, transportID, transportTeam)
   unregisterOccupant(unitID)
+end
+
+function gadget:UnitTaken(unitID, unitDefID, oldTeam, newTeam)
+  -- When a shelter is captured, its owned team changes so healing/sync reads
+  -- under the new owner and the old owner stops accruing garrison bonus.
+  local occ = unitID and occupancy[unitID]
+  if occ then
+    occ.team = newTeam
+    syncParams(oldTeam)
+    syncParams(newTeam)
+  end
+end
+
+function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
+  -- Signature is (unitID, unitDefID, newTeam, oldTeam) for UnitGiven.
+  gadget:UnitTaken(unitID, unitDefID, oldTeam, newTeam)
 end
 
 function gadget:UnitDestroyed(unitID, unitDefID, teamID)
@@ -251,6 +268,7 @@ function gadget:TeamDied(teamID)
 end
 
 function gadget:GameFrame(frame)
+  if not GARRISON_ENABLED then return end
   if frame % garrison.HEAL_TICK_FRAMES == 0 then
     healTick()
   end
