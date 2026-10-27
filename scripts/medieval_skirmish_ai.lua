@@ -51,6 +51,16 @@ local M = {
   RECRUIT_DEF = "medieval_infantry",
   RECRUIT_COST = { food = 30, wood = 20, stone = 10, iron = 5 },
 
+  -- Per-def recruitment cost matrix (Phase 6 polish / counter-unit recruitment).
+  -- selectRecruitDef picks the def that counters the opponent's majority unit
+  -- and deducts these costs via the economy transact API.
+  RECRUIT_COSTS = {
+    medieval_infantry = { food = 30, wood = 20, stone = 10, iron = 5 },
+    medieval_spearman = { food = 25, wood = 30, stone = 0, iron = 5 },
+    medieval_archer   = { food = 25, wood = 35, stone = 0, iron = 0 },
+    medieval_cavalry  = { food = 50, wood = 10, stone = 0, iron = 15 },
+  },
+
   -- Legacy alias retained for callers of the earlier threshold name.
   -- Phase 6 Slice 4: old 2 -> 3 (lock-step with HOUSE_POP_BUFFER).
   HOUSE_POP_THRESHOLD = 3,
@@ -335,6 +345,116 @@ function M.counterRecruit(counts)
   local role = M.majorityRole(counts)
   if not role then return nil end
   return M.COUNTER_RECRUIT[role]
+end
+
+-- Role to unit def mapping for counter recruitment
+local COUNTER_UNIT_FOR_ENEMY_ROLE = {
+  cavalry  = "medieval_spearman",
+  spearman = "medieval_infantry",
+  infantry = "medieval_archer",
+  archer   = "medieval_cavalry",
+}
+
+-- Target combined-arms composition ratios for fallback / balanced state
+local TARGET_COMPOSITION = {
+  { def = "medieval_infantry", ratio = 0.40, role = "infantry" },
+  { def = "medieval_spearman", ratio = 0.25, role = "spearman" },
+  { def = "medieval_archer",   ratio = 0.20, role = "archer" },
+  { def = "medieval_cavalry",  ratio = 0.15, role = "cavalry" },
+}
+
+-- Select a military unit definition to recruit based on enemy army composition,
+-- friendly army composition, and current resource stockpiles.
+function M.selectRecruitDef(stock, enemyCounts, friendlyCounts)
+  local ec = type(enemyCounts) == "table" and enemyCounts or {}
+  local fc = type(friendlyCounts) == "table" and friendlyCounts or {}
+
+  local cavCount   = (tonumber(ec.medieval_cavalry or ec.cavalry) or 0) + (tonumber(ec.medieval_knight) or 0)
+  local spearCount = (tonumber(ec.medieval_spearman or ec.spearman) or 0)
+  local archCount  = (tonumber(ec.medieval_archer or ec.archer) or 0) + (tonumber(ec.medieval_crossbow) or 0)
+  local infCount   = (tonumber(ec.medieval_infantry or ec.infantry) or 0) + (tonumber(ec.medieval_men_at_arms) or 0)
+
+  local enemyTotals = {
+    cavalry  = cavCount > 0 and cavCount or 0,
+    spearman = spearCount > 0 and spearCount or 0,
+    infantry = infCount > 0 and infCount or 0,
+    archer   = archCount > 0 and archCount or 0,
+  }
+
+  local maxCount = 0
+  local majorityRole = nil
+  local isTied = false
+
+  local rolePriority = { "cavalry", "spearman", "infantry", "archer" }
+  for _, role in ipairs(rolePriority) do
+    local count = enemyTotals[role]
+    if count > maxCount then
+      maxCount = count
+      majorityRole = role
+      isTied = false
+    elseif count > 0 and count == maxCount then
+      isTied = true
+    end
+  end
+
+  -- If there is a distinct enemy majority, prefer the direct counter if affordable
+  if majorityRole and not isTied and maxCount > 0 then
+    local counterDef = COUNTER_UNIT_FOR_ENEMY_ROLE[majorityRole]
+    if counterDef and M.RECRUIT_COSTS[counterDef] and M.canAfford(stock, M.RECRUIT_COSTS[counterDef]) then
+      return counterDef
+    end
+  end
+
+  -- Balanced, no enemies seen, or counter unaffordable -> check friendlyCounts to maintain combined arms.
+  -- Pick the most underrepresented role that stock can afford.
+  local fTotals = {
+    infantry = (tonumber(fc.medieval_infantry or fc.infantry) or 0) + (tonumber(fc.medieval_men_at_arms) or 0),
+    spearman = (tonumber(fc.medieval_spearman or fc.spearman) or 0),
+    archer   = (tonumber(fc.medieval_archer or fc.archer) or 0) + (tonumber(fc.medieval_crossbow) or 0),
+    cavalry  = (tonumber(fc.medieval_cavalry or fc.cavalry) or 0) + (tonumber(fc.medieval_knight) or 0),
+  }
+  local fTotal = fTotals.infantry + fTotals.spearman + fTotals.archer + fTotals.cavalry
+
+  local bestDef = nil
+  local biggestDeficit = -math.huge
+
+  for _, comp in ipairs(TARGET_COMPOSITION) do
+    local cost = M.RECRUIT_COSTS[comp.def]
+    if cost and M.canAfford(stock, cost) then
+      local currentCount = fTotals[comp.role] or 0
+      local currentShare = (fTotal > 0) and (currentCount / fTotal) or 0
+      local deficit = comp.ratio - currentShare
+      if deficit > biggestDeficit then
+        biggestDeficit = deficit
+        bestDef = comp.def
+      end
+    end
+  end
+
+  if bestDef then
+    return bestDef
+  end
+
+  -- Fallback: return "medieval_infantry" if affordable, else nil
+  if M.canAfford(stock, M.RECRUIT_COSTS.medieval_infantry) then
+    return "medieval_infantry"
+  end
+
+  return nil
+end
+
+-- Tactical retreat check: returns true when retreating is advantageous.
+-- Returns true if health ratio is dangerously low (< 0.35) or heavily outnumbered.
+function M.shouldRetreat(myHealthRatio, armyCount, enemyNearbyCount)
+  if type(myHealthRatio) == "number" and myHealthRatio < 0.35 then
+    return true
+  end
+  local mine = tonumber(armyCount) or 0
+  local enemy = tonumber(enemyNearbyCount) or 0
+  if enemy > 0 and mine > 0 and (enemy >= mine * 2) then
+    return true
+  end
+  return false
 end
 
 -- Villager dispatch: busy villagers do nothing; idle ones close the housing

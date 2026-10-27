@@ -31,6 +31,7 @@ local enabledTeams = {}   -- [teamID] = boolean
 local stats = {}          -- [teamID] = { housesBuilt, roadsBuilt, ... }
 local villagers = {}      -- [teamID][unitID] = true
 local barracks = {}       -- [teamID][unitID] = true
+local stables = {}       -- [teamID][unitID] = true
 local houses = {}         -- [teamID][unitID] = true
 local townCenters = {}    -- [teamID][unitID] = true
 local military = {}       -- [teamID][unitID] = true
@@ -41,6 +42,7 @@ local MILITARY_NAMES = ai.MILITARY_SET
 
 local TRACKED_BUILDINGS = {
   medieval_barracks = barracks,
+  medieval_stables = stables,
   medieval_house = houses,
   medieval_town_center = townCenters,
 }
@@ -50,6 +52,7 @@ local function initTeam(teamID)
   if not stats[teamID] then stats[teamID] = ai.newStats() end
   if not villagers[teamID] then villagers[teamID] = {} end
   if not barracks[teamID] then barracks[teamID] = {} end
+  if not stables[teamID] then stables[teamID] = {} end
   if not houses[teamID] then houses[teamID] = {} end
   if not townCenters[teamID] then townCenters[teamID] = {} end
   if not military[teamID] then military[teamID] = {} end
@@ -240,18 +243,73 @@ local function doBuildRoad(teamID, stock)
   end
 end
 
+local function collectDefCounts(teamID)
+  local counts = {}
+  local set = military[teamID] or {}
+  for unitID in pairs(set) do
+    local name = defName(Spring.GetUnitDefID and Spring.GetUnitDefID(unitID))
+    if name then
+      counts[name] = (counts[name] or 0) + 1
+    end
+  end
+  return counts
+end
+
+local function collectEnemyCounts(teamID)
+  local counts = {}
+  local gaia = type(Spring.GetGaiaTeamID) == "function" and Spring.GetGaiaTeamID() or -1
+  local teams = Spring.GetTeamList and Spring.GetTeamList() or {}
+  for _, enemyTeam in ipairs(teams) do
+    if enemyTeam ~= teamID and enemyTeam ~= gaia then
+      local units = Spring.GetTeamUnits and Spring.GetTeamUnits(enemyTeam) or nil
+      if units then
+        for _, unitID in ipairs(units) do
+          local name = defName(Spring.GetUnitDefID and Spring.GetUnitDefID(unitID))
+          if name then
+            counts[name] = (counts[name] or 0) + 1
+          end
+        end
+      end
+    end
+  end
+  return counts
+end
+
 local function doRecruit(teamID, pop, cap, armyCount, stock)
   if not ai.shouldRecruit(stock, pop, cap, armyCount) then return end
-  local _, bx, _, bz = firstUnit(barracks, teamID)
+  local enemyCounts = collectEnemyCounts(teamID)
+  local friendlyCounts = collectDefCounts(teamID)
+  local recruitDef = ai.selectRecruitDef(stock, enemyCounts, friendlyCounts)
+  if not recruitDef then return end
+
+  local costs = ai.RECRUIT_COSTS and ai.RECRUIT_COSTS[recruitDef]
+  if costs and not ai.canAfford(stock, costs) then return end
+
+  -- Cavalry trains from stables if available; everything else from barracks.
+  -- Falls back to barracks when no stables exist yet.
+  local bucket = nil
+  if recruitDef == "medieval_cavalry" then
+    bucket = stables
+    local _, sx = firstUnit(stables, teamID)
+    if not sx then bucket = barracks end
+  else
+    bucket = barracks
+  end
+
+  local _, bx, _, bz = firstUnit(bucket, teamID)
   if not bx then return end
+
   local recruitment = GG and GG.MedievalRecruitment
-  if not recruitment or type(recruitment.CanRecruit) ~= "function" then return end
-  local ok, allowed = pcall(recruitment.CanRecruit, teamID, ai.RECRUIT_DEF)
-  if not ok or allowed ~= true then return end
+  if recruitment and type(recruitment.CanRecruit) == "function" then
+    local ok, allowed = pcall(recruitment.CanRecruit, teamID, recruitDef)
+    if not ok or allowed ~= true then return end
+  end
+
   local rx, rz = ai.recruitSpot(bx, bz)
   local ry = groundHeight(rx, rz)
-  local unitID = Spring.CreateUnit(ai.RECRUIT_DEF, rx, ry, rz, "south", teamID)
+  local unitID = Spring.CreateUnit(recruitDef, rx, ry, rz, "south", teamID)
   if unitID then
+    if costs then transact(teamID, costs) end
     stats[teamID].unitsRecruited = stats[teamID].unitsRecruited + 1
   end
 end
@@ -416,6 +474,7 @@ function gadget:TeamDied(teamID)
   roadPositions[teamID] = nil
   villagers[teamID] = nil
   barracks[teamID] = nil
+  stables[teamID] = nil
   houses[teamID] = nil
   townCenters[teamID] = nil
   military[teamID] = nil
