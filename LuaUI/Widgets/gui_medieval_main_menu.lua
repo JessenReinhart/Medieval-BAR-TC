@@ -27,11 +27,19 @@ if optionValue == false or optionValue == 0 or optionValue == "0" then return en
 
 local menuPolicy = VFS.Include("scripts/medieval_main_menu.lua")
 
--- The menu is an in-game overlay toggled by Escape: never auto-open over a
--- running match. Boots straight into a game (launch-game.ps1, lobby start,
--- or a LAUNCH BATTLE reload) start closed so the player is immediately in
--- the match, not staring at a "RESUME MATCH" overlay.
-local menuState = menuPolicy.newMenuState(false)
+-- A launched match is recorded in the startscript modoptions as
+-- medievalmatchlaunched=1. A fresh game boot (launch-game.ps1 or a bare
+-- session) leaves it 0, which means the player is in the main menu and the
+-- match has NOT started. In menu mode the menu is open and the simulation is
+-- paused; the match only begins when the player launches it from the menu.
+local matchLaunched = false
+if (options.medievalmatchlaunched == "1")
+  or (options.medievalmatchlaunched == 1)
+  or (options.medievalmatchlaunched == true) then
+  matchLaunched = true
+end
+
+local menuState = menuPolicy.newMenuState(not matchLaunched)
 
 local function syncMenuVisibility()
   if WG then
@@ -59,6 +67,31 @@ local clickTargets = {}
 
 local function registerClick(x1, y1, x2, y2, onClick)
   table.insert(clickTargets, { x1 = x1, y1 = y1, x2 = x2, y2 = y2, onClick = onClick })
+end
+
+-- Launch the configured skirmish match. Marks the match as launched, closes the
+-- menu, and either reloads the engine with the generated startscript (which
+-- carries medievalmatchlaunched=1 so the fresh widget starts closed and
+-- unpaused) or, if no reload API is available, unpauses the live session.
+local function launchBattle()
+  local valid, err = menuPolicy.validateConfig(menuState.skirmishConfig)
+  if not valid then
+    launchStatusMessage = "Config Error: " .. tostring(err)
+    return
+  end
+
+  local scriptText = menuPolicy.generateStartscript(menuState.skirmishConfig)
+  launchStatusMessage = "Launching Skirmish Match..."
+
+  menuState.isOpen = false
+  matchLaunched = true
+  syncMenuVisibility()
+
+  if Spring and Spring.Reload then
+    pcall(function() Spring.Reload(scriptText) end)
+  elseif Spring and Spring.SendCommands then
+    Spring.SendCommands("pause 0")
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -146,21 +179,34 @@ local function drawMainView()
   local btnX = (vsx - btnW) * 0.5
   local startY = vsy * 0.5 + 60
 
-  drawButton(btnX, startY, btnW, btnH, "NEW SKIRMISH", true, function()
-    menuPolicy.setTab(menuState, "SKIRMISH")
-  end)
+  if not matchLaunched then
+    -- Flow: initial game boot arrives directly at the main menu.
+    -- The player can start a match immediately or customize their skirmish.
+    drawButton(btnX, startY, btnW, btnH, "START MATCH", true, function()
+      launchBattle()
+    end)
 
-  drawButton(btnX, startY - 56, btnW, btnH, "GAME SETTINGS", false, function()
+    drawButton(btnX, startY - 56, btnW, btnH, "CUSTOM SKIRMISH", false, function()
+      menuPolicy.setTab(menuState, "SKIRMISH")
+    end)
+  else
+    -- Match already active in background: Resume is the primary action.
+    drawButton(btnX, startY, btnW, btnH, "RESUME MATCH", true, function()
+      menuPolicy.toggleOpen(menuState)
+      syncMenuVisibility()
+    end)
+
+    drawButton(btnX, startY - 56, btnW, btnH, "NEW SKIRMISH", false, function()
+      menuPolicy.setTab(menuState, "SKIRMISH")
+    end)
+  end
+
+  drawButton(btnX, startY - 112, btnW, btnH, "GAME SETTINGS", false, function()
     menuPolicy.setTab(menuState, "SETTINGS")
   end)
 
-  drawButton(btnX, startY - 112, btnW, btnH, "CREDITS & LICENSES", false, function()
+  drawButton(btnX, startY - 168, btnW, btnH, "CREDITS & LICENSES", false, function()
     menuPolicy.setTab(menuState, "CREDITS")
-  end)
-
-  drawButton(btnX, startY - 168, btnW, btnH, "RESUME MATCH", false, function()
-    menuPolicy.toggleOpen(menuState)
-    syncMenuVisibility()
   end)
 
   drawButton(btnX, startY - 224, btnW, btnH, "EXIT TO DESKTOP", false, function()
@@ -319,26 +365,7 @@ local function drawSkirmishView()
   local launchW = 240
   local launchX = vsx - col1X - launchW
   drawButton(launchX, btmY, launchW, 40, "LAUNCH BATTLE", true, function()
-    local valid, err = menuPolicy.validateConfig(menuState.skirmishConfig)
-    if not valid then
-      launchStatusMessage = "Config Error: " .. tostring(err)
-      return
-    end
-
-    local scriptText = menuPolicy.generateStartscript(menuState.skirmishConfig)
-    launchStatusMessage = "Launching Skirmish Match..."
-
-    -- Close the overlay immediately so the launched battle is interactive,
-    -- and so the fresh widget instance (after reload) also starts closed.
-    menuState.isOpen = false
-    syncMenuVisibility()
-
-    -- In engine: trigger reload or startscript execution
-    if Spring and Spring.Reload then
-      pcall(function() Spring.Reload(scriptText) end)
-    elseif Spring and Spring.SendCommands then
-      pcall(function() Spring.SendCommands("reloadforce") end)
-    end
+    launchBattle()
   end)
 
   if launchStatusMessage then
@@ -474,6 +501,11 @@ end
 
 function widget:Initialize()
   syncMenuVisibility()
+  -- If opening into the main menu without a launched match, pause simulation
+  -- so the match never runs automatically in the background.
+  if not matchLaunched and Spring and Spring.SendCommands then
+    Spring.SendCommands("pause 1")
+  end
 end
 
 function widget:Shutdown()
@@ -509,10 +541,15 @@ function widget:DrawScreen()
 end
 
 function widget:KeyPress(key, mods, isRepeat, label, unicode)
-  -- Escape (key code 27) toggles the menu
+  -- Escape (key code 27) toggles the menu ONLY when a match is active.
+  -- Before the match is launched, Escape remains in the menu (switches back to MAIN tab).
   if key == 27 then
-    menuPolicy.toggleOpen(menuState)
-    syncMenuVisibility()
+    if matchLaunched then
+      menuPolicy.toggleOpen(menuState)
+      syncMenuVisibility()
+    else
+      menuPolicy.setTab(menuState, "MAIN")
+    end
     return true
   end
 

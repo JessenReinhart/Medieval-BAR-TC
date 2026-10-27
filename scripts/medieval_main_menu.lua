@@ -494,6 +494,7 @@ function M.generateStartscript(config)
   L("\t\tmedievalbuildicons=1;")
   L("\t\tmedievalbottompanel=1;")
   L("\t\tmedievalminimap=1;")
+  L("\t\tmedievalmatchlaunched=1;")
 
   -- Modoption toggles from config.
   for _, key in ipairs(M.MODOPTION_TOGGLES) do

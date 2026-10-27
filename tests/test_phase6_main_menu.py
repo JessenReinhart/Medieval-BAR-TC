@@ -456,6 +456,10 @@ class TestStartscriptGeneration(MenuBase):
         txt = self._gen(aiDifficulty="Hard")
         self.assertIn("aidifficulty=hard;", txt)
 
+    def test_match_launched_in_modoptions(self):
+        txt = self._gen()
+        self.assertIn("medievalmatchlaunched=1;", txt)
+
 
 # ===========================================================================
 # 5. TestSettingsManagement
@@ -559,10 +563,16 @@ class TestMenuWidgetContract(unittest.TestCase):
     def test_gated_on_medievalmainmenu(self):
         self.assertIn("medievalmainmenu", self.src)
 
-    def test_menu_does_not_auto_open_on_boot(self):
-        # The overlay must start closed so a launched match is immediately
-        # playable; Escape toggles it open on demand.
-        self.assertIn("newMenuState(false)", self.src)
+    def test_menu_opens_on_clean_boot(self):
+        # A fresh game boot (no launched match) arrives at the main menu.
+        # The menu starts open and the simulation is paused until the player
+        # launches a match from the menu.
+        self.assertIn("newMenuState(not matchLaunched)", self.src)
+        self.assertIn("medievalmatchlaunched", self.src)
+        self.assertIn("pause 1", self.src)
+        self.assertIn('"START MATCH"', self.src)
+        self.assertIn('"RESUME MATCH"', self.src)
+        self.assertIn("launchBattle", self.src)
 
 
 # ===========================================================================
@@ -590,6 +600,15 @@ class TestMenuModoptions(unittest.TestCase):
 
     def test_medievalmainmenu_default_true(self):
         self.assertTrue(self.options["medievalmainmenu"]["def"])
+
+    def test_medievalmatchlaunched_exists(self):
+        self.assertIn("medievalmatchlaunched", self.options)
+
+    def test_medievalmatchlaunched_is_bool(self):
+        self.assertEqual(self.options["medievalmatchlaunched"]["type"], "bool")
+
+    def test_medievalmatchlaunched_default_false(self):
+        self.assertFalse(self.options["medievalmatchlaunched"]["def"])
 
 
 if __name__ == "__main__":

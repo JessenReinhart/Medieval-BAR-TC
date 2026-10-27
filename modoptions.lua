@@ -125,6 +125,13 @@ return {
     def = true,
   },
   {
+    key = "medievalmatchlaunched",
+    name = "Medieval Match Launched",
+    desc = "Whether a match has been launched from the main menu (0 = menu mode, 1 = match active)",
+    type = "bool",
+    def = false,
+  },
+  {
     key = "medievalanimprobe",
     name = "Death Animation Probe",
     desc = "Headless test hook: spawn and kill one unit per articulated script to verify the baked death clip",
