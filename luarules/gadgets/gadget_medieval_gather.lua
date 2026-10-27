@@ -363,6 +363,10 @@ function gadget:GameFrame(frame)
           if amount > 0 then
             job.carried = (job.carried or 0) + amount
             node.remaining = node.remaining - amount
+            local fx = GG.MedievalFX
+            if fx and fx.PlayGather then
+              fx.PlayGather(job.resource)
+            end
           end
           if gather.carryFull(job.carried) or node.remaining <= 0 then
             assignDeliver(unitID, nil)

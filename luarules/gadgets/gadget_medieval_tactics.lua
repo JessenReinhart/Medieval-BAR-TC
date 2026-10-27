@@ -353,5 +353,22 @@ function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, w
       attackerID, unitID, damage, techMult, supplyMult, matrixMult, garrisonMult, tacticsMult, final))
   end
 
+  -- Under-attack alert for the defender's team. Keyed by team so the klaxon is
+  -- rate-limited within the FX gadget; only fire when the defender is a real,
+  -- non-Gaia team.
+  if final > 0 and unitTeam then
+    local gaia = -1
+    if Spring and type(Spring.GetGaiaTeamID) == "function" then
+      gaia = Spring.GetGaiaTeamID() or -1
+    end
+    if unitTeam ~= gaia then
+      local fx = GG and GG.MedievalFX
+      if fx and fx.PlayUnderAttack then
+        local x, y, z = positionOf(unitID)
+        fx.PlayUnderAttack(unitTeam, x, y, z)
+      end
+    end
+  end
+
   return final, 1.0
 end

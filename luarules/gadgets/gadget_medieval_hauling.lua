@@ -235,6 +235,11 @@ completeHaul = function(unitID, job)
 
   echo("PHASE4 HAUL route team=%d from=%s to=%s kind=%s amount=%d",
     teamID, tostring(route.from), tostring(route.to), route.resource, route.amount)
+  local fx = GG.MedievalFX
+  if fx and fx.PlayHaul then
+    local x, y, z = unitPos(unitID)
+    fx.PlayHaul(x, y, z)
+  end
   stopUnit(unitID)
 end
 
