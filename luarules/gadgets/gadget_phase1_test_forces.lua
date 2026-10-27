@@ -11,9 +11,32 @@ if not enabled then return end
 local formation = VFS.Include("scripts/phase1_line_formation.lua")
 local pending, spawned = {}, false
 local names = { "medieval_infantry", "medieval_archer", "medieval_cavalry" }
+local formationNames = {
+  "medieval_infantry",
+  "medieval_archer",
+  "medieval_cavalry",
+  "medieval_spearman",
+  "medieval_men_at_arms",
+  "medieval_knight",
+  "medieval_crossbow",
+  "medieval_catapult",
+}
 local allowedDefs = {}
-for _, name in ipairs(names) do
+for _, name in ipairs(formationNames) do
   if UnitDefNames[name] then allowedDefs[UnitDefNames[name].id] = true end
+end
+
+local function isBuildingDef(unitDefID)
+  local ud = UnitDefs and UnitDefs[unitDefID]
+  if not ud then return false end -- unknown def: rely on allowedDefs name allowlist
+  if ud.isBuilding then return true end
+  if ud.canMove == false then return true end
+  if (ud.speed or 0) <= 0 and (ud.maxVelocity or 0) <= 0 then return true end
+  return false
+end
+
+local function isFormationUnitDef(unitDefID)
+  return allowedDefs[unitDefID] and not isBuildingDef(unitDefID)
 end
 
 local function validGround(defID, x, z)
@@ -87,14 +110,16 @@ end
 
 -- Wire format: x, z, spacing, cardinal facing 0..3, count, unit IDs.
 -- IDs only establish ranks. Each engine-authorized command can move ONLY its receiver.
+-- Buildings must never participate in formations.
 local function destination(unitID, unitDefID, teamID, p)
-  if not allowedDefs[unitDefID] or type(p) ~= "table" or #p > formation.MAX_UNITS + 5 then return end
+  if not isFormationUnitDef(unitDefID) or type(p) ~= "table" or #p > formation.MAX_UNITS + 5 then return end
   local count = p[5]
   local ids = formation.sortedIDs(p, 6, count)
   if not ids then return end
   local rank
   for i, id in ipairs(ids) do
-    if Spring.GetUnitTeam(id) ~= teamID or not allowedDefs[Spring.GetUnitDefID(id)] then return end
+    local defID = Spring.GetUnitDefID(id)
+    if Spring.GetUnitTeam(id) ~= teamID or not isFormationUnitDef(defID) then return end
     if id == unitID then rank = i end
   end
   if not rank then return end

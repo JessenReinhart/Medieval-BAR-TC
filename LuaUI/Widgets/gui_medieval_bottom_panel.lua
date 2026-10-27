@@ -334,28 +334,132 @@ local cmdButtonHitboxes = {}
 -- Group card hitboxes for click-to-filter in multi-select mode.
 local groupCardHitboxes = {}
 
-local function drawCommandGrid(px, py, pw, ph)
+local function isBuildingDef(ud)
+  if not ud then return false end
+  if ud.isBuilding then return true end
+  if ud.canMove == false then return true end
+  if (ud.speed or 0) <= 0 and (ud.maxVelocity or 0) <= 0 then return true end
+  return false
+end
+
+local function isBuilderDef(ud)
+  if not ud then return false end
+  return (ud.isBuilder or ud.builder or ud.name == "medieval_villager") and not isBuildingDef(ud)
+end
+
+local SHORT_NAMES = {
+  medieval_villager = "Villager",
+  medieval_infantry = "Infantry",
+  medieval_spearman = "Spearman",
+  medieval_archer = "Archer",
+  medieval_cavalry = "Cavalry",
+  medieval_men_at_arms = "Men-at-arms",
+  medieval_knight = "Knight",
+  medieval_crossbow = "Crossbow",
+  medieval_catapult = "Catapult",
+  medieval_house = "House",
+  medieval_granary = "Granary",
+  medieval_lumber_camp = "Lumber",
+  medieval_barracks = "Barracks",
+  medieval_stables = "Stables",
+  medieval_blacksmith = "Smithy",
+  medieval_market = "Market",
+  medieval_wall = "Wall",
+  medieval_tower = "Tower",
+}
+
+local BUILDING_ROLES = {
+  medieval_house = "Provides +5 Population support",
+  medieval_granary = "Food drop-off depot & grain storage",
+  medieval_lumber_camp = "Wood drop-off depot & timber storage",
+  medieval_blacksmith = "Researches metallurgy and weapon upgrades",
+  medieval_market = "Commodity barter and marketplace trade",
+  medieval_wall = "Defensive fortification barrier",
+  medieval_fletcher = "Fletching and ranged weaponry workshop",
+}
+
+local CMD_BUILD_ROAD = 371922
+
+local function buildButtonsFor(ud)
+  local out = {}
+  if not ud then return out end
+  local opts = ud.buildOptions or ud.buildoptions or {}
+  for _, name in ipairs(opts) do
+    local bDef = UnitDefNames and UnitDefNames[name]
+    if bDef then
+      out[#out + 1] = {
+        id = -bDef.id,
+        label = SHORT_NAMES[name] or (bDef.humanName or name),
+        desc = "Build " .. (bDef.humanName or name),
+        tex = getPortraitPath(name),
+        isBuild = true,
+      }
+    end
+  end
+  out[#out + 1] = {
+    id = CMD_BUILD_ROAD,
+    label = "Road",
+    desc = "Build a gravel road segment",
+    tex = "unitpics/medieval_wall.png",
+    isBuild = true,
+  }
+  return out
+end
+
+local function trainButtonsFor(ud)
+  local out = {}
+  if not ud then return out end
+  local opts = ud.buildOptions or ud.buildoptions or {}
+  for _, name in ipairs(opts) do
+    local uDef = UnitDefNames and UnitDefNames[name]
+    if uDef then
+      out[#out + 1] = {
+        id = -uDef.id,
+        label = SHORT_NAMES[name] or (uDef.humanName or name),
+        desc = "Train " .. (uDef.humanName or name),
+        tex = getPortraitPath(name),
+        isTrain = true,
+      }
+    end
+  end
+  return out
+end
+
+local function drawCommandGrid(px, py, pw, ph, buttons, unitID, title, cols, rows, gxOverride, gyOverride, appendHitboxes)
   -- 0 A.D. / AoE style: icon button with a small text label underneath.
-  -- Two rows of five, right side of the panel.
+  -- Defaults to a two-row, five-column grid on the right side of the panel;
+  -- builders/factories pass a custom button list (and optional title/position).
+  local btns = buttons or COMMAND_BUTTONS
+  local nCols = cols or CMD_COLS
+  local nRows = rows or CMD_ROWS
   local labelH = 12
   local cellW = CMD_ICON_SIZE + CMD_PAD
   local cellH = CMD_ICON_SIZE + labelH + CMD_PAD
-  local gridW = CMD_COLS * cellW + CMD_PAD
-  local gridH = CMD_ROWS * cellH + CMD_PAD
-  local gx = px + pw - gridW - 12
-  local gy = py + (ph - gridH) * 0.5
+  local gridW = nCols * cellW + CMD_PAD
+  local gridH = nRows * cellH + CMD_PAD
+  local gx = gxOverride or (px + pw - gridW - 12)
+  local gy = gyOverride or (py + (ph - gridH) * 0.5)
 
   local glTexture = gl["Texture"]
   local glTexRect = gl["TexRect"]
 
-  -- Rebuild hitboxes each frame
-  cmdButtonHitboxes = {}
-  hoveredCmd = nil
+  if title then
+    gl.Color(COL_PARCHMENT)
+    gl.Text(title, gx, gy + gridH + 4, 11, "o")
+    gy = gy - 16
+  end
 
-  for i, btn in ipairs(COMMAND_BUTTONS) do
-    if i > CMD_COLS * CMD_ROWS then break end
-    local col = (i - 1) % CMD_COLS
-    local row = math.floor((i - 1) / CMD_COLS)
+  -- Rebuild hitboxes each frame (append mode preserves earlier grids' hitboxes)
+  if not appendHitboxes then
+    cmdButtonHitboxes = {}
+    hoveredCmd = nil
+  end
+  local baseIdx = #cmdButtonHitboxes
+
+  for i, btn in ipairs(btns) do
+    if i > nCols * nRows then break end
+    local col = (i - 1) % nCols
+    local row = math.floor((i - 1) / nCols)
     local bx = gx + CMD_PAD + col * cellW
     local by = gy + gridH - CMD_PAD - (row + 1) * cellH + CMD_PAD
     local ix = bx + CMD_PAD * 0.5
@@ -397,10 +501,97 @@ local function drawCommandGrid(px, py, pw, ph)
     gl.Text(btn.label, bx + cellW * 0.5, by + labelH - 2, 9, "oc")
 
     -- Store hitbox
-    cmdButtonHitboxes[i] = {
+    cmdButtonHitboxes[baseIdx + i] = {
       x0 = bx, y0 = by, x1 = bx + cellW, y1 = by + cellH,
       btn = btn,
+      unitID = unitID,
     }
+  end
+end
+
+--------------------------------------------------------------------------------
+-- Drawing: role-specific command surfaces
+--------------------------------------------------------------------------------
+
+-- Villager work commands (move / repair aid; no combat orders).
+local VILLAGER_WORK_BUTTONS = {
+  { id = _CMD.STOP,   label = "Stop",   desc = "Halt and clear current order",     tex = "bitmaps/ui/command_stop.png",   instant = true },
+  { id = _CMD.MOVE,   label = "Move",   desc = "Move to a target location",         tex = "bitmaps/ui/command_move.png" },
+  { id = _CMD.PATROL, label = "Patrol", desc = "Patrol between two points",         tex = "bitmaps/ui/command_patrol.png" },
+  { id = _CMD.GUARD,  label = "Guard",  desc = "Guard / follow a friendly unit",    tex = "bitmaps/ui/command_guard.png" },
+  { id = _CMD.REPAIR, label = "Repair", desc = "Repair a damaged structure",        tex = "bitmaps/ui/command_repair.png" },
+}
+
+local function drawVillagerBuildUI(unitID, px, py, pw, ph)
+  local udID = getUnitDefID(unitID)
+  local ud = UnitDefs and UnitDefs[udID]
+  local bButtons = buildButtonsFor(ud)
+
+  local cellW = CMD_ICON_SIZE + CMD_PAD
+  local cellH = CMD_ICON_SIZE + 12 + CMD_PAD
+  local gridW = 5 * cellW + CMD_PAD
+  local gridH2 = 2 * cellH + CMD_PAD
+  local gridH1 = 1 * cellH + CMD_PAD
+
+  -- Build grid on far right (9 structures + road = 10 cells)
+  local gxBuild = px + pw - gridW - 12
+  local gyBuild = py + (ph - gridH2) * 0.5 - 6
+
+  -- Basic work commands grid to the left of the Build grid
+  local gxCmd = gxBuild - gridW - 12
+  local gyCmd = py + (ph - gridH1) * 0.5 - 6
+
+  drawCommandGrid(px, py, pw, ph, VILLAGER_WORK_BUTTONS, unitID, "Commands", 5, 1, gxCmd, gyCmd, false)
+  drawCommandGrid(px, py, pw, ph, bButtons, unitID, "Build", 5, 2, gxBuild, gyBuild, true)
+end
+
+local function drawFactoryUI(unitID, ud, px, py, pw, ph)
+  local tButtons = trainButtonsFor(ud)
+  -- Stop button first to halt production, then train buttons
+  local buttons = {
+    { id = _CMD.STOP, label = "Stop", desc = "Halt production", tex = "bitmaps/ui/command_stop.png", instant = true },
+  }
+  for _, btn in ipairs(tButtons) do
+    buttons[#buttons + 1] = btn
+  end
+
+  local cellW = CMD_ICON_SIZE + CMD_PAD
+  local cellH = CMD_ICON_SIZE + 12 + CMD_PAD
+  local cols = math.min(#buttons, 5)
+  if cols < 1 then cols = 1 end
+  local rows = math.max(1, math.ceil(#buttons / cols))
+  local gridW = cols * cellW + CMD_PAD
+  local gridH = rows * cellH + CMD_PAD
+  local gx = px + pw - gridW - 12
+  local gy = py + (ph - gridH) * 0.5 - 6
+
+  drawCommandGrid(px, py, pw, ph, buttons, unitID, "Train", cols, rows, gx, gy, false)
+
+  -- Production queue to the left of the train buttons
+  local qx = px + 300
+  local qw = gx - qx - 16
+  if qw > 64 then
+    drawProductionQueue(unitID, qx, py, qw, ph)
+  end
+end
+
+local function drawStaticBuildingUI(unitID, ud, px, py, pw, ph)
+  if ud and ud.name == "medieval_tower" then
+    -- Watchtower has a bow attack: Stop + target Attack only (no Move/Patrol/formation)
+    local towerButtons = {
+      { id = _CMD.STOP,   label = "Stop",   desc = "Halt targeting",   tex = "bitmaps/ui/command_stop.png",   instant = true },
+      { id = _CMD.ATTACK, label = "Attack", desc = "Target enemy unit", tex = "bitmaps/ui/command_attack.png" },
+    }
+    drawCommandGrid(px, py, pw, ph, towerButtons, unitID, "Defend", 2, 1, nil, nil, false)
+  else
+    -- Non-combat static structure: no action buttons at all.
+    cmdButtonHitboxes = {}
+    hoveredCmd = nil
+
+    gl.Color(COL_GOLD)
+    gl.Text(BUILDING_ROLES[ud and ud.name] or "Static structure", px + 300, py + ph * 0.5 + 4, 13, "o")
+    gl.Color(COL_PARCHMENT)
+    gl.Text("Static structure: no movement or formation commands", px + 300, py + ph * 0.5 - 16, 11, "o")
   end
 end
 
@@ -509,11 +700,16 @@ local function drawSingleUnit(unitID, px, py, pw, ph)
     gl.Text(line, textX, statY - (i - 1) * (STAT_FONT_SIZE + 2), STAT_FONT_SIZE, "o")
   end
 
-  -- Building production queue (if applicable)
-  if ud.isFactory or ud.isBuilder then
-    drawProductionQueue(unitID, textX + 180, py, pw - (textX - px) - 180, ph)
+  -- Command surface depends on unit role. Buildings never receive
+  -- movement / combat / formation commands.
+  if isBuilderDef(ud) then
+    drawVillagerBuildUI(unitID, px, py, pw, ph)
+  elseif ud.isFactory then
+    drawFactoryUI(unitID, ud, px, py, pw, ph)
+  elseif isBuildingDef(ud) then
+    drawStaticBuildingUI(unitID, ud, px, py, pw, ph)
   else
-    -- Command button grid (right side of panel)
+    -- Mobile combat unit: full command grid.
     drawCommandGrid(px, py, pw, ph)
   end
 end
@@ -711,8 +907,23 @@ local function drawMultiSelect(units, px, py, pw, ph)
   gl.Color(COL_GOLD)
   gl.Text(label, labelX, labelY, NAME_FONT_SIZE, "oc")
 
-  -- Command grid on the right side (always visible in multi-select)
-  drawCommandGrid(px, py, pw, ph)
+  -- Command grid on the right side: shown ONLY if at least one mobile unit
+  -- is selected. Pure building selections never receive movement or formation commands.
+  local hasMobile = false
+  for _, uid in ipairs(units) do
+    local udef = UnitDefs and UnitDefs[getUnitDefID(uid)]
+    if udef and not isBuildingDef(udef) then
+      hasMobile = true
+      break
+    end
+  end
+
+  if hasMobile then
+    drawCommandGrid(px, py, pw, ph)
+  else
+    cmdButtonHitboxes = {}
+    hoveredCmd = nil
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -776,7 +987,27 @@ function widget:MousePress(mx, my, button)
   for _, hit in ipairs(cmdButtonHitboxes) do
     if mx >= hit.x0 and mx <= hit.x1 and my >= hit.y0 and my <= hit.y1 then
       local btn = hit.btn
-      if btn.instant and Spring.GiveOrder then
+      if btn.isTrain then
+        -- Factory recruitment: build/queue the target unit at this factory.
+        local opts = {}
+        if Spring.GetModKeyState then
+          local _, _, _, shift = Spring.GetModKeyState()
+          if shift then opts[#opts + 1] = "shift" end
+        end
+        if Spring.GiveOrderToUnit and hit.unitID then
+          Spring.GiveOrderToUnit(hit.unitID, btn.id, {}, opts)
+        elseif Spring.GiveOrder then
+          Spring.GiveOrder(btn.id, {}, opts)
+        end
+      elseif btn.isBuild then
+        -- Villager construction: activate the placement / cursor command.
+        local descIdx = Spring.GetCmdDescIndex and Spring.GetCmdDescIndex(btn.id)
+        if descIdx then
+          Spring.SetActiveCommand(descIdx)
+        elseif Spring.SetActiveCommand then
+          Spring.SetActiveCommand(btn.id)
+        end
+      elseif btn.instant and Spring.GiveOrder then
         -- Instant commands: issue immediately to selected units
         Spring.GiveOrder(btn.id, {}, {})
       elseif Spring.SetActiveCommand then

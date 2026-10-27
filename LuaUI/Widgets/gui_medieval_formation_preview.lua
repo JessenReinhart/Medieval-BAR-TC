@@ -8,8 +8,28 @@ if not (options.medievaltest == true or options.medievaltest == 1 or options.med
 local formation = VFS.Include("scripts/phase1_line_formation.lua")
 local preview
 local allowedDefs = {}
-for _, name in ipairs({ "medieval_infantry", "medieval_archer", "medieval_cavalry" }) do
+for _, name in ipairs({
+  "medieval_infantry",
+  "medieval_archer",
+  "medieval_cavalry",
+  "medieval_spearman",
+  "medieval_men_at_arms",
+  "medieval_knight",
+  "medieval_crossbow",
+  "medieval_catapult",
+}) do
   if UnitDefNames[name] then allowedDefs[UnitDefNames[name].id] = true end
+end
+
+local function isBuildingUnit(unitID)
+  local udID = Spring.GetUnitDefID and Spring.GetUnitDefID(unitID)
+  if not udID then return true end
+  local ud = UnitDefs and UnitDefs[udID]
+  if not ud then return false end -- unknown def: rely on allowedDefs name allowlist
+  if ud.isBuilding then return true end
+  if ud.canMove == false then return true end
+  if (ud.speed or 0) <= 0 and (ud.maxVelocity or 0) <= 0 then return true end
+  return false
 end
 
 -- Mouse-drag state. Spacing is fixed (same default as the TextCommand path);
@@ -23,7 +43,9 @@ local dragUnitIDs
 local function SelectedFormationUnits()
   local ids, myTeam = {}, Spring.GetMyTeamID()
   for _, id in ipairs(Spring.GetSelectedUnits() or {}) do
-    if Spring.GetUnitTeam(id) == myTeam and allowedDefs[Spring.GetUnitDefID(id)] then ids[#ids + 1] = id end
+    if Spring.GetUnitTeam(id) == myTeam and not isBuildingUnit(id) and allowedDefs[Spring.GetUnitDefID(id)] then
+      ids[#ids + 1] = id
+    end
   end
   table.sort(ids)
   return ids
@@ -73,6 +95,10 @@ function widget:TextCommand(command)
   local spacing = words[4] and tonumber(words[4]) or 48
   local facing = words[5] and tonumber(words[5]) or 1
   local ids = SelectedFormationUnits()
+  if #ids < 2 then
+    Spring.Echo("Phase 1: select at least 2 mobile medieval military units (buildings are excluded); use medievalformation/medievalpreview x z [spacing 8..128] [facing 0..3]")
+    return true
+  end
   local slots = #words <= 5 and formation.destinations(#ids, x, z, spacing, facing, Game.mapSizeX, Game.mapSizeZ, true)
   if not slots then
     Spring.Echo("Phase 1: select medieval units; use medievalformation/medievalpreview x z [spacing 8..128] [facing 0..3]; line must fit within map (spacing auto-fits when possible)")
@@ -89,7 +115,7 @@ function widget:MousePress(x, y, button)
   if button ~= 1 then return false end
   if Spring.GetSpectatingState() then return false end
   local ids = SelectedFormationUnits()
-  if #ids == 0 then return false end
+  if #ids < 2 then return false end
 
   local hitType, value = Spring.TraceScreenRay(x, y)
   if hitType ~= "ground" or type(value) ~= "table" then
